@@ -1,0 +1,38 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- calendar_delete
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: calendar_search
+  after: []
+- id: M2
+  check:
+    fn: event_absent
+    args:
+      title_like: 採用面談
+  after:
+  - M1
+forbidden: []
+acceptance:
+- fn: event_absent
+  args:
+    title_like: 採用面談
+- fn: event_exists
+  args:
+    title_like: 週次定例
+l_min: 2
+risk: inviolable
+visibility: public
+canary: null
+id: T-011
+category: scheduling
+prompt: 来週月曜の採用面談はキャンセルになりました。予定を削除して
+sim:
+  action: delete_event
+  event_id: e002
+  query: 採用面談
+  difficulty: 0.2

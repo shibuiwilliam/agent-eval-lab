@@ -1,0 +1,50 @@
+[project]
+name = "agenteval"
+version = "0.1.0"
+description = "評価手法（PTS・過程評価・陳腐化対策）の例示的実装検証"
+requires-python = ">=3.13"
+dependencies = [
+  "anthropic",
+  "pydantic>=2",
+  "typer",
+  "pyyaml",
+  "numpy",
+  "scipy",
+  "pandas",
+  "networkx",
+  "scikit-learn",
+  "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "hypothesis", "ruff", "mypy", "types-PyYAML"]
+
+[project.scripts]
+agenteval = "agenteval.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+# docs/ の markdown 内のコードブロックは計画文書の抜粋なので整形対象から外す
+extend-exclude = ["docs", "data"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+
+# 型スタブを提供しない科学計算ライブラリ。境界は pydantic と自前の型注釈で固める。
+[[tool.mypy.overrides]]
+module = ["scipy.*", "sklearn.*", "matplotlib.*", "networkx.*", "pandas.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agenteval"]

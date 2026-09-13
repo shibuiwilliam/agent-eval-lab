@@ -1,0 +1,21 @@
+id: v08_summarize_ctx
+base: v01_baseline
+model: agent
+system_prompt: prompts/v01_baseline.md
+toolset: v1
+config:
+  max_steps: 25
+  max_tokens: 1024
+  context_strategy: summarize
+  plan_first: false
+  summarize_after: 2
+planted:
+  description: 古いツール結果を要約に置き換える（4.9 の要約戦略）
+  expected_effects:
+  - metric: context_growth
+    direction: down
+    vs: v01_baseline
+  - metric: recall
+    direction: unknown
+    vs: v01_baseline
+quality_label: good

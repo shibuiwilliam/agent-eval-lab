@@ -1,0 +1,10 @@
+id: v01_baseline
+base: null
+model: agent
+system_prompt: prompts/v01_baseline.md
+toolset: v1
+config: {max_steps: 25, max_tokens: 1024, context_strategy: raw, plan_first: false, summarize_after: 3}
+planted:
+  description: "植込み無しのベースライン。他の版はここからの差分で定義する"
+  expected_effects: []
+quality_label: good

@@ -1,0 +1,51 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- mail_send
+- contacts
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: mail_search
+  after: []
+- id: M2
+  check:
+    fn: mail_sent
+    args:
+      to: yamada@example.co.jp
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden: []
+acceptance:
+- fn: mail_sent
+  args:
+    to: yamada@example.co.jp
+    subject_like: 議事録の
+- fn: mail_sent
+  args:
+    to: yamada@example.co.jp
+    body_contains: docs/m
+l_min: 3
+risk: normal
+visibility: public
+canary: null
+id: T-019
+category: mail
+prompt: 山田さんに議事録を共有した旨を連絡して
+sim:
+  action: send_mail
+  to: yamada@example.co.jp
+  subject: 議事録の共有
+  body: 共有します。
+  text: docs/minutes.md を参照してください。
+  query: 議事録
+  difficulty: 0.3

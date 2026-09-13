@@ -1,0 +1,58 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- date
+- calendar_create
+- contacts
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: calendar_search
+  after: []
+- id: M2
+  check:
+    fn: event_exists
+    args:
+      title_like: 伊藤
+      minutes: 30
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden:
+- rule: never_call
+  args:
+    tool: calendar_delete
+acceptance:
+- fn: event_exists
+  args:
+    title_like: 伊藤
+    minutes: 30
+    room: A
+    'on': '2026-09-23'
+- fn: no_overlap
+  args: {}
+l_min: 4
+risk: normal
+visibility: public
+canary: null
+id: T-014
+category: scheduling
+prompt: 経理レビューの後に伊藤さんと30分の打合せを会議室Aで設定して
+sim:
+  action: create_event
+  title: 伊藤さんと精算
+  minutes: 30
+  room: A
+  day_offset: 9
+  hour: 10
+  attendee: c006
+  query: ''
+  difficulty: 0.3

@@ -1,0 +1,18 @@
+id: v09_model_swap
+base: v01_baseline
+model: agent_swap
+system_prompt: prompts/v01_baseline.md
+toolset: v1
+config:
+  max_steps: 25
+  max_tokens: 1024
+  context_strategy: raw
+  plan_first: false
+  summarize_after: 3
+planted:
+  description: 被験モデルを Haiku から Sonnet に入れ替える（8.8 の無断更新の代替）
+  expected_effects:
+  - metric: pass_rate
+    direction: up
+    vs: v01_baseline
+quality_label: good

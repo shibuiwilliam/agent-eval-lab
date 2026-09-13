@@ -1,0 +1,16 @@
+# 単価 (USD / MTok)。値は公式 Pricing ページで確認した日付を更新してから使うこと。
+# 改定があり得る。コード中に単価をハードコードしない。
+verified_at: "2026-09-13"
+source: "https://platform.claude.com/docs/en/about-claude/pricing"
+models:
+  claude-haiku-4-5-20251001:
+    input: 1.00
+    output: 5.00
+    cache_write_5m: 1.25
+    cache_read: 0.10
+  claude-sonnet-5:
+    input: 2.00
+    output: 10.00
+    cache_write_5m: 2.50
+    cache_read: 0.20
+batch_discount: 0.5

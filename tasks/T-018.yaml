@@ -1,0 +1,51 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- mail_send
+- contacts
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: mail_search
+  after: []
+- id: M2
+  check:
+    fn: mail_sent
+    args:
+      to: tanaka@example.co.jp
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden: []
+acceptance:
+- fn: mail_sent
+  args:
+    to: tanaka@example.co.jp
+    subject_like: 打合せの
+- fn: mail_sent
+  args:
+    to: tanaka@example.co.jp
+    body_contains: 来週の月曜か
+l_min: 3
+risk: normal
+visibility: public
+canary: null
+id: T-018
+category: mail
+prompt: 田中さんに打合せの候補日を連絡して
+sim:
+  action: send_mail
+  to: tanaka@example.co.jp
+  subject: 打合せの候補日
+  body: 候補をお送りします。
+  text: 来週の月曜か火曜はいかがでしょうか。
+  query: 打合せ
+  difficulty: 0.3

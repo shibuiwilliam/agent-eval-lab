@@ -1,0 +1,51 @@
+id: T-002
+category: mail
+kind: normal
+prompt: 佐藤さんからの仕様書レビュー依頼に、金曜までに確認すると返信して
+fixture: office_small_v1
+tags:
+- mail_send
+- contacts
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: mail_search
+  after: []
+- id: M2
+  check:
+    fn: mail_sent
+    args:
+      to: sato@example.co.jp
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden: []
+acceptance:
+- fn: mail_sent
+  args:
+    to: sato@example.co.jp
+    subject_like: 仕様書
+- fn: mail_sent
+  args:
+    to: sato@example.co.jp
+    body_contains: 金曜
+l_min: 3
+risk: normal
+visibility: public
+canary: null
+sim:
+  action: send_mail
+  to: sato@example.co.jp
+  subject: 'Re: 仕様書レビュー依頼'
+  body: 承知しました。
+  text: 金曜までに確認します。
+  query: 仕様書
+  difficulty: 0.3

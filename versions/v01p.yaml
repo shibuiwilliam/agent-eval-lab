@@ -1,0 +1,18 @@
+id: v01p
+base: v01_baseline
+model: agent
+system_prompt: prompts/v01_baseline.md
+toolset: v1
+config:
+  max_steps: 25
+  max_tokens: 1024
+  context_strategy: raw
+  plan_first: true
+  summarize_after: 3
+planted:
+  description: 植込み無し。計画の外在化だけを有効にする（E4-6 の対照）
+  expected_effects:
+  - metric: plan_valid_rate
+    direction: up
+    vs: v01_baseline
+quality_label: good

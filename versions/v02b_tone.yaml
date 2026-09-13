@@ -1,0 +1,18 @@
+id: v02b_tone
+base: v01_baseline
+model: agent
+system_prompt: prompts/v02b_tone.md
+toolset: v1
+config:
+  max_steps: 25
+  max_tokens: 1024
+  context_strategy: raw
+  plan_first: false
+  summarize_after: 3
+planted:
+  description: 文体だけを丁寧語に変える。挙動は変えない（E3-2 の対照。run は不要）
+  expected_effects:
+  - metric: pass_rate
+    direction: flat
+    vs: v01_baseline
+quality_label: neutral

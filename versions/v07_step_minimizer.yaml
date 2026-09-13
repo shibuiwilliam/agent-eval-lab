@@ -1,0 +1,21 @@
+id: v07_step_minimizer
+base: v01_baseline
+model: agent
+system_prompt: prompts/v07_step_minimizer.md
+toolset: v1
+config:
+  max_steps: 25
+  max_tokens: 1024
+  context_strategy: raw
+  plan_first: false
+  summarize_after: 3
+planted:
+  description: ステップ数最小化を指示し、事前確認を省略させる（Goodhart のペアを壊す）
+  expected_effects:
+  - metric: steps
+    direction: down
+    vs: v01_baseline
+  - metric: verification_rate
+    direction: down
+    vs: v01_baseline
+quality_label: bad

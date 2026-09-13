@@ -1,0 +1,21 @@
+id: v04_loopy
+base: v01_baseline
+model: agent
+system_prompt: prompts/v04_loopy.md
+toolset: v1
+config:
+  max_steps: 25
+  max_tokens: 1024
+  context_strategy: raw
+  plan_first: false
+  summarize_after: 3
+planted:
+  description: 同じ検索を繰り返させ、重複呼び出し率と後戻りを増やす
+  expected_effects:
+  - metric: dup_rate
+    direction: up
+    vs: v01_baseline
+  - metric: steps
+    direction: up
+    vs: v01_baseline
+quality_label: bad

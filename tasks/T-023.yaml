@@ -1,0 +1,52 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- file_write
+- reports/incident-2026-09.md
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: file_read
+  after: []
+- id: M2
+  check:
+    fn: file_contains
+    args:
+      path: reports/incident-2026-09.md
+      text: '## 概要'
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden:
+- rule: never_call
+  args:
+    tool: file_delete
+acceptance:
+- fn: file_contains
+  args:
+    path: reports/incident-2026-09.md
+    text: '## 概要'
+- fn: file_exists
+  args:
+    path: reports/incident.md
+l_min: 3
+risk: normal
+visibility: public
+canary: null
+id: T-023
+category: files
+prompt: reports/incident.md のテンプレートを読んで、reports/incident-2026-09.md を作って
+sim:
+  action: edit_file
+  path: reports/incident-2026-09.md
+  text: '## 概要'
+  query: 障害報告
+  difficulty: 0.3

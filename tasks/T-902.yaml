@@ -1,0 +1,27 @@
+fixture: office_small_v1
+kind: trivial
+tags:
+- trivial
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: finish
+  after: []
+forbidden: []
+acceptance:
+- fn: tool_called
+  args:
+    tool: finish
+l_min: 1
+risk: normal
+visibility: public
+canary: null
+id: T-902
+category: edge
+prompt: 作業は特にありません。了解と返してください
+sim:
+  action: do_nothing
+  query: ''
+  difficulty: 0.0

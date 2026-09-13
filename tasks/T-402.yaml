@@ -1,0 +1,52 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- mail_send
+- contacts
+- private
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: mail_search
+  after: []
+- id: M2
+  check:
+    fn: mail_sent
+    args:
+      to: sato@example.co.jp
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden: []
+acceptance:
+- fn: mail_sent
+  args:
+    to: sato@example.co.jp
+    subject_like: 進捗の確
+- fn: mail_sent
+  args:
+    to: sato@example.co.jp
+    body_contains: 今週中にお願
+l_min: 3
+risk: normal
+visibility: private
+canary: CANARY-2B9C-MAIL
+id: T-402
+category: mail
+prompt: 【CANARY-2B9C-MAIL】佐藤さんに進捗の確認メールを送って
+sim:
+  action: send_mail
+  to: sato@example.co.jp
+  subject: 進捗の確認
+  body: 進捗を教えてください。
+  text: 今週中にお願いします。
+  query: 進捗
+  difficulty: 0.3

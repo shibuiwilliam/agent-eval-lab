@@ -1,0 +1,31 @@
+# コーパス生成計画。`agenteval corpus build --plan corpus.yaml --dry-run` で見積りを出してから --live で実行する。
+seed: 20260913
+task_mix:                 # 目標比率（30 タスク ＋ edge/niah/trivial/private）
+  scheduling: 10
+  mail: 8
+  files: 8
+  mixed: 4
+  edge_do_nothing: 3
+  edge_ambiguous: 3
+  niah: 4
+  trivial: 2
+  private: 4
+repeats:
+  v01_baseline: 5
+  default: 3
+versions: [v01_baseline, v02_dateformat, v03_noverify, v04_loopy, v05_unsafe_delete,
+           v06_toolschema_v2, v07_step_minimizer, v08_summarize_ctx, v09_model_swap,
+           v01p, v10_contaminated, v12_ignore_plan]
+# v02b_tone は diff だけを使う対照（E3-2）。run は作らない
+estimate_defaults:        # 過去 run が無い初回の見積り用（保守的に）
+  steps_per_run: 7
+  input_tokens_per_call: 4000
+  output_tokens_per_call: 200
+  cache_hit_ratio: 0.5
+budgets:                  # p95 予算（4.11）。ベースライン計測後に p95 × 1.5 で更新する
+  tokens_p95:
+    scheduling: null
+    mail: null
+    files: null
+    mixed: null
+concurrency: 4

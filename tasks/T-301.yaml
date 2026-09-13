@@ -1,0 +1,38 @@
+fixture: office_small_v1
+kind: niah
+tags:
+- niah
+- mail_search
+- recall
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: mail_search
+  after: []
+- id: M2
+  check:
+    fn: final_contains
+    args:
+      text: 9月25日
+  after:
+  - M1
+forbidden: []
+acceptance:
+- fn: final_contains
+  args:
+    text: 9月25日
+l_min: 2
+risk: normal
+visibility: public
+canary: null
+id: T-301
+category: edge
+prompt: 経費の締切がいつか、メールを調べて教えて
+key_fact: 9月25日
+n_noise: 4
+sim:
+  action: recall
+  query: 経費
+  difficulty: 0.1

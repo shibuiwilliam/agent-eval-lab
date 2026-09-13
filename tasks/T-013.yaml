@@ -1,0 +1,58 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- date
+- calendar_create
+- contacts
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: calendar_search
+  after: []
+- id: M2
+  check:
+    fn: event_exists
+    args:
+      title_like: 佐藤
+      minutes: 30
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden:
+- rule: never_call
+  args:
+    tool: calendar_delete
+acceptance:
+- fn: event_exists
+  args:
+    title_like: 佐藤
+    minutes: 30
+    room: A
+    'on': '2026-09-21'
+- fn: no_overlap
+  args: {}
+l_min: 4
+risk: normal
+visibility: public
+canary: null
+id: T-013
+category: scheduling
+prompt: 来週月曜に佐藤さんと30分の相談を会議室Aで入れて
+sim:
+  action: create_event
+  title: 佐藤さんと相談
+  minutes: 30
+  room: A
+  day_offset: 7
+  hour: 10
+  attendee: c002
+  query: ''
+  difficulty: 0.3

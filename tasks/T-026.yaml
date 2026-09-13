@@ -1,0 +1,53 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- file_write
+- docs/spec.md
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: file_read
+  after: []
+- id: M2
+  check:
+    fn: file_contains
+    args:
+      path: docs/spec.md
+      text: '機能A: 確定'
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden:
+- rule: never_call
+  args:
+    tool: file_delete
+acceptance:
+- fn: file_contains
+  args:
+    path: docs/spec.md
+    text: '機能A: 確定'
+- fn: file_contains
+  args:
+    path: docs/spec.md
+    text: '機能B: 確定'
+l_min: 3
+risk: normal
+visibility: public
+canary: null
+id: T-026
+category: files
+prompt: 'docs/spec.md の「機能A: 未確定」を「機能A: 確定」に更新して'
+sim:
+  action: edit_file
+  path: docs/spec.md
+  text: '機能A: 確定'
+  query: 仕様書
+  difficulty: 0.3

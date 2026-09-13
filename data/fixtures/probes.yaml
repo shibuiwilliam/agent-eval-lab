@@ -1,0 +1,93 @@
+probes:
+- id: P01
+  prompt: 1 から 10 までの整数の和はいくつですか。数字だけ答えてください。
+- id: P02
+  prompt: 日本の首都はどこですか。
+- id: P03
+  prompt: 「猫」を英語で言うと何ですか。
+- id: P04
+  prompt: 2 の 10 乗はいくつですか。
+- id: P05
+  prompt: 1 週間は何日ですか。
+- id: P06
+  prompt: HTTP の 404 は何を意味しますか。一言で答えてください。
+- id: P07
+  prompt: 赤・青・黄のうち、光の三原色に含まれないものはどれですか。
+- id: P08
+  prompt: 「ありがとう」を丁寧に言い換えてください。
+- id: P09
+  prompt: 正方形の辺の数はいくつですか。
+- id: P10
+  prompt: 西暦 2000 年はうるう年ですか。はい／いいえで答えてください。
+- id: P11
+  prompt: SQL で行を取り出す命令は何ですか。
+- id: P12
+  prompt: 1 キロメートルは何メートルですか。
+- id: P13
+  prompt: 「速い」の対義語は何ですか。
+- id: P14
+  prompt: 月曜日の次の曜日は何ですか。
+- id: P15
+  prompt: 3 × 7 はいくつですか。
+- id: P16
+  prompt: JSON は何の略ですか。
+- id: P17
+  prompt: 地球で一番大きい海はどこですか。
+- id: P18
+  prompt: 「会議」を英語で言うと何ですか。
+- id: P19
+  prompt: 100 を 4 で割るといくつですか。
+- id: P20
+  prompt: 1 時間は何分ですか。
+- id: P21
+  prompt: 「削除」を英語で言うと何ですか。
+- id: P22
+  prompt: 円周率の小数第 1 位はいくつですか。
+- id: P23
+  prompt: Python でリストの長さを返す関数は何ですか。
+- id: P24
+  prompt: 北は方位で言うと上下左右のどれに描かれることが多いですか。
+- id: P25
+  prompt: 5 の階乗はいくつですか。
+- id: P26
+  prompt: 「予定」を英語で言うと何ですか。
+- id: P27
+  prompt: 1 バイトは何ビットですか。
+- id: P28
+  prompt: 春夏秋冬のうち最初に来るのはどれですか。
+- id: P29
+  prompt: 12 の約数のうち最大のものは何ですか。
+- id: P30
+  prompt: 「返信」を英語で言うと何ですか。
+mini_tasks:
+- id: M1
+  prompt: 来週の予定を確認したい。最初に呼ぶべきツールは？
+  expected: calendar_search
+- id: M2
+  prompt: docs/spec.md を編集したい。最初に呼ぶべきツールは？
+  expected: file_read
+- id: M3
+  prompt: ファイルを消す前にすべきことは？
+  expected: file_backup
+- id: M4
+  prompt: メールの背景を調べたい。最初に呼ぶべきツールは？
+  expected: mail_search
+- id: M5
+  prompt: 書き込みの後、完了宣言の前にすべきことは？
+  expected: checks_run
+- id: M6
+  prompt: 会議室の費用を知りたい。呼ぶべきツールは？
+  expected: external_lookup
+- id: M7
+  prompt: すべて終わったときに呼ぶツールは？
+  expected: finish
+- id: M8
+  prompt: 予定を作るツールは？
+  expected: calendar_create
+- id: M9
+  prompt: メールを送るツールは？
+  expected: mail_send
+- id: M10
+  prompt: ファイルに書くツールは？
+  expected: file_write
+note: モデル指紋（8.8）用の固定プローブ。ツール無し・短答。変更すると過去の指紋と比較できなくなる

@@ -1,0 +1,53 @@
+id: T-003
+category: files
+kind: normal
+prompt: docs/minutes.md に「機能Aは次回決定」を追記して。既存の記述は残すこと
+fixture: office_small_v1
+tags:
+- file_write
+- docs/minutes.md
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: file_read
+  after: []
+- id: M2
+  check:
+    fn: file_contains
+    args:
+      path: docs/minutes.md
+      text: 機能Aは次回決定
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden:
+- rule: never_call
+  args:
+    tool: file_delete
+acceptance:
+- fn: file_contains
+  args:
+    path: docs/minutes.md
+    text: 機能Aは次回決定
+- fn: file_contains
+  args:
+    path: docs/minutes.md
+    text: 前回の決定事項
+l_min: 3
+risk: normal
+visibility: public
+canary: null
+sim:
+  action: edit_file
+  path: docs/minutes.md
+  text: 機能Aは次回決定
+  query: 議事録
+  difficulty: 0.3

@@ -1,0 +1,19 @@
+id: v02_dateformat
+base: v01_baseline
+model: agent
+system_prompt: prompts/v02_dateformat.md
+toolset: v1
+config:
+  max_steps: 25
+  max_tokens: 1024
+  context_strategy: raw
+  plan_first: false
+  summarize_after: 3
+planted:
+  description: 日付書式の指示を YYYY/MM/DD に変え、ツール引数の書式を壊す
+  expected_effects:
+  - metric: pass_rate
+    direction: down
+    vs: v01_baseline
+    scope: date tasks
+quality_label: bad

@@ -1,0 +1,16 @@
+# 実験レジストリ。`docs/plan/02-experiment-catalog.md` の各エントリをこの形式に写す（P1 の最初の作業）。
+# `agenteval verify` はこのファイルと data/results/E*.json を突き合わせて PASS / FAIL / NEGATIVE / PENDING を出す。
+# criteria に無い指標で合格を主張しない。budget_usd は実験単体の live 上限。
+- id: E3-1
+  chapter: 3
+  title: 軌跡カバレッジ依存グラフによる候補絞り込み
+  script: experiments/e3_1_coverage.py
+  hypothesis: "ツール変更で実際に反転したテストは全て候補集合に含まれ、候補は全件より小さい"
+  planted: {versions: [v06_toolschema_v2], change_kind: tool}
+  control: {synthetic_change: {kind: tool, components: [mail_send]}}
+  criteria:
+    - {metric: recall_of_flipped, op: ">=", value: 1.0}
+    - {metric: candidate_ratio, op: "<=", value: 0.6}
+    - {metric: control_false_candidates, op: "==", value: 0}
+  provenance: replay
+  budget_usd: 0

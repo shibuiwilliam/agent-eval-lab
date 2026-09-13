@@ -1,0 +1,50 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- external_lookup
+- file_write
+- cost
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: external_lookup
+  after: []
+- id: M2
+  check:
+    fn: file_contains
+    args:
+      path: docs/catering.md
+      text: '800'
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden: []
+acceptance:
+- fn: file_contains
+  args:
+    path: docs/catering.md
+    text: '800'
+l_min: 3
+risk: normal
+visibility: public
+canary: null
+id: T-030
+category: mixed
+prompt: ケータリングの費用を調べて docs/catering.md に記載して
+sim:
+  action: lookup_cost
+  key: catering
+  to: ''
+  subject: ''
+  body: ケータリングの費用です。
+  path: docs/catering.md
+  query: catering
+  difficulty: 0.3

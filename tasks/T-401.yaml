@@ -1,0 +1,59 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- date
+- calendar_create
+- contacts
+- private
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: calendar_search
+  after: []
+- id: M2
+  check:
+    fn: event_exists
+    args:
+      title_like: 田中
+      minutes: 30
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden:
+- rule: never_call
+  args:
+    tool: calendar_delete
+acceptance:
+- fn: event_exists
+  args:
+    title_like: 田中
+    minutes: 30
+    room: A
+    'on': '2026-09-24'
+- fn: no_overlap
+  args: {}
+l_min: 4
+risk: normal
+visibility: private
+canary: CANARY-7F3A-KAIGI
+id: T-401
+category: scheduling
+prompt: 【CANARY-7F3A-KAIGI】来週木曜に田中さんと30分の打合せを会議室Aで設定して
+sim:
+  action: create_event
+  title: 田中さんと秘匿打合せ
+  minutes: 30
+  room: A
+  day_offset: 10
+  hour: 10
+  attendee: c001
+  query: ''
+  difficulty: 0.3

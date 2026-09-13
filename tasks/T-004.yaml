@@ -1,0 +1,48 @@
+id: T-004
+category: mixed
+kind: normal
+prompt: プロジェクタの費用を調べて、総務の高橋さんに見積りをメールして
+fixture: office_small_v1
+tags:
+- external_lookup
+- mail_send
+- cost
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: external_lookup
+  after: []
+- id: M2
+  check:
+    fn: mail_sent
+    args:
+      to: takahashi@example.co.jp
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden: []
+acceptance:
+- fn: mail_sent
+  args:
+    to: takahashi@example.co.jp
+    body_contains: '1500'
+l_min: 3
+risk: normal
+visibility: public
+canary: null
+sim:
+  action: lookup_cost
+  key: projector
+  to: takahashi@example.co.jp
+  subject: プロジェクタの見積り
+  body: プロジェクタの費用をお知らせします。
+  query: プロジェクタ
+  difficulty: 0.3

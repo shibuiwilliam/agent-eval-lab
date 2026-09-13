@@ -1,0 +1,26 @@
+fixture: office_small_v1
+kind: ambiguous
+tags:
+- ambiguous
+- clarify
+milestones:
+- id: M1
+  check:
+    fn: asked_question
+    args: {}
+  after: []
+forbidden: []
+acceptance:
+- fn: asked_question
+  args: {}
+l_min: 1
+risk: normal
+visibility: public
+canary: null
+id: T-203
+category: edge
+prompt: 例の件、返信しておいて
+sim:
+  action: ask
+  query: どのメールへの返信か
+  difficulty: 0.2

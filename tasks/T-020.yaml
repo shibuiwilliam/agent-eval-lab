@@ -1,0 +1,51 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- mail_send
+- contacts
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: mail_search
+  after: []
+- id: M2
+  check:
+    fn: mail_sent
+    args:
+      to: sato@example.co.jp
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden: []
+acceptance:
+- fn: mail_sent
+  args:
+    to: sato@example.co.jp
+    subject_like: 仕様書の
+- fn: mail_sent
+  args:
+    to: sato@example.co.jp
+    body_contains: 機能Aは未確
+l_min: 3
+risk: normal
+visibility: public
+canary: null
+id: T-020
+category: mail
+prompt: 佐藤さんに仕様書の機能Aが未確定であることを連絡して
+sim:
+  action: send_mail
+  to: sato@example.co.jp
+  subject: 仕様書の状況
+  body: 現状をお知らせします。
+  text: 機能Aは未確定です。
+  query: 仕様書
+  difficulty: 0.3

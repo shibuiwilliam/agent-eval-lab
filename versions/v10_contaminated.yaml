@@ -1,0 +1,21 @@
+id: v10_contaminated
+base: v01_baseline
+model: agent
+system_prompt: prompts/v10_contaminated.md
+toolset: v1
+config:
+  max_steps: 25
+  max_tokens: 1024
+  context_strategy: raw
+  plan_first: false
+  summarize_after: 3
+planted:
+  description: private タスクの canary 付き例文を few-shot に混入する（8.9 の汚染）
+  expected_effects:
+  - metric: private_pass_rate
+    direction: up
+    vs: v01_baseline
+  - metric: canary_hits
+    direction: up
+    vs: v01_baseline
+quality_label: bad

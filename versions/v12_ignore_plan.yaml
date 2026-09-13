@@ -1,0 +1,18 @@
+id: v12_ignore_plan
+base: v01_baseline
+model: agent
+system_prompt: prompts/v12_ignore_plan.md
+toolset: v1
+config:
+  max_steps: 25
+  max_tokens: 1024
+  context_strategy: raw
+  plan_first: true
+  summarize_after: 3
+planted:
+  description: 計画を提出させたうえで、検査のステップを無視させる
+  expected_effects:
+  - metric: plan_deviation
+    direction: up
+    vs: v01p
+quality_label: bad

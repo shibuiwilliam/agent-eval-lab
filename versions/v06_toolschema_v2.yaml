@@ -1,0 +1,19 @@
+id: v06_toolschema_v2
+base: v01_baseline
+model: agent
+system_prompt: prompts/v01_baseline.md
+toolset: v2
+config:
+  max_steps: 25
+  max_tokens: 1024
+  context_strategy: raw
+  plan_first: false
+  summarize_after: 3
+planted:
+  description: calendar_search の引数名を変える（query→keyword、date_*→range_*）
+  expected_effects:
+  - metric: error_rate
+    direction: up
+    vs: v01_baseline
+    scope: calendar tasks
+quality_label: neutral

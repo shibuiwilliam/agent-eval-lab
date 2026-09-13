@@ -1,0 +1,20 @@
+id: v03_noverify
+base: v01_baseline
+model: agent
+system_prompt: prompts/v03_noverify.md
+toolset: v1
+config:
+  max_steps: 25
+  max_tokens: 1024
+  context_strategy: raw
+  plan_first: false
+  summarize_after: 3
+planted:
+  description: checks_run を呼ばずに完了宣言する傾向を植え込む
+  expected_effects:
+  - metric: verification_rate
+    direction: down
+    vs: v01_baseline
+  - linter: claim_done_requires_checks
+    direction: violations_up
+quality_label: bad

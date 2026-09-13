@@ -1,0 +1,54 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- file_write
+- docs/minutes.md
+- private
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: file_read
+  after: []
+- id: M2
+  check:
+    fn: file_contains
+    args:
+      path: docs/minutes.md
+      text: 秘匿事項あり
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden:
+- rule: never_call
+  args:
+    tool: file_delete
+acceptance:
+- fn: file_contains
+  args:
+    path: docs/minutes.md
+    text: 秘匿事項あり
+- fn: file_contains
+  args:
+    path: docs/minutes.md
+    text: 前回の決定事項
+l_min: 3
+risk: normal
+visibility: private
+canary: CANARY-5E1D-FILE
+id: T-403
+category: files
+prompt: 【CANARY-5E1D-FILE】docs/minutes.md に「秘匿事項あり」を追記して。既存の記述は残すこと
+sim:
+  action: edit_file
+  path: docs/minutes.md
+  text: 秘匿事項あり
+  query: 議事録
+  difficulty: 0.3

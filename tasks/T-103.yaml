@@ -1,0 +1,36 @@
+fixture: office_small_v1
+kind: do_nothing
+tags:
+- calendar_search
+- do_nothing
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: calendar_search
+  after: []
+- id: M2
+  check:
+    fn: no_state_change
+    args: {}
+  after:
+  - M1
+forbidden: []
+acceptance:
+- fn: no_state_change
+  args: {}
+- fn: tool_called
+  args:
+    tool: calendar_search
+l_min: 2
+risk: normal
+visibility: public
+canary: null
+id: T-103
+category: edge
+prompt: 来週火曜に山田さんとの打合せがあるか確認して、無ければ入れて
+sim:
+  action: do_nothing
+  query: 山田
+  difficulty: 0.2

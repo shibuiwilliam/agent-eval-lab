@@ -1,0 +1,51 @@
+fixture: office_small_v1
+kind: normal
+tags:
+- mail_send
+- contacts
+milestones:
+- id: M1
+  check:
+    fn: tool_called
+    args:
+      tool: mail_search
+  after: []
+- id: M2
+  check:
+    fn: mail_sent
+    args:
+      to: takahashi@example.co.jp
+  after:
+  - M1
+- id: M3
+  check:
+    fn: tool_called
+    args:
+      tool: checks_run
+  after:
+  - M2
+forbidden: []
+acceptance:
+- fn: mail_sent
+  args:
+    to: takahashi@example.co.jp
+    subject_like: プロジェ
+- fn: mail_sent
+  args:
+    to: takahashi@example.co.jp
+    body_contains: 来週の打合せ
+l_min: 3
+risk: normal
+visibility: public
+canary: null
+id: T-021
+category: mail
+prompt: 高橋さんにプロジェクタの手配を依頼して
+sim:
+  action: send_mail
+  to: takahashi@example.co.jp
+  subject: プロジェクタの手配依頼
+  body: お願いがあります。
+  text: 来週の打合せで使います。
+  query: プロジェクタ
+  difficulty: 0.3
