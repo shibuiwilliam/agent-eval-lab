@@ -16,7 +16,13 @@ from agenteval.core.schema import Change, Run
 # 軌跡から推定するための対応表（原典 3.2 のカバレッジを近似する）。
 SECTION_TOOLS: dict[str, set[str]] = {
     "role": set(),
-    "workflow": {"calendar_search", "mail_search", "file_read", "external_lookup"},
+    "workflow": {
+        "calendar_search",
+        "mail_search",
+        "file_read",
+        "external_lookup",
+        "contacts_search",
+    },
     "date_format": {"calendar_search", "calendar_create"},
     "verification": {"checks_run"},
     "safety": {"file_backup", "file_delete", "calendar_delete"},
@@ -24,7 +30,7 @@ SECTION_TOOLS: dict[str, set[str]] = {
     "clarify": {"finish"},
     "finish_rules": {"finish"},
     "efficiency": set(),
-    "thoroughness": {"calendar_search", "mail_search", "file_read"},
+    "thoroughness": {"calendar_search", "mail_search", "file_read", "contacts_search"},
     "plan_override": {"submit_plan"},
     "examples": set(),
     "external_fields": {"external_lookup"},

@@ -45,7 +45,7 @@ visibility: public
 canary: null
 id: T-009
 category: scheduling
-prompt: 来週金曜に山田さんと30分の打合せを会議室Aで設定して
+prompt: 来週金曜に山田さんと30分の打合せを会議室Aで設定して。時間帯は空いているところで構いません
 sim:
   action: create_event
   title: 山田さんと打合せ

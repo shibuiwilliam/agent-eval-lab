@@ -31,7 +31,7 @@ SECTION_RE = re.compile(r"<!--\s*section:\s*([a-z0-9_]+)\s*-->")
 class SimFlags:
     """system prompt から読み取った挙動フラグ。"""
 
-    search_before_write: bool = True
+    search_before_write: bool = True  # 版によらず True（下の from_prompt のコメントを参照）
     verify_before_finish: bool = True
     backup_before_delete: bool = True
     clarify_when_ambiguous: bool = True
@@ -51,7 +51,12 @@ class SimFlags:
             end = marks[i + 1].start() if i + 1 < len(marks) else len(prompt)
             bodies[m.group(1)] = prompt[m.end() : end].strip()
         return cls(
-            search_before_write="workflow" in bodies and "検索" in bodies.get("workflow", ""),
+            # live で確認（IMPROVEMENT.md L5）: `workflow` section を落とした v07 でも、
+            # 実エージェントは file_read / calendar_search を省かない。
+            # 「編集前に読む」「作る前に空きを確認する」はツールの説明文自体に書いてあり、
+            # それはどの版にも共通だからである。省かれるのは checks_run（verification）だけだった。
+            # そのため、行動に必要な 1 回の情報取得は版によらず行う。
+            search_before_write=True,
             verify_before_finish="verification" in bodies,
             backup_before_delete="safety" in bodies,
             clarify_when_ambiguous="clarify" in bodies,
@@ -256,6 +261,15 @@ class Simulator:
         if history and history[-1].is_error and history[-1].tool == "calendar_search":
             return self._search_call(schema_v2, flags, force_correct=True)
 
+        # 1.5) 宛先が要る行動では、送る前に連絡先を引いてアドレスを確かめる
+        if (
+            flags.search_before_write
+            and self.task.sim.to
+            and "contacts_search" not in called
+            and not wrote
+        ):
+            return ("contacts_search", {"query": self._contact_query()})
+
         # 2) 書き込み（検査で重複が見つかって消した場合は、空き時間に作り直す）
         recreate = self._needs_recreate(history)
         if recreate is not None:
@@ -281,6 +295,10 @@ class Simulator:
         if any(not h.is_error for h in attempts):
             return True
         return len(attempts) >= 2
+
+    def _contact_query(self) -> str:
+        """宛先アドレスの手前部分を連絡先検索の語にする（`sato@...` → `sato`）。"""
+        return (self.task.sim.to or "").split("@")[0]
 
     def _lookup_tool(self) -> str:
         action = self.task.sim.action

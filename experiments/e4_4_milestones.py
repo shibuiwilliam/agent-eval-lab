@@ -115,6 +115,22 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
     rho, p_value = spearmanr([r["milestone_score"] for r in rows], [r["pass_rate"] for r in rows])
     synthetic = synthetic_check()
 
+    # 診断用（基準には使わない）: コーパスにある全 12 版で同じ相関を取る。
+    # カタログが指定する版は 4 つだけで、しかも合格率がほぼ同点なので ρ が定まらない。
+    all_versions = sorted({r.version_id for r in runs})
+    all_rows = []
+    for version in all_versions:
+        subset = [r for r in runs if r.version_id == version and r.outcome]
+        if not subset:
+            continue
+        all_rows.append(
+            (
+                sum(r.outcome.milestone_score for r in subset if r.outcome) / len(subset),
+                sum(r.passed() for r in subset) / len(subset),
+            )
+        )
+    rho_all, p_all = spearmanr([r[0] for r in all_rows], [r[1] for r in all_rows])
+
     fig = plotting.scatter(
         "E4-4",
         "score_vs_pass",
@@ -134,6 +150,9 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         "score_out_of_order": labeled(synthetic["out_of_order"]),
         "score_unreached": labeled(synthetic["unreached"]),
         "n_versions": labeled(len(rows)),
+        "spearman_rho_all_versions": labeled(round(float(rho_all), 4)),
+        "spearman_p_all_versions": labeled(round(float(p_all), 4)),
+        "n_versions_all": labeled(len(all_rows)),
     }
     notes = [
         f"版ごとの値: {rows}",
@@ -147,6 +166,21 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
             "順序違いでは M3（after=[M2]）が部分点にならない。"
         ),
     ]
+    notes.append(
+        f"診断（基準外）: コーパスの全 {len(all_rows)} 版で同じ相関を取ると ρ = {round(float(rho_all), 3)}"
+        f"（p = {round(float(p_all), 3)}）。カタログが指定する 4 版では、live 検証にもとづく"
+        "シミュレータの修正（IMPROVEMENT.md L5）後に v01 / v03 / v07 の合格率がほぼ同点になり、"
+        "順位相関が定義しにくくなった。"
+    )
+    if float(rho) < 0.6:
+        notes.append(
+            "判定は FAIL（実験設計の不備）。合成軌跡による順序判定（正しい順序 = 1.0、"
+            "順序違い = 0.67、未到達 = 0.33）は期待どおりで、半順序の実装自体は動いている。"
+            "成立しなかったのは「部分点が版の品質順序と整合する」側で、"
+            "原因は比較する版が 4 つしかなく、しかもそのうち 3 つの合格率が同点に近いこと"
+            f"（p = {round(float(p_value), 3)} で有意でない）。"
+            "修正案: 版を増やすか、版ではなくタスク単位で相関を取る（どちらも基準の変更を伴うので ADR が要る）。"
+        )
     return finalize("E4-4", metrics, METHOD, notes, figures=[("部分点と合格率", fig)], seed=seed)
 
 

@@ -33,7 +33,14 @@ ABLATION_RUBRIC = """あなたはツール呼び出しの結果が、その後�
 1: 参照されていない（結果を使わずに後続が決まっている）"""
 
 DESTRUCTIVE = {"file_delete", "calendar_delete"}
-READ_TOOLS = {"calendar_search", "mail_search", "file_read", "external_lookup", "checks_run"}
+READ_TOOLS = {
+    "calendar_search",
+    "mail_search",
+    "contacts_search",
+    "file_read",
+    "external_lookup",
+    "checks_run",
+}
 
 
 def offline_step_judge(payload: str) -> Verdict:

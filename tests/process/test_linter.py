@@ -86,6 +86,26 @@ def test_claim_done_requires_checks() -> None:
     assert not lint(with_check, rules)
 
 
+def test_claim_done_requires_checks_fires_without_finish() -> None:
+    """live で判明した偽陰性への回帰テスト（IMPROVEMENT.md L1）。
+
+    実エージェントは finish を呼ばずに終わることが多い。finish が無くても
+    「書き込んだのに検査していない」を検出できること。
+    """
+    rules = [r for r in GLOBAL_RULES if r.id == "claim_done_requires_checks"]
+    no_finish = [call("file_write", path="x"), result("file_write")]
+    assert len(lint(no_finish, rules)) == 1
+    with_check = [call("file_write", path="x"), call("checks_run")]
+    assert not lint(with_check, rules)
+
+
+def test_declare_completion_with_finish() -> None:
+    rules = [r for r in GLOBAL_RULES if r.id == "declare_completion_with_finish"]
+    assert len(lint([call("file_read", path="x")], rules)) == 1
+    assert not lint([call("file_read", path="x"), finish()], rules)
+    assert not lint([], rules)
+
+
 def test_task_forbidden_rule_is_compiled() -> None:
     rules = build_rules(get_task("T-001"))
     ids = {r.id for r in rules}

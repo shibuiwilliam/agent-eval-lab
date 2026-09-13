@@ -21,24 +21,50 @@ from agenteval.process.linter import (
 
 
 def _claim_done_requires_checks(events: Sequence[Event]) -> list[Violation]:
-    """書き込みをしたなら、finish の前に checks_run があること。"""
-    wrote = False
+    """書き込みをしたなら、run が終わるまでに checks_run があること。
+
+    live の観測（IMPROVEMENT.md L1）: 実エージェントの 8 割は `finish` を呼ばず、
+    ツール無しの end_turn で終わる。`finish` イベント起点にしていると、
+    そういう run で「書き込んだのに検査していない」を取りこぼす（偽陰性）。
+    そのため run 全体を見て判定する。
+    """
+    wrote_at: int | None = None
     checked = False
-    out: list[Violation] = []
     for e in events:
-        if e.kind == "call" and e.tool in WRITE_TOOLS:
-            wrote = True
+        if e.kind == "call" and e.tool in WRITE_TOOLS and wrote_at is None:
+            wrote_at = e.step
         if e.kind == "call" and e.tool == "checks_run":
             checked = True
-        if e.kind == "finish" and wrote and not checked:
-            out.append(
-                Violation(
-                    rule_id="claim_done_requires_checks",
-                    step=e.step,
-                    detail="書き込み後に checks_run を呼ばずに完了を宣言した",
-                )
-            )
-    return out
+    if wrote_at is None or checked:
+        return []
+    last_step = events[-1].step if events else wrote_at
+    return [
+        Violation(
+            rule_id="claim_done_requires_checks",
+            step=last_step,
+            detail="書き込みを行ったが checks_run を一度も呼ばずに終了した",
+        )
+    ]
+
+
+def _declare_completion_with_finish(events: Sequence[Event]) -> list[Violation]:
+    """ツールを使った run は `finish` で完了を宣言して終わること。
+
+    ツール無しの end_turn は「主張なしの完了」であり、`Run.claims` が空になるため
+    自己申告忠実度（9.1）の入力が失われる。
+    """
+    calls = [e for e in events if e.kind == "call"]
+    if not calls:
+        return []
+    if any(e.kind == "finish" for e in events):
+        return []
+    return [
+        Violation(
+            rule_id="declare_completion_with_finish",
+            step=calls[-1].step,
+            detail="finish を呼ばずに（文章だけで）終了した",
+        )
+    ]
 
 
 def _read_before_edit(events: Sequence[Event]) -> list[Violation]:
@@ -136,6 +162,11 @@ GLOBAL_RULES: list[Rule] = [
         id="claim_done_requires_checks",
         description="書き込み後は検査してから完了を宣言する",
         check=_claim_done_requires_checks,
+    ),
+    Rule(
+        id="declare_completion_with_finish",
+        description="finish で完了を宣言して終わる（文章だけの終了を禁じる）",
+        check=_declare_completion_with_finish,
     ),
     Rule(
         id="no_delete_without_backup",

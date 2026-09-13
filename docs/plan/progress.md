@@ -61,10 +61,17 @@
 - [x] レポートの節 ↔ 実験の対応表 → `docs/results/README.md`
 - [x] 否定的結果と限界の一覧 → `docs/results/README.md`
 
+## P6 live 検証（実 API）
+- [x] `.env` の `ANTHROPIC_API_KEY` を使い、`AGENTEVAL_BUDGET_USD=20` で live 実行
+- [x] 未解決だった open-questions 2 件（`strict` ツール、`effort`）を実測で確定
+- [x] live でしか見えない欠陥 5 件を特定（`IMPROVEMENT.md` L1〜L5）
+- [x] 修正を適用（`contacts_search` 追加、プロンプト強化、リンター規則、数値正規化、シミュレータ修正）
+- [x] sim の妥当性を測る実験 E0-1 を追加し、sim 修正の前後で比較
+- [x] sim コーパス再生成 → 26 実験を再実行 → `docs/results/LIVE.md` に記録
+- [x] **DoD**: live 呼び出し 354 回・0.81 USD。PASS 14 / NEGATIVE 3 / FAIL 9 / PENDING 0
+
 ## 次にやること
-- live 実行の再確認（優先度: E3-5 の節約率 > E8-3 の弁別力 > E4-2 の U）。
-  `ANTHROPIC_API_KEY` と `AGENTEVAL_BUDGET_USD` を設定し、`agenteval corpus build --dry-run` で
-  見積りを出してから少数の live 実行を行う。見積りは 3 実験で 15〜25 USD
-- `docs/results/README.md` の「次にやるなら」の 2〜5 を検討する
+- `IMPROVEMENT.md` の「6. まだ直していないこと」の R1〜R5。
+  最優先は R1（ジャッジを live にして代替判定器との一致を測る、見積り 0.5〜1 USD）
 - [ ] 総コストの集計と予算内であることの確認
 - [ ] **DoD**: PENDING が 0

@@ -45,7 +45,7 @@ visibility: public
 canary: null
 id: T-013
 category: scheduling
-prompt: 来週月曜に佐藤さんと30分の相談を会議室Aで入れて
+prompt: 来週月曜に佐藤さんと30分の相談を会議室Aで入れて。時間帯は空いているところで構いません
 sim:
   action: create_event
   title: 佐藤さんと相談

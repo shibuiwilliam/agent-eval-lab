@@ -30,8 +30,12 @@ def labeled(value: Any, provenance: str = "simulated") -> dict[str, Any]:
 
 
 def corpus() -> list[Run]:
-    """コーパスを読む。無ければ corpus build を促す。"""
-    runs = load_corpus()
+    """sim コーパスを読む。無ければ corpus build を促す。
+
+    `data/traces/` には live 実行（E0-1 の比較用）も入るので、**mode で必ず絞る**。
+    絞らないと live の run が sim コーパスの統計に混ざる（live 検証で見つかった不具合）。
+    """
+    runs = [r for r in load_corpus() if r.mode == "sim"]
     if not runs:
         raise RuntimeError(
             "コーパスが空です。先に `uv run agenteval corpus build --plan corpus.yaml --sim` を実行してください"

@@ -45,7 +45,7 @@ visibility: public
 canary: null
 id: T-014
 category: scheduling
-prompt: 経理レビューの後に伊藤さんと30分の打合せを会議室Aで設定して
+prompt: 来週水曜の経理レビューの後に、伊藤さんと30分の打合せを会議室Aで設定して
 sim:
   action: create_event
   title: 伊藤さんと精算

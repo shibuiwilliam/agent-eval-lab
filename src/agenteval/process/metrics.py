@@ -14,7 +14,14 @@ from agenteval.core.normalize import action_key
 from agenteval.core.schema import Run
 from agenteval.env.tools import WRITE_TOOLS
 
-READ_TOOLS = {"calendar_search", "mail_search", "file_read", "external_lookup", "checks_run"}
+READ_TOOLS = {
+    "calendar_search",
+    "mail_search",
+    "contacts_search",
+    "file_read",
+    "external_lookup",
+    "checks_run",
+}
 VERIFICATION_TOOLS = {"checks_run"}
 
 

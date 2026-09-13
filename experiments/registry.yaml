@@ -406,3 +406,20 @@
     - {metric: gap_v01, op: "<=", value: 0.1}
   provenance: simulated
   budget_usd: 0
+
+- id: E0-1
+  chapter: 0
+  title: シミュレート・エージェントと live の一致度（sim の妥当性）
+  script: experiments/e0_1_sim_fidelity.py
+  hypothesis: "sim（ADR-008）で作った軌跡は、live で同じ (task, version, repeat) を走らせた軌跡と、評価手法が見る量の水準で一致する"
+  planted: {versions: [v01_baseline, v03_noverify, v07_step_minimizer], live_runs: 90}
+  planted_text: "同じ 10 タスク × 3 版 × 3 反復を live と sim の両方で実行し、評価手法が使う量を突き合わせる"
+  control: {same_version_repeat: true}
+  control_text: "同じ (task, version, repeat) どうしを対応づけて比較する（版をまたいだ比較はしない）"
+  criteria:
+    - {metric: outcome_agreement, op: ">=", value: 0.7}
+    - {metric: pass_rate_gap, op: "<=", value: 0.15}
+    - {metric: tool_sequence_similarity, op: ">=", value: 0.6}
+    - {metric: version_ordering_preserved, op: "==", value: 1}
+  provenance: live
+  budget_usd: 3.0

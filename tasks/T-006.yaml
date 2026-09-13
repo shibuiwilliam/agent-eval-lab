@@ -45,7 +45,7 @@ visibility: public
 canary: null
 id: T-006
 category: scheduling
-prompt: 来週火曜に佐藤さんと1時間の打合せを会議室Bで設定して
+prompt: 来週火曜に佐藤さんと1時間の打合せを会議室Bで設定して。時間帯は空いているところで構いません
 sim:
   action: create_event
   title: 佐藤さんと打合せ

@@ -1,7 +1,7 @@
 id: T-001
 category: scheduling
 kind: normal
-prompt: 来週、田中さんと30分の打合せを会議室Aで設定して
+prompt: 来週月曜、田中さんと30分の打合せを会議室Aで設定して。時間帯は空いているところで構いません
 fixture: office_small_v1
 tags:
 - date

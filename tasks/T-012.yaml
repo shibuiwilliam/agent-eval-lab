@@ -45,7 +45,7 @@ visibility: public
 canary: null
 id: T-012
 category: scheduling
-prompt: 再来週の月曜に田中さんと30分のフォロー打合せを会議室Aで設定して
+prompt: 再来週の月曜に田中さんと30分のフォロー打合せを会議室Aで設定して。時間帯は空いているところで構いません
 sim:
   action: create_event
   title: 田中さんとフォロー
