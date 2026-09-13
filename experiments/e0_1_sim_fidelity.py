@@ -25,8 +25,12 @@ from agenteval.pts.selector import similarity
 from agenteval.reports import plotting
 
 TASKS = ["T-001", "T-002", "T-003", "T-005", "T-006", "T-015", "T-022", "T-028", "T-101", "T-201"]
-VERSIONS = ["v01_baseline", "v03_noverify", "v07_step_minimizer"]
-REPEATS = 3
+# v02_dateformat を含める理由（IMPROVEMENT.md R3）: v01 / v03 / v07 は live でも sim でも
+# 合格率が統計的に分離できず（n=60 でも信頼区間が全部重なる）、「版の順序が保たれるか」を
+# 検証できる版の組が 1 つも無かった。日付書式を壊す v02 は sim で合格率が明確に下がるので、
+# 順序を検証できる組を作るために加える。
+VERSIONS = ["v01_baseline", "v03_noverify", "v07_step_minimizer", "v02_dateformat"]
+REPEATS = 6  # R5: live の反復を 3 → 6 に増やした（IMPROVEMENT.md R5）
 SEED = 20260913
 
 METHOD = """同じ (task, version, repeat) の組を live と sim の両方で実行し、評価手法が入力に使う量を
@@ -94,6 +98,29 @@ def main(live: bool = False, seed: int = SEED) -> dict[str, Any]:
     order_live = sorted(VERSIONS, key=lambda v: live_rates[v], reverse=True)
     order_sim = sorted(VERSIONS, key=lambda v: sim_rates[v], reverse=True)
 
+    # R3 の判断材料: live 側で 2 版の合格率が統計的に分離できる組はいくつあるか
+    # （二項の Wald 95% 区間が重ならない組を「分離できる」と数える）
+    import itertools
+    import math
+
+    def ci(version: str) -> tuple[float, float]:
+        subset = [r for k, r in live_runs.items() if k[1] == version and k in keys]
+        n = len(subset)
+        p = sum(r.passed() for r in subset) / n if n else 0.0
+        half = 1.96 * math.sqrt(max(p * (1 - p), 1e-9) / max(n, 1))
+        return (p - half, p + half)
+
+    separable = []
+    for va, vb in itertools.combinations(VERSIONS, 2):
+        lo_a, hi_a = ci(va)
+        lo_b, hi_b = ci(vb)
+        if hi_a < lo_b or hi_b < lo_a:
+            separable.append((va, vb))
+    # 分離できる組についてだけ、sim が live と同じ大小関係を出しているか
+    ordering_on_separable = all(
+        (live_rates[a] > live_rates[b]) == (sim_rates[a] > sim_rates[b]) for a, b in separable
+    )
+
     def metric(runs: dict[tuple[str, str, int], Run], field: str) -> float:
         rows = [metrics_mod.compute(runs[k], l_min=get_task(k[0]).l_min) for k in keys]
         return metrics_mod.aggregate(rows, field)
@@ -130,6 +157,11 @@ def main(live: bool = False, seed: int = SEED) -> dict[str, Any]:
             round(metric(sim_runs, "stop_appropriate"), 4), "simulated"
         ),
         "live_usd": labeled(round(usd, 4), "live"),
+        "n_separable_version_pairs": labeled(len(separable), "live"),
+        "ordering_ok_on_separable_pairs": labeled(int(ordering_on_separable), "live"),
+        "live_ci_half_width": labeled(
+            round((ci(VERSIONS[0])[1] - ci(VERSIONS[0])[0]) / 2, 4), "live"
+        ),
     }
     notes = [
         f"live の版ごとの合格率: { {k: round(v, 3) for k, v in live_rates.items()} }",

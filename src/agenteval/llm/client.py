@@ -39,6 +39,9 @@ class MessageRequest(BaseModel):
     tools: list[dict[str, Any]] = Field(default_factory=list)
     tool_choice: dict[str, Any] | None = None
     max_tokens: int = 1024
+    # `output_config.effort` 用。対応しないモデルに渡すと 400 になるので、
+    # 呼び出し側が `models.supports_effort()` で確認してから設定する
+    output_config: dict[str, Any] | None = None
 
     def cassette_body(self) -> dict[str, Any]:
         """ハッシュ対象の本文。"""
@@ -139,6 +142,8 @@ class LLMClient:
             kwargs["tools"] = req.tools
         if req.tool_choice:
             kwargs["tool_choice"] = req.tool_choice
+        if req.output_config:
+            kwargs["output_config"] = req.output_config
         message = client.messages.create(**kwargs)
         elapsed = time.monotonic() - started
         dumped: dict[str, Any] = message.model_dump()

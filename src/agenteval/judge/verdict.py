@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from agenteval.llm.client import LLMClient, MessageRequest
-from agenteval.llm.models import judge_request_defaults, model_id
+from agenteval.llm.models import judge_request_defaults, model_id, supports_effort
 
 JUDGE_TOOL: dict[str, Any] = {
     "name": "submit_verdict",
@@ -55,13 +55,17 @@ def ask(
         verdict.provenance = "simulated"
         verdict.model = "offline-rubric"
         return verdict
+    judge_model = model_id("judge")
+    defaults = judge_request_defaults()
+    if not supports_effort(judge_model):
+        defaults.pop("output_config", None)
     request = MessageRequest(
-        model=model_id("judge"),
+        model=judge_model,
         system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": [{"type": "text", "text": user}]}],
         tools=[JUDGE_TOOL],
         tool_choice={"type": "tool", "name": "submit_verdict"},
-        **judge_request_defaults(),
+        **defaults,
     )
     result = client.create(request)
     uses = result.tool_uses()

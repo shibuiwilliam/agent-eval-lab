@@ -5,7 +5,7 @@
 | 判定 | 件数 |
 |---|---|
 | PASS | 14 |
-| NEGATIVE | 3 |
+| NEGATIVE | 4 |
 | FAIL | 9 |
 | PENDING | 0 |
 
@@ -32,10 +32,11 @@
 | [E8-3](E8-3.md) | 8 | 弁別力と飽和 | NEGATIVE | trivial_abs_d=0○ / trivial_saturated=1○ / boundary_d=0.0677× / lifecycle_received=1○ | simulated | 0.0 |
 | [E8-4](E8-4.md) | 8 | 二重トラック κ | PASS | kappa_before=1○ / kappa_drop=1○ | simulated | 0.0 |
 | [E8-5](E8-5.md) | 8 | ドリフト帰属（要因別入替） | PASS | single_factor_match_rate=1○ / two_factor_top2_match=1○ / control_alarm=0○ | simulated | 0.0 |
-| [E8-6](E8-6.md) | 8 | モデル指紋による入替検知 | PASS | control_false_alarm_rate=0○ / swap_p_value=0.002○ | simulated | 0.0 |
+| [E8-6](E8-6.md) | 8 | モデル指紋による入替検知 | PASS | control_false_alarm_rate=0○ / swap_p_value=0.002○ / live_control_p_value=0.716○ / live_swap_p_value=0.0455○ | simulated | 0.0 |
 | [E8-7](E8-7.md) | 8 | 本番→テスト・パイプライン | FAIL | stratified_lift=1.89× / approval_rate=1○ / js_after_lt_before=1○ | simulated | 0.0 |
 | [E8-8](E8-8.md) | 8 | テストのライフサイクル状態機械 | PASS | transitions_pass=1○ / retired_terminal=1○ / append_only=1○ / no_trigger_stays=1○ | unit | 0.0 |
 | [E8-9](E8-9.md) | 8 | 汚染検知（カナリア走査） | FAIL | canary_detection_rate=1○ / baseline_hits=0○ / gap_v10=0.177× / gap_v01=-0.0476○ | simulated | 0.0 |
-| [E0-1](E0-1.md) | 0 | シミュレート・エージェントと live の一致度（sim の妥当性） | FAIL | outcome_agreement=0.822○ / pass_rate_gap=0.167× / tool_sequence_similarity=0.659○ / version_ordering_preserved=0× | live | 0.6172 |
+| [E0-1](E0-1.md) | 0 | シミュレート・エージェントと live の一致度（sim の妥当性） | FAIL | outcome_agreement=0.817○ / pass_rate_gap=0.183× / tool_sequence_similarity=0.668○ / version_ordering_preserved=0× / n_separable_version_pairs=2○ / ordering_ok_on_separable_pairs=1○ | live | 1.6793 |
+| [E0-2](E0-2.md) | 0 | ジャッジの一致度と安定性（live Sonnet 5 と決定的代替判定器） | NEGATIVE | score_agreement_within_1=0.683× / mutation_drop_rate_live=0.989○ / rejudge_agreement_live=1○ / original_mean_score_live=3.7○ | live | 0.6382 |
 
-総コスト: 0.6172 USD
+総コスト: 2.3175 USD

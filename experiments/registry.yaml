@@ -352,9 +352,13 @@
   control: {same_model_twice: true}
   control_text: "Haiku の 2 回取得"
   criteria:
+    # 人工分布に対する基準（改訂前。そのまま残す）
     - {metric: control_false_alarm_rate, op: "<=", value: 0.1}
     - {metric: swap_p_value, op: "<", value: 0.05}
-  provenance: simulated
+    # live 指紋に対する基準（ADR-013 で追加。緩めるのではなく足している）
+    - {metric: live_control_p_value, op: ">=", value: 0.05}
+    - {metric: live_swap_p_value, op: "<", value: 0.05}
+  provenance: live
   budget_usd: 3.0
 
 - id: E8-7
@@ -420,6 +424,28 @@
     - {metric: outcome_agreement, op: ">=", value: 0.7}
     - {metric: pass_rate_gap, op: "<=", value: 0.15}
     - {metric: tool_sequence_similarity, op: ">=", value: 0.6}
+    # 全順序の一致。live 側で同点の版があると定義できないことが分かったが、
+    # 「基準は後から緩めない」（CLAUDE.md）ので**残す**。判定は FAIL のままになる
     - {metric: version_ordering_preserved, op: "==", value: 1}
+    # 統計的に分離できる版の組に限った順序の一致（ADR-015 で追加。緩めるのではなく足している）
+    - {metric: n_separable_version_pairs, op: ">=", value: 1}
+    - {metric: ordering_ok_on_separable_pairs, op: "==", value: 1}
   provenance: live
   budget_usd: 3.0
+
+- id: E0-2
+  chapter: 0
+  title: ジャッジの一致度と安定性（live Sonnet 5 と決定的代替判定器）
+  script: experiments/e0_2_judge_fidelity.py
+  hypothesis: "決定的代替判定器（judge/rubric.py）は live の Sonnet 5 ジャッジと十分一致し、live ジャッジ自身も再判定に対して安定である"
+  planted: {mutations: [wrong_tool, wrong_args, destructive], n_steps: 30}
+  planted_text: "E4-5 と同じ 30 ステップ ＋ 3 種の変異（計 120 件）を、live の Sonnet 5 と決定的代替判定器の両方で判定する"
+  control: {rejudge: 2}
+  control_text: "同じ入力を live ジャッジで 2 回判定し、スコアが ±1 に収まるかを見る（sim では定義上 1.0 になるため検証できなかった項目）"
+  criteria:
+    - {metric: score_agreement_within_1, op: ">=", value: 0.7}
+    - {metric: mutation_drop_rate_live, op: ">=", value: 0.8}
+    - {metric: rejudge_agreement_live, op: ">=", value: 0.8}
+    - {metric: original_mean_score_live, op: ">=", value: 3.5}
+  provenance: live
+  budget_usd: 1.5

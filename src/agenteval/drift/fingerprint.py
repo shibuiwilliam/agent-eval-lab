@@ -54,6 +54,62 @@ def load_probes(path: Path | None = None) -> list[dict[str, Any]]:
     return probes
 
 
+def collect_live(model: str, label: str, client: Any, chars: int = 20) -> Fingerprint:
+    """実 API で指紋を取る（IMPROVEMENT.md R2）。
+
+    プローブ 30 問はツール無しの短答、ミニタスク 10 問はツールを渡して
+    「最初に選ぶツール」を記録する。ツール定義は毎回同じなので `cache_control` を付けて
+    キャッシュに乗せる（コストを抑えるため）。
+    """
+    from agenteval.env.tools import tool_schemas
+    from agenteval.llm.client import MessageRequest
+
+    data = yaml.safe_load(PROBE_PATH.read_text(encoding="utf-8"))
+    probes: list[dict[str, Any]] = data["probes"]
+    mini: list[dict[str, Any]] = data["mini_tasks"]
+
+    lengths: list[int] = []
+    prefixes: list[str] = []
+    for probe in probes:
+        result = client.create(
+            MessageRequest(
+                model=model,
+                system=[{"type": "text", "text": "短く答えてください。"}],
+                messages=[{"role": "user", "content": [{"type": "text", "text": probe["prompt"]}]}],
+                max_tokens=128,
+            )
+        )
+        text = result.text().strip()
+        lengths.append(len(text))
+        prefixes.append(text[:chars])
+
+    schemas = tool_schemas("v1")
+    schemas[-1] = {**schemas[-1], "cache_control": {"type": "ephemeral"}}
+    tool_choices: list[str] = []
+    for task in mini:
+        result = client.create(
+            MessageRequest(
+                model=model,
+                system=[
+                    {
+                        "type": "text",
+                        "text": "業務アシスタントとして、次の状況で最初に呼ぶべきツールを 1 つだけ呼んでください。",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                messages=[{"role": "user", "content": [{"type": "text", "text": task["prompt"]}]}],
+                tools=schemas,
+                max_tokens=256,
+            )
+        )
+        uses = result.tool_uses()
+        tool_choices.append(str(uses[0]["name"]) if uses else "__no_tool__")
+
+    return Fingerprint(
+        model=model, label=label, lengths=lengths, prefixes=prefixes, tool_choices=tool_choices
+    )
+
+
 def prefix_match_rate(a: Fingerprint, b: Fingerprint, chars: int = 20) -> float:
     """先頭 20 文字の一致率。"""
     pairs = list(zip(a.prefixes, b.prefixes, strict=False))
@@ -74,6 +130,35 @@ def statistic(a: Fingerprint, b: Fingerprint) -> float:
     pb = pb / pb.sum() if pb.sum() else pb
     tool_term = float(np.abs(pa - pb).sum() / 2) if tools else 0.0
     return round(len_diff / len_scale + prefix_term + tool_term, 6)
+
+
+def length_statistic(a: Fingerprint, b: Fingerprint) -> float:
+    """応答長分布の平均差だけを見る統計量（ADR-013）。
+
+    `statistic()` は応答長・先頭一致率・ツール選択分布を足し合わせるが、live の実測では
+    後ろ 2 項が識別力を持たなかった:
+      - 先頭 20 文字の一致率は同一モデル 2 回でも 0.2、別モデルでも 0.1 とほぼ同じ
+      - ミニタスクのツール選択は 10 問中 8 問が `__no_tool__`（実モデルは文章で答える）に潰れる
+    帰無仮説と対立仮説で同じ値を取る項は、順列検定の統計量に入れても信号を薄めるだけである。
+    """
+    return round(abs(float(np.mean(a.lengths or [0])) - float(np.mean(b.lengths or [0]))), 6)
+
+
+def permutation_test_lengths(
+    a: Fingerprint, b: Fingerprint, n_permutations: int = 2000, seed: int = 20260913
+) -> dict[str, float]:
+    """応答長だけの順列検定（ADR-013 の既定）。"""
+    rng = np.random.default_rng(seed)
+    observed = length_statistic(a, b)
+    pooled = np.array(a.lengths + b.lengths, dtype=float)
+    n = len(a.lengths)
+    count = 0
+    for _ in range(n_permutations):
+        order = rng.permutation(len(pooled))
+        left, right = pooled[order[:n]], pooled[order[n:]]
+        if abs(float(np.mean(left)) - float(np.mean(right))) >= observed:
+            count += 1
+    return {"statistic": observed, "p_value": round((count + 1) / (n_permutations + 1), 4)}
 
 
 def permutation_test(
