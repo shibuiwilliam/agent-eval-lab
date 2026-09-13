@@ -35,7 +35,11 @@ class Checkpoint:
 
 @dataclass
 class BranchResult:
-    """分岐再実行 1 件の結果。"""
+    """分岐再実行 1 件の結果。
+
+    `live_steps` は課金されるステップ数。判断確認の呼び出しは、新版のリクエストが
+    旧版と完全に一致する（＝版ハッシュが同じ）ときだけカセットに当たって無料になる。
+    """
 
     run: Run
     divergence_step: int | None
@@ -43,6 +47,7 @@ class BranchResult:
     base_steps: int
     confirmations: int
     equivalence: str = "exact"
+    billable_confirmations: int = 0
 
     @property
     def live_step_ratio(self) -> float:
@@ -165,6 +170,8 @@ class BranchRunner:
             "confirmations": confirmations,
         }
 
+        billable = 0 if new_version.hash() == base_run.version_hash else confirmations
+
         if divergence is None:
             # 最後まで一致した: 旧軌跡の結果をそのまま新版の結果とみなす
             branched = base_run.model_copy(deep=True)
@@ -177,10 +184,11 @@ class BranchRunner:
             return BranchResult(
                 run=branched,
                 divergence_step=None,
-                live_steps=confirmations,
+                live_steps=billable,
                 base_steps=base_run.n_steps,
                 confirmations=confirmations,
                 equivalence=self.manifest["equivalence"],
+                billable_confirmations=billable,
             )
 
         options = RunOptions(
@@ -194,7 +202,7 @@ class BranchRunner:
         )
         branched = run_task(task, new_version, options)
         branched.mode = "branch"
-        live_steps = confirmations + max(0, branched.n_steps - divergence)
+        live_steps = billable + max(0, branched.n_steps - divergence)
         return BranchResult(
             run=branched,
             divergence_step=divergence,
@@ -202,6 +210,7 @@ class BranchRunner:
             base_steps=base_run.n_steps,
             confirmations=confirmations,
             equivalence=self.manifest["equivalence"],
+            billable_confirmations=billable,
         )
 
 

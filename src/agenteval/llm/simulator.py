@@ -263,8 +263,8 @@ class Simulator:
         if not wrote:
             return self._write_call(flags, competence, history)
 
-        # 3) 検証と修復（計画を無視する版は検査を飛ばす）
-        verify = flags.verify_before_finish and not flags.plan_override
+        # 3) 検証と修復（計画を無視する版と、ステップ数最小化を指示された版は検査を飛ばす）
+        verify = flags.verify_before_finish and not (flags.plan_override or flags.brevity)
         if verify and "checks_run" not in called:
             return ("checks_run", {"scope": self._scope()})
         issues = self._last_issues(history)
@@ -309,8 +309,10 @@ class Simulator:
         intent = self.task.sim
         if tool == "calendar_search":
             day = self._day(intent.day_offset)
-            # v06: 新しい引数名への適応に失敗することがある（誤引数 → is_error → 再試行）
-            adapt = force_correct or (self._luck.schema_adapt > 0.45)
+            # v06: 新しい引数名への適応。初回に正しく呼べるのは 40%、再試行でさらに戻るが、
+            # 45% は最後まで適応できずに検索を諦める（`_did_lookup` の 2 回ルールで先に進む）
+            threshold = 0.45 if force_correct else 0.6
+            adapt = self._luck.schema_adapt > threshold
             if schema_v2 and adapt:
                 return (tool, {"keyword": intent.query or "", "range_start": day, "range_end": day})
             return (tool, {"query": intent.query or "", "date_from": day, "date_to": day})

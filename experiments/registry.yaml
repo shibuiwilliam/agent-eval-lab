@@ -1,16 +1,408 @@
-# 実験レジストリ。`docs/plan/02-experiment-catalog.md` の各エントリをこの形式に写す（P1 の最初の作業）。
-# `agenteval verify` はこのファイルと data/results/E*.json を突き合わせて PASS / FAIL / NEGATIVE / PENDING を出す。
-# criteria に無い指標で合格を主張しない。budget_usd は実験単体の live 上限。
+# 実験レジストリ。docs/plan/02-experiment-catalog.md の合格基準を機械可読にしたもの。
+# criteria は実装前に固定する。変更は ADR を伴う（ADR-007）。
+
 - id: E3-1
   chapter: 3
   title: 軌跡カバレッジ依存グラフによる候補絞り込み
   script: experiments/e3_1_coverage.py
-  hypothesis: "ツール変更で実際に反転したテストは全て候補集合に含まれ、候補は全件より小さい"
+  hypothesis: "ツール変更で実際に反転したテストはすべて候補集合 T_cand(Δ) に含まれ、候補は全件より十分小さい"
   planted: {versions: [v06_toolschema_v2], change_kind: tool}
-  control: {synthetic_change: {kind: tool, components: [mail_send]}}
+  planted_text: "v06_toolschema_v2（calendar_search の引数変更）。反転は v01 → v06 で測る"
+  control: {change_kind: tool, components: [mail_send]}
+  control_text: "合成変更 Change(kind=tool, components={mail_send})。mail_send を呼ばないテストは候補に入らない"
   criteria:
     - {metric: recall_of_flipped, op: ">=", value: 1.0}
     - {metric: candidate_ratio, op: "<=", value: 0.6}
     - {metric: control_false_candidates, op: "==", value: 0}
-  provenance: replay
+  provenance: simulated
+  budget_usd: 0
+
+- id: E3-2
+  chapter: 3
+  title: 意味的影響推定による選択
+  script: experiments/e3_2_impact.py
+  hypothesis: "プロンプト差分から列挙した影響タグで日付関連タスクが選ばれ、反転テストを高再現率で捉える"
+  planted: {versions: [v02_dateformat], change_kind: prompt}
+  planted_text: "v02_dateformat（日付書式の指示変更）"
+  control: {versions: [v02b_tone]}
+  control_text: "文体だけを変えた差分 v02b_tone（run は不要。diff だけ使う）"
+  criteria:
+    - {metric: recall_of_flipped, op: ">=", value: 0.8}
+    - {metric: control_selected_ratio, op: "<=", value: 0.2}
+    - {metric: precision_gain_vs_coverage, op: ">", value: 0.0}
+  provenance: simulated
+  budget_usd: 0.5
+
+- id: E3-3
+  chapter: 3
+  title: 不確実性駆動のテスト選択
+  script: experiments/e3_3_selector.py
+  hypothesis: "予算 30% で H(p̂)/c による選択はランダムと直近失敗優先より逃走欠陥率が低く、expected_escape は実測と校正されている"
+  planted: {versions: [v02_dateformat, v03_noverify, v04_loopy, v05_unsafe_delete, v06_toolschema_v2, v07_step_minimizer, v08_summarize_ctx, v09_model_swap]}
+  planted_text: "v02〜v09 の各変更を leave-one-change-out で評価"
+  control: {strategies: [random, recent_failures]}
+  control_text: "同予算のランダム選択（1,000 回抽選の平均）と直近失敗優先"
+  criteria:
+    - {metric: escape_ratio_vs_random, op: "<=", value: 0.5}
+    - {metric: calibration_error, op: "<=", value: 0.15}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E3-4
+  chapter: 3
+  title: テストピラミッドの段判定
+  script: experiments/e3_4_pyramid.py
+  hypothesis: "変更分類から決めた段は、反転が観測される最小の段以上である。LLM に見えない変更は L1 で止まる"
+  planted: {versions: [v02_dateformat, v06_toolschema_v2, v09_model_swap]}
+  planted_text: "v02（prompt → L2 以上）、v06（tool → L3 以上）、v09（model → L4）"
+  control: {change_kind: code}
+  control_text: "Change(kind=code)（ツールラッパーのリファクタ。版ハッシュ不変）"
+  criteria:
+    - {metric: level_ok_rate, op: "==", value: 1.0}
+    - {metric: control_nonflake_flips, op: "==", value: 0}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E3-5
+  chapter: 3
+  title: 接頭辞キャッシュと分岐再実行
+  script: experiments/e3_5_branch.py
+  hypothesis: "分岐再実行は通常実行と結果が一致し、小さな変更では live ステップを大きく減らす。大きな変更ほど早く分岐する"
+  planted: {versions: [v02_dateformat, v09_model_swap]}
+  planted_text: "v02（小変更）と v09（モデル入替）を v01 の軌跡から分岐再実行"
+  control: {versions: [v01_baseline]}
+  control_text: "v01 → v01 の自己分岐。カセット／同一方策に当たるので分岐せず live ステップ 0"
+  criteria:
+    - {metric: outcome_agreement, op: ">=", value: 0.8}
+    - {metric: live_step_ratio_v02, op: "<=", value: 0.6}
+    - {metric: divergence_order_ok, op: "==", value: 1}
+    - {metric: self_branch_live_steps, op: "==", value: 0}
+  provenance: simulated
+  budget_usd: 2.0
+
+- id: E3-6
+  chapter: 3
+  title: SPRT による早期打切り
+  script: experiments/e3_6_sprt.py
+  hypothesis: "SPRT は名目 α=0.05, β=0.10 に近い誤り率で、固定 n 法より少ない試行で決着する"
+  planted: {p_true_grid: [0.1, 0.3, 0.5, 0.7, 0.9], trials: 10000}
+  planted_text: "p_true ∈ {0.1, 0.3, 0.5, 0.7, 0.9} の Monte Carlo（各 10,000 試行）と境界テスト 5 件"
+  control: {method: fixed_n}
+  control_text: "同じ検出力の固定 n 法"
+  criteria:
+    - {metric: empirical_alpha, op: "<=", value: 0.07}
+    - {metric: empirical_beta, op: "<=", value: 0.12}
+    - {metric: mean_n_ratio, op: "<=", value: 0.6}
+    - {metric: boundary_mean_n, op: "<=", value: 8}
+  provenance: simulated
+  budget_usd: 0.2
+
+- id: E3-7
+  chapter: 3
+  title: 逃走欠陥率・ε-探索・不可侵集合
+  script: experiments/e3_7_kpi.py
+  hypothesis: "予算 40% で逃走欠陥率 ≤ 0.1。ε=0.05 でランダムテストが毎回混ざる。不可侵集合は予算に関係なく常に選ばれる"
+  planted: {budget_ratios: [0.05, 0.4, 1.0]}
+  planted_text: "全変更に対するフル実行結果と選択結果の比較"
+  control: {budget_ratio: 1.0}
+  control_text: "予算 100% → 逃走欠陥率 0"
+  criteria:
+    - {metric: escape_rate, op: "<=", value: 0.1}
+    - {metric: random_included, op: ">=", value: 1}
+    - {metric: inviolable_rate, op: "==", value: 1.0}
+    - {metric: full_budget_escape, op: "==", value: 0}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E4-1
+  chapter: 4
+  title: 軌跡メトリクスの選択的反応
+  script: experiments/e4_1_metrics.py
+  hypothesis: "植込み版は対応する指標だけを動かす"
+  planted: {versions: [v04_loopy, v03_noverify]}
+  planted_text: "v04_loopy（重複呼び出し率・後戻り↑）、v03_noverify（検証行動率↓）"
+  control: {versions: [v01_baseline, v02_dateformat]}
+  control_text: "v01 の反復（指標の分散が小さい）、v02（これらの指標は動かない）"
+  criteria:
+    - {metric: dup_ratio_v04_vs_v01, op: ">=", value: 2.0}
+    - {metric: verification_ratio_v03_vs_v01, op: "<=", value: 0.5}
+    - {metric: v02_change_within_flake_band, op: "==", value: 1}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E4-2
+  chapter: 4
+  title: アブレーションによる無駄呼び出し判定
+  script: experiments/e4_2_ablation.py
+  hypothesis: "v04 の無駄呼び出し率 U は v01 より高い。ジャッジ代理指標はアブレーションと十分一致する"
+  planted: {versions: [v04_loopy], runs: 5}
+  planted_text: "v04 の 5 run と v01 の 5 run（全呼び出しをアブレーション）"
+  control: {pattern: "search → create"}
+  control_text: "直後の行動に結果が使われる呼び出し（search → create）は「有用」と判定される"
+  criteria:
+    - {metric: waste_rate_diff, op: ">=", value: 0.15}
+    - {metric: surrogate_precision, op: ">=", value: 0.7}
+    - {metric: surrogate_recall, op: ">=", value: 0.7}
+    - {metric: control_useful_rate, op: ">=", value: 0.9}
+  provenance: simulated
+  budget_usd: 5.0
+
+- id: E4-3
+  chapter: 4
+  title: 軌跡リンターの決定的検出
+  script: experiments/e4_3_linter.py
+  hypothesis: "順序・禁止制約の違反を決定的に検出し、ベースラインでは誤検出しない"
+  planted: {versions: [v05_unsafe_delete, v03_noverify]}
+  planted_text: "v05_unsafe_delete（no_delete_without_backup）、v03_noverify（claim_done_requires_checks）"
+  control: {versions: [v01_baseline]}
+  control_text: "v01。手書きイベント列と hypothesis の性質テスト"
+  criteria:
+    - {metric: violation_detection_rate, op: ">=", value: 0.8}
+    - {metric: baseline_violation_rate, op: "<=", value: 0.1}
+    - {metric: operator_tests_pass, op: "==", value: 1}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E4-4
+  chapter: 4
+  title: 半順序マイルストーンの部分点
+  script: experiments/e4_4_milestones.py
+  hypothesis: "部分点は版の品質順序と整合し、順序の異なる正当な経路に満点を与える"
+  planted: {versions: [v01_baseline, v03_noverify, v05_unsafe_delete]}
+  planted_text: "v01 / v03 / v05 のコーパス、および順序違いの合成軌跡"
+  control: {synthetic: out_of_order}
+  control_text: "到達順序が制約に反する合成軌跡は減点される"
+  criteria:
+    - {metric: spearman_rho, op: ">=", value: 0.6}
+    - {metric: synthetic_ok, op: "==", value: 1}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E4-5
+  chapter: 4
+  title: ステップ単位判定（ルーブリックと参照方策一致）
+  script: experiments/e4_5_step_judge.py
+  hypothesis: "行動を変異させたステップは、ルーブリック判定でも参照方策一致でも元より低く評価される"
+  planted: {mutations: [wrong_tool, wrong_args, destructive], n_steps: 30}
+  planted_text: "v01 の正常 run から 30 ステップを抽出し、誤ツール／誤引数／破壊的操作に置換"
+  control: {rejudge: 2}
+  control_text: "変異なしステップを 2 回判定して安定性を見る"
+  criteria:
+    - {metric: mutation_drop_rate_rubric, op: ">=", value: 0.8}
+    - {metric: mutation_drop_rate_refpolicy, op: ">=", value: 0.8}
+    - {metric: original_mean_score, op: ">=", value: 3.5}
+    - {metric: rejudge_agreement, op: ">=", value: 0.8}
+  provenance: simulated
+  budget_usd: 8.0
+
+- id: E4-6
+  chapter: 4
+  title: 計画の外在化と乖離率
+  script: experiments/e4_6_plan.py
+  hypothesis: "計画を構造化出力させると DAG 検査が機能し、計画を無視する版は乖離率が高い"
+  planted: {versions: [v12_ignore_plan]}
+  planted_text: "v12_ignore_plan（計画を出した後に無視する指示）"
+  control: {versions: [v01p]}
+  control_text: "v01p（v01 に plan_first: true）"
+  criteria:
+    - {metric: plan_valid_rate_v01p, op: ">=", value: 0.9}
+    - {metric: delta_gap, op: ">=", value: 0.2}
+    - {metric: deviation_judge_rate, op: ">=", value: 0.7}
+  provenance: simulated
+  budget_usd: 1.0
+
+- id: E4-7
+  chapter: 4
+  title: 軌跡内 NIAH（想起率とコンテキスト戦略）
+  script: experiments/e4_7_niah.py
+  hypothesis: "想起率 R(n) はノイズ n とともに下がり、要約戦略（v08）は raw（v01）より AUC が高い"
+  planted: {tasks: [T-301, T-302, T-303, T-304], noise: [0, 2, 4, 8], repeats: 3}
+  planted_text: "niah タスク 4 種 × n ∈ {0, 2, 4, 8} × 3 反復"
+  control: {noise: 0}
+  control_text: "n = 0 では両版とも高い想起率"
+  criteria:
+    - {metric: recall_n0, op: ">=", value: 0.8}
+    - {metric: recall_drop_v01, op: ">=", value: 0.2}
+    - {metric: auc_gain_v08, op: ">=", value: 0.1}
+  provenance: simulated
+  budget_usd: 6.0
+
+- id: E4-8
+  chapter: 4
+  title: pass@k / pass^k と一貫性
+  script: experiments/e4_8_consistency.py
+  hypothesis: "境界タスクでは pass@k と pass^k の差が大きく、信頼性指標として pass^k が必要になる"
+  planted: {versions: [v01_baseline, v04_loopy]}
+  planted_text: "v01 の 5 反復 × 境界タスク、v04 の 3 反復"
+  control: {tasks: [T-901, T-902]}
+  control_text: "自明タスクでは pass@3 ≈ pass^3"
+  criteria:
+    - {metric: boundary_gap, op: ">=", value: 0.2}
+    - {metric: trivial_gap, op: "<=", value: 0.05}
+    - {metric: var_steps_v04_gt_v01, op: "==", value: 1}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E4-9
+  chapter: 4
+  title: コスト予算と Goodhart ペア指標
+  script: experiments/e4_9_budget.py
+  hypothesis: "ステップ数最小化版は効率指標を改善するが、対になる検証行動率を落とす。p95 予算はループ版だけを弾く"
+  planted: {versions: [v07_step_minimizer, v04_loopy]}
+  planted_text: "v07_step_minimizer、v04_loopy"
+  control: {versions: [v01_baseline]}
+  control_text: "v01"
+  criteria:
+    - {metric: steps_ratio_v07, op: "<=", value: 0.8}
+    - {metric: verification_ratio_v07, op: "<=", value: 0.7}
+    - {metric: p95_exceed_v04, op: "==", value: 1}
+    - {metric: p95_exceed_v01, op: "==", value: 0}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E8-1
+  chapter: 8
+  title: 模擬忠実度と TTL
+  script: experiments/e8_1_fidelity.py
+  hypothesis: "外部サービスが変わると F が下がり、不一致キーが特定される。期限切れカセットは警告される"
+  planted: {injector: bump_external_v2}
+  planted_text: "DriftInjector.bump_external(v2)（price → unit_price、値の変化）"
+  control: {version: v1}
+  control_text: "変更前は F = 1.0"
+  criteria:
+    - {metric: fidelity_after, op: "<=", value: 0.5}
+    - {metric: fidelity_before, op: "==", value: 1.0}
+    - {metric: mismatch_keys_match, op: "==", value: 1}
+    - {metric: ttl_detection_rate, op: "==", value: 1.0}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E8-2
+  chapter: 8
+  title: 鮮度と分布距離
+  script: experiments/e8_2_distribution.py
+  hypothesis: "本番分布のシフトを JS ダイバージェンスが捉え、共適応の言い換えを MMD が捉える"
+  planted: {days: [0, 1, 2, 3, 4], new_category_ratio: 0.4}
+  planted_text: "ProdStream の日別シフト（新カテゴリ比率 0% → 40%）と言い換え"
+  control: {resample: same_distribution}
+  control_text: "同一分布からの再サンプル"
+  criteria:
+    - {metric: js_monotonic, op: "==", value: 1}
+    - {metric: new_category_alarm, op: "==", value: 1}
+    - {metric: mmd_p_value, op: "<", value: 0.05}
+    - {metric: control_p_ge_005_rate, op: ">=", value: 0.9}
+  provenance: simulated
+  budget_usd: 0.5
+
+- id: E8-3
+  chapter: 8
+  title: 弁別力と飽和
+  script: experiments/e8_3_discriminative.py
+  hypothesis: "自明タスクは飽和と判定され、境界タスクは高い弁別力を持つ"
+  planted: {tasks: [T-901, T-902]}
+  planted_text: "自明タスク T-901, T-902（全版で合格）"
+  control: {tasks: boundary}
+  control_text: "境界タスク（v01 合格率 0.3〜0.7）"
+  criteria:
+    - {metric: trivial_abs_d, op: "<", value: 0.1}
+    - {metric: trivial_saturated, op: "==", value: 1}
+    - {metric: boundary_d, op: ">=", value: 0.3}
+    - {metric: lifecycle_received, op: "==", value: 1}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E8-4
+  chapter: 8
+  title: 二重トラック κ
+  script: experiments/e8_4_dualtrack.py
+  hypothesis: "模擬とライブの合否一致 κ はドリフト注入で下がる"
+  planted: {injector: bump_external_v2}
+  planted_text: "bump_external(v2) 後に external_lookup を使うタスクを再実行"
+  control: {before: true}
+  control_text: "注入前の κ"
+  criteria:
+    - {metric: kappa_before, op: ">=", value: 0.6}
+    - {metric: kappa_drop, op: ">=", value: 0.3}
+  provenance: simulated
+  budget_usd: 4.0
+
+- id: E8-5
+  chapter: 8
+  title: ドリフト帰属（要因別入替）
+  script: experiments/e8_5_attribution.py
+  hypothesis: "要因別入替で主効果最大の要因が植込み原因と一致する"
+  planted: {factors: {model: v09_model_swap, prompt: v02_dateformat, tool: v06_toolschema_v2}}
+  planted_text: "単一要因変更 3 種と 2 要因同時変更 1 種"
+  control: {no_change: true}
+  control_text: "無変更（全主効果がフレーク帯内）"
+  criteria:
+    - {metric: single_factor_match_rate, op: ">=", value: 0.66}
+    - {metric: two_factor_top2_match, op: "==", value: 1}
+    - {metric: control_alarm, op: "==", value: 0}
+  provenance: simulated
+  budget_usd: 6.0
+
+- id: E8-6
+  chapter: 8
+  title: モデル指紋による入替検知
+  script: experiments/e8_6_fingerprint.py
+  hypothesis: "固定プローブの分布比較は同一モデルの再取得では警報せず、モデル入替では警報する"
+  planted: {swap: haiku_to_sonnet}
+  planted_text: "Haiku → Sonnet の入替（無断更新の代替）"
+  control: {same_model_twice: true}
+  control_text: "Haiku の 2 回取得"
+  criteria:
+    - {metric: control_false_alarm_rate, op: "<=", value: 0.1}
+    - {metric: swap_p_value, op: "<", value: 0.05}
+  provenance: simulated
+  budget_usd: 3.0
+
+- id: E8-7
+  chapter: 8
+  title: 本番→テスト・パイプライン
+  script: experiments/e8_7_prod2test.py
+  hypothesis: "層化サンプラーは重要セッションを優先し、起草の受入基準は承認され、登録後にスイートと本番の距離が縮む"
+  planted: {days: 3, sample: 20}
+  planted_text: "ProdStream 3 日分のセッションから 20 件を採取"
+  control: {sampler: uniform}
+  control_text: "一様サンプリング"
+  criteria:
+    - {metric: stratified_lift, op: ">=", value: 3.0}
+    - {metric: approval_rate, op: ">=", value: 0.7}
+    - {metric: js_after_lt_before, op: "==", value: 1}
+  provenance: simulated
+  budget_usd: 4.0
+
+- id: E8-8
+  chapter: 8
+  title: テストのライフサイクル状態機械
+  script: experiments/e8_8_lifecycle.py
+  hypothesis: "遷移条件はメトリクスから決定的に動作し、Retired は終端である"
+  planted: {transitions: all}
+  planted_text: "各遷移を起こすメトリクスを与える"
+  control: {no_trigger: true}
+  control_text: "条件を満たさないメトリクスでは遷移しない"
+  criteria:
+    - {metric: transitions_pass, op: "==", value: 1}
+    - {metric: retired_terminal, op: "==", value: 1}
+    - {metric: append_only, op: "==", value: 1}
+    - {metric: no_trigger_stays, op: "==", value: 1}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E8-9
+  chapter: 8
+  title: 汚染検知（カナリア走査）
+  script: experiments/e8_9_contamination.py
+  hypothesis: "カナリア走査は汚染版を検出し、public/private の合格率差が汚染版で広がる"
+  planted: {versions: [v10_contaminated]}
+  planted_text: "v10_contaminated（private タスクの canary 付き例文を few-shot に混入）"
+  control: {versions: [v01_baseline]}
+  control_text: "v01"
+  criteria:
+    - {metric: canary_detection_rate, op: "==", value: 1.0}
+    - {metric: baseline_hits, op: "==", value: 0}
+    - {metric: gap_v10, op: ">=", value: 0.2}
+    - {metric: gap_v01, op: "<=", value: 0.1}
+  provenance: simulated
   budget_usd: 0

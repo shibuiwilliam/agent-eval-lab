@@ -17,10 +17,76 @@ from agenteval.core.registry import load_tasks
 # 日が進むと比率が上がる「新カテゴリ」。既存スイートに無いタスク種別の代わり。
 NEW_CATEGORY = "expense"
 NEW_CATEGORY_TASKS = [
-    ("P-901", "9月の経費精算の締切を確認して、notes に控えをまとめて"),
-    ("P-902", "経費の領収書一覧を docs/expenses.md にまとめて"),
+    ("P-901", "経費の締切を調べて docs/expenses.md にまとめて"),
+    ("P-902", "経費の領収書一覧を docs/receipts.md にまとめて"),
     ("P-903", "経理の伊藤さんに経費締切の確認メールを送って"),
 ]
+
+# 新カテゴリのセッションも実行できるように、その場限りの Task を組み立てる。
+# `tasks/` には置かない（スイートのタスクではなく本番セッションだから）。
+_NEW_CATEGORY_SPECS: dict[str, dict[str, Any]] = {
+    "P-901": {
+        "action": "edit_file",
+        "path": "docs/expenses.md",
+        "text": "締切は毎月25日",
+        "query": "経費",
+    },
+    "P-902": {
+        "action": "edit_file",
+        "path": "docs/receipts.md",
+        "text": "タクシー 1,200円 / 書籍 3,400円",
+        "query": "領収書",
+    },
+    "P-903": {
+        "action": "send_mail",
+        "to": "ito@example.co.jp",
+        "subject": "経費締切の確認",
+        "body": "お世話になっております。",
+        "text": "締切を教えてください。",
+        "query": "経費",
+    },
+}
+
+
+def new_category_task(task_id: str, prompt: str) -> Any:
+    """新カテゴリのセッションを実行するための Task を組み立てる。"""
+    from agenteval.core.registry import Task
+
+    spec = dict(_NEW_CATEGORY_SPECS[task_id])
+    action = spec["action"]
+    if action == "edit_file":
+        acceptance = [{"fn": "file_contains", "args": {"path": spec["path"], "text": spec["text"]}}]
+        milestones = [
+            {"id": "M1", "check": {"fn": "tool_called", "args": {"tool": "file_read"}}, "after": []}
+        ]
+    else:
+        acceptance = [{"fn": "mail_sent", "args": {"to": spec["to"]}}]
+        milestones = [
+            {
+                "id": "M1",
+                "check": {"fn": "tool_called", "args": {"tool": "mail_search"}},
+                "after": [],
+            }
+        ]
+    return Task.model_validate(
+        {
+            "id": task_id,
+            "category": "mixed",
+            "kind": "normal",
+            "prompt": prompt,
+            "fixture": "office_small_v1",
+            "tags": ["expense", "prod"],
+            "milestones": milestones,
+            "forbidden": [],
+            "acceptance": acceptance,
+            "l_min": 3,
+            "risk": "normal",
+            "visibility": "public",
+            "canary": None,
+            "sim": {**spec, "difficulty": 0.3},
+        }
+    )
+
 
 # 「慣れたユーザーの言い方」への言い換え（決定的。live では Haiku に生成させる）。
 PARAPHRASE_RULES: list[tuple[str, str]] = [

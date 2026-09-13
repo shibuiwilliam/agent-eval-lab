@@ -5,60 +5,66 @@
 セッションを回すためのプロンプト（P0 キックオフ／コーパス構築／実験テンプレート／再開／総括）は `04-prompts.md` にある。
 
 ## P0 基盤
-- [ ] `pyproject.toml`、`Makefile`、`uv sync`、`make check` が空のパッケージで通る
-- [ ] `core/schema.py`（Run / Step / Outcome / Version / Change）と `core/normalize.py`
-- [ ] `llm/client.py`（record / replay / auto、`CassetteMiss`、コスト台帳、`BudgetGuard`、プロンプトキャッシュ）
-- [ ] `tests/conftest.py` が `AGENTEVAL_LLM_MODE=replay` を強制し、ネットワーク呼び出しを検出したら失敗する
-- [ ] `env/office.py`（SQLite、snapshot / restore / state_hash / diff / touched_resources）と `env/fixtures.py`
-- [ ] `env/tools.py` 13 ツール（pydantic → JSON Schema）、`env/checks.py`、`env/external.py`
-- [ ] `env/injectors.py` の骨格（Fault / Noise / Drift、manifest への記録）
-- [ ] `agent/loop.py`（plan_first、並列ツール、snapshot、finish、max_steps、予算停止）
-- [ ] `core/events.py` の `to_events`
-- [ ] タスク T-001〜T-005、`versions/v01_baseline.yaml`、`prompts/v01_baseline.md`（section マーカー付き）
-- [ ] CLI `run` / `cost`
-- [ ] **DoD**: 5 タスク × v01 を live 記録 → replay 2 回で trace ハッシュ一致。`make check` 通過。E8-6 の指紋を v01 モデルで 1 回取得しておく
+- [x] `pyproject.toml`、`Makefile`、`uv sync`、`make check` が空のパッケージで通る
+- [x] `core/schema.py`（Run / Step / Outcome / Version / Change）と `core/normalize.py`
+- [x] `llm/client.py`（record / replay / auto / **sim**、`CassetteMiss`、コスト台帳、`BudgetGuard`、プロンプトキャッシュ）
+- [x] `tests/conftest.py` が `AGENTEVAL_LLM_MODE=replay` を強制し、ソケットも塞ぐ
+- [x] `env/office.py`（SQLite、snapshot / restore / state_hash / diff / touched_resources）と `env/fixtures.py`
+- [x] `env/tools.py` 13 ツール（pydantic → JSON Schema）、`env/checks.py`、`env/external.py`
+- [x] `env/injectors.py`（Fault / Noise / Drift、manifest への記録）
+- [x] `agent/loop.py`（plan_first、並列ツール、snapshot、finish、max_steps、予算停止、分岐再開）
+- [x] `core/events.py` の `to_events`
+- [x] タスク T-001〜T-005、`versions/v01_baseline.yaml`、`prompts/v01_baseline.md`（section マーカー付き）
+- [x] CLI `run` / `cost`
+- [x] **DoD（条件付き）**: live が使えないため sim モードで代替（ADR-008）。同一条件で 2 回実行して trace ハッシュ一致を確認。`make check` 通過。E8-6 の live 指紋は**未取得**（API キーが無い）
 
 ## P1 コーパスと過程評価の骨格
-- [ ] タスク 30 ＋ edge（do_nothing 3、ambiguous 3）＋ niah 4 ＋ 自明 2 ＋ private 4
-- [ ] 版 v02〜v09（各 `planted.expected_effects` 付き）と v01p / v02b_tone / v10 / v12
-- [ ] `corpus.yaml` と CLI `corpus build --dry-run` → ユーザー確認 → `--live`
-- [ ] ベースライン v01 の合格率が 50〜80%（外れたらタスク側で調整し、理由を記録）
-- [ ] `process/metrics.py`、`process/linter.py` ＋ `rules/global.py`、`process/milestones.py`、`process/consistency.py`、`process/budget.py`
-- [ ] E4-1、E4-3、E4-4、E4-8、E4-9（5項目 → 実装 → 結果ページ）
-- [ ] **DoD**: 上記 5 実験が PASS / NEGATIVE で判定済み
+- [x] タスク 46 件（normal 30 ＋ do_nothing 3 ＋ ambiguous 3 ＋ niah 4 ＋ 自明 2 ＋ private 4）
+- [x] 版 13（v01〜v09 ＋ v01p / v02b_tone / v10 / v12）。各 `planted.expected_effects` 付き
+- [x] `corpus.yaml` と CLI `corpus build --dry-run`（live 見積り）→ `--sim` で生成（ADR-008 / ADR-010）
+- [x] ベースライン v01 の合格率 0.79（目標 50〜80%。タスク側の difficulty と誤りの種類で調整）
+- [x] `process/metrics.py`、`process/linter.py` ＋ `rules/global_rules.py`、`process/milestones.py`、`process/consistency.py`、`process/budget.py`
+- [x] E4-1、E4-3、E4-4、E4-8、E4-9
+- [x] **DoD**: 上記 5 実験が判定済み
 
 ## P2 PTS
-- [ ] `pts/change.py`、`pts/coverage.py`
-- [ ] `pts/impact.py`（Haiku 構造化出力）
-- [ ] `pts/selector.py`（Beta 事後 → ロジスティック回帰、貪欲選択、`expected_escape`）
-- [ ] `pts/pyramid.py`
-- [ ] `pts/prefix_cache.py`（Checkpoint、BranchRunner、`resume_from`、`validate_branching`）
-- [ ] `pts/sprt.py`（＋ Monte Carlo）
-- [ ] `pts/kpi.py`
-- [ ] E3-1〜E3-7
-- [ ] **DoD**: 7 実験が判定済み。分岐再実行の一致率が結果ページにある
+- [x] `pts/change.py`、`pts/coverage.py`
+- [x] `pts/impact.py`（構造化出力の経路は実装済み。live 不可のため決定的抽出で実行）
+- [x] `pts/selector.py`（Beta 事後 → ロジスティック回帰、貪欲選択、`expected_escape`）
+- [x] `pts/pyramid.py`
+- [x] `pts/prefix_cache.py`（Checkpoint、BranchRunner、`resume_from`、`validate_branching`）
+- [x] `pts/sprt.py`（＋ Monte Carlo）
+- [x] `pts/kpi.py`
+- [x] E3-1〜E3-7（PASS 3 / NEGATIVE 2 / FAIL 2）
+- [x] **DoD**: 7 実験が判定済み。分岐再実行の一致率 1.0（60 組）が E3-5 に記載
 
 ## P3 過程評価の深掘り
-- [ ] `judge/verdict.py`（`submit_verdict` ツール、`tool_choice` 強制）
-- [ ] `process/ablation.py`（`resume_from` を共有）
-- [ ] `process/step_judge.py`（ルーブリック、参照方策一致、行動変異）
-- [ ] `process/plan.py`（DAG 検査、δ、乖離正当性）
-- [ ] `process/niah.py`
-- [ ] E4-2、E4-5、E4-6、E4-7
-- [ ] **DoD**: 4 実験が判定済み。ジャッジのモデル ID と呼び出し数が結果ページにある
+- [x] `judge/verdict.py`（`submit_verdict` ツール、`tool_choice` 強制）＋ `judge/rubric.py`（決定的代替判定器）
+- [x] `process/ablation.py`（`resume_from` を共有）
+- [x] `process/step_judge.py`（ルーブリック、参照方策一致、行動変異）
+- [x] `process/plan.py`（DAG 検査、δ、乖離正当性）
+- [x] `process/niah.py`
+- [x] E4-2、E4-5、E4-6、E4-7（PASS 1 / FAIL 3）
+- [x] **DoD（条件付き）**: 4 実験が判定済み。**ジャッジは live ではなく決定的代替**なので、モデル ID の代わりに `offline-rubric` を記録している
 
 ## P4 陳腐化対策
-- [ ] `drift/prodstream.py`（日別シフト、言い換え）
-- [ ] `drift/fidelity.py`、`drift/distribution.py`、`drift/discriminative.py`
-- [ ] `drift/dualtrack.py`、`drift/attribution.py`、`drift/fingerprint.py`
-- [ ] `drift/prod2test.py`（サンプラー、`draft_task`、CLI `prod2test review`）
-- [ ] `drift/lifecycle.py`（状態機械、CLI `lifecycle tick`）、`drift/contamination.py`
-- [ ] E8-1〜E8-9
-- [ ] **DoD**: 9 実験が判定済み
+- [x] `drift/prodstream.py`（日別シフト、言い換え、新カテゴリの実行可能タスク）
+- [x] `drift/fidelity.py`、`drift/distribution.py`、`drift/discriminative.py`
+- [x] `drift/dualtrack.py`、`drift/attribution.py`、`drift/fingerprint.py`
+- [x] `drift/prod2test.py`（層化サンプラー、`draft_task`、CLI `prod2test`）＋ `drift/draft.py`
+- [x] `drift/lifecycle.py`（状態機械、CLI `lifecycle`）＋ `drift/state_source.py`、`drift/contamination.py`
+- [x] E8-1〜E8-9（PASS 6 / NEGATIVE 1 / FAIL 2）
+- [x] **DoD**: 9 実験が判定済み
 
 ## P5 総括
-- [ ] `reports/verify.py` と CLI `verify` → `docs/results/summary.md`
-- [ ] レポートの節 ↔ 実験の対応表（検証できた／条件付き／できなかった）
-- [ ] 否定的結果と限界の一覧
+- [x] `reports/verify.py` と CLI `verify` → `docs/results/summary.md`（PASS 15 / NEGATIVE 3 / FAIL 7 / PENDING 0）
+- [x] レポートの節 ↔ 実験の対応表 → `docs/results/README.md`
+- [x] 否定的結果と限界の一覧 → `docs/results/README.md`
+
+## 次にやること
+- live 実行の再確認（優先度: E3-5 の節約率 > E8-3 の弁別力 > E4-2 の U）。
+  `ANTHROPIC_API_KEY` と `AGENTEVAL_BUDGET_USD` を設定し、`agenteval corpus build --dry-run` で
+  見積りを出してから少数の live 実行を行う。見積りは 3 実験で 15〜25 USD
+- `docs/results/README.md` の「次にやるなら」の 2〜5 を検討する
 - [ ] 総コストの集計と予算内であることの確認
 - [ ] **DoD**: PENDING が 0

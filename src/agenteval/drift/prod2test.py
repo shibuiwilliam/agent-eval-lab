@@ -17,16 +17,17 @@ class Stratum:
 
 
 def stratify(runs: list[Run], p95_tokens: float) -> list[Stratum]:
-    """失敗 run・高コスト run・新カテゴリを層にする。"""
+    """層は「失敗 run・高コスト run・新カテゴリ」の 3 つ（.claude/rules/drift.md）。
+
+    どの層にも入らない run は層にしない。層を使い切ったときの穴埋めにだけ使う。
+    """
     failed = [r for r in runs if not r.passed()]
     costly = [r for r in runs if r.cost.total_tokens > p95_tokens]
     new_category = [r for r in runs if r.task_id.startswith("P-")]
-    rest = [r for r in runs if r not in failed and r not in costly and r not in new_category]
     return [
         Stratum("failed", failed),
         Stratum("costly", costly),
         Stratum("new_category", new_category),
-        Stratum("rest", rest),
     ]
 
 

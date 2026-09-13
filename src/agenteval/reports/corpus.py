@@ -23,10 +23,10 @@ def load_plan(path: Path | None = None) -> dict[str, Any]:
     return data
 
 
-def plan_units(plan: dict[str, Any]) -> list[tuple[str, str, int]]:
-    """(task_id, version_id, repeat) の全組合せ。"""
+def plan_units(plan: dict[str, Any], mode: str = "sim") -> list[tuple[str, str, int]]:
+    """(task_id, version_id, repeat) の全組合せ。sim では反復数が増える（コストが 0 のため）。"""
     tasks = sorted(load_tasks())
-    repeats = plan.get("repeats", {})
+    repeats = plan.get("sim_repeats" if mode == "sim" else "repeats", {})
     default = int(repeats.get("default", 3))
     units: list[tuple[str, str, int]] = []
     for version_id in plan["versions"]:
@@ -39,7 +39,7 @@ def plan_units(plan: dict[str, Any]) -> list[tuple[str, str, int]]:
 def estimate(path: Path | None = None) -> dict[str, Any]:
     """--dry-run の見積り。過去 run が無ければ保守的に 1.5 倍する。"""
     plan = load_plan(path)
-    units = plan_units(plan)
+    units = plan_units(plan, mode="live")
     defaults = plan.get("estimate_defaults", {})
     steps = float(defaults.get("steps_per_run", 7))
     in_tok = float(defaults.get("input_tokens_per_call", 4000))
@@ -95,7 +95,7 @@ def build_corpus(
 ) -> dict[str, Any]:
     """コーパスを生成して保存する。"""
     plan = load_plan(path)
-    units = plan_units(plan)
+    units = plan_units(plan, mode=mode)
     workers = concurrency or int(plan.get("concurrency", 4))
     seed = int(plan.get("seed", 20260913))
 

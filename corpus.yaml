@@ -11,8 +11,14 @@ task_mix:                 # 目標比率（30 タスク ＋ edge/niah/trivial/pr
   trivial: 2
   private: 4
 repeats:
+  # live 実行時の反復（予算制約）。sim モード（ADR-008）では呼び出しコストが 0 なので
+  # sim_repeats を使い、フレーク帯を狭めて版の効果を分離できるようにする。
   v01_baseline: 5
   default: 3
+sim_repeats:
+  # 版の比較を「同じ運（seed, repeat）どうし」の対応のある比較にするため、全版で同数にする
+  v01_baseline: 10
+  default: 10
 versions: [v01_baseline, v02_dateformat, v03_noverify, v04_loopy, v05_unsafe_delete,
            v06_toolschema_v2, v07_step_minimizer, v08_summarize_ctx, v09_model_swap,
            v01p, v10_contaminated, v12_ignore_plan]

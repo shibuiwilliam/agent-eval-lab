@@ -79,29 +79,34 @@ def statistic(a: Fingerprint, b: Fingerprint) -> float:
 def permutation_test(
     a: Fingerprint, b: Fingerprint, n_permutations: int = 1000, seed: int = 20260913
 ) -> dict[str, float]:
-    """順列検定。応答長を入れ替えて帰無分布を作る。"""
+    """順列検定。プローブ応答（長さ・先頭）とミニタスクのツール選択を別々に並べ替える。
+
+    2 つの系列は長さが違う（プローブ 30 問、ミニタスク 10 問）ので、同じ順列を使い回さない。
+    """
     rng = np.random.default_rng(seed)
     observed = statistic(a, b)
-    pooled_len = np.array(a.lengths + b.lengths, dtype=float)
+    pooled_len = a.lengths + b.lengths
     pooled_prefix = a.prefixes + b.prefixes
     pooled_tools = a.tool_choices + b.tool_choices
-    n = len(a.lengths)
+    n_probe = len(a.lengths)
+    n_tool = len(a.tool_choices)
     count = 0
     for _ in range(n_permutations):
-        order = rng.permutation(len(pooled_len))
+        probe_order = rng.permutation(len(pooled_len))
+        tool_order = rng.permutation(len(pooled_tools)) if pooled_tools else np.array([], dtype=int)
         left = Fingerprint(
             model="perm",
             label="left",
-            lengths=[int(pooled_len[i]) for i in order[:n]],
-            prefixes=[pooled_prefix[i] for i in order[:n]],
-            tool_choices=[pooled_tools[i] for i in order[:n]] if pooled_tools else [],
+            lengths=[pooled_len[i] for i in probe_order[:n_probe]],
+            prefixes=[pooled_prefix[i] for i in probe_order[:n_probe]],
+            tool_choices=[pooled_tools[i] for i in tool_order[:n_tool]],
         )
         right = Fingerprint(
             model="perm",
             label="right",
-            lengths=[int(pooled_len[i]) for i in order[n:]],
-            prefixes=[pooled_prefix[i] for i in order[n:]],
-            tool_choices=[pooled_tools[i] for i in order[n:]] if pooled_tools else [],
+            lengths=[pooled_len[i] for i in probe_order[n_probe:]],
+            prefixes=[pooled_prefix[i] for i in probe_order[n_probe:]],
+            tool_choices=[pooled_tools[i] for i in tool_order[n_tool:]],
         )
         if statistic(left, right) >= observed:
             count += 1

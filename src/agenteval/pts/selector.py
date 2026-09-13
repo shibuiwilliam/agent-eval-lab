@@ -156,7 +156,12 @@ def select(
     epsilon: float = 0.0,
     seed: int = 20260913,
 ) -> Selection:
-    """`H(p̂)/c` 降順の貪欲選択。不可侵集合は選択ロジックの外で必ず含める。"""
+    """`H(p̂)/c` 降順の貪欲選択。
+
+    原典のパイプラインは 3.2（カバレッジで候補を絞る）→ 3.4（不確実性で優先度を付ける）なので、
+    候補集合に入るテストを先に並べ、予算が余ったら候補外を同じ基準で埋める。
+    不可侵集合は選択ロジックの外で必ず含める（3.8）。
+    """
     costs = cost_of(runs)
     mean_cost = float(np.mean(list(costs.values()))) if costs else 1.0
     budget_tokens = budget_ratio * sum(costs.get(t, mean_cost) for t in task_ids)
@@ -170,7 +175,10 @@ def select(
         c = max(1.0, costs.get(task_id, mean_cost))
         priorities[task_id] = entropy(p) / c
 
-    order = sorted(candidates, key=lambda t: priorities[t], reverse=True)
+    from agenteval.pts.coverage import candidates as coverage_candidates
+
+    in_scope = coverage_candidates(change, coverage)
+    order = sorted(candidates, key=lambda t: (t in in_scope, priorities[t]), reverse=True)
     selected: list[str] = list(inviolable)
     reasons: dict[str, str] = dict.fromkeys(inviolable, "inviolable")
     spent = sum(costs.get(t, mean_cost) for t in inviolable)
@@ -192,6 +200,19 @@ def select(
         reasons[task_id] = "uncertainty"
         spent += cost
 
+    # 予算が余っているなら、冗長として飛ばした候補を優先度順に戻す。
+    # （冗長性は「同じ予算でより多様な情報を得る」ための規則であって、
+    #   予算が余っているのにテストを実行しない理由にはならない。予算 100% では全件が選ばれる）
+    for task_id in order:
+        if task_id in selected:
+            continue
+        cost = costs.get(task_id, mean_cost)
+        if spent + cost > budget_tokens:
+            continue
+        selected.append(task_id)
+        reasons[task_id] = "budget_left"
+        spent += cost
+
     # ε-探索: 予算に関係なくランダムに 1 件以上混ぜる（原典 3.8）
     if epsilon > 0:
         rng = np.random.default_rng(seed)
@@ -203,9 +224,13 @@ def select(
             reasons[task_id] = "epsilon"
 
     skipped = [t for t in task_ids if t not in selected]
-    escape = sum(
-        1 - estimate_pass_probability(t, runs, change, coverage, model) for t in skipped
-    ) / max(1, len(task_ids))
+    # expected_escape = 「起こりうる不合格のうち、選ばなかったために見逃す割合」。
+    # 実測の逃走欠陥率（反転したテストのうち選ばなかった割合）と分母を揃える。
+    failure_mass = {
+        t: 1 - estimate_pass_probability(t, runs, change, coverage, model) for t in task_ids
+    }
+    total_mass = sum(failure_mass.values())
+    escape = sum(failure_mass[t] for t in skipped) / total_mass if total_mass else 0.0
     return Selection(
         selected=selected,
         skipped=skipped,
