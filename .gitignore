@@ -231,3 +231,5 @@ CLAUDE.local.md
 .env
 REPORT.md
 .DS_Store
+
+blog/
