@@ -15,7 +15,7 @@
 ただし **sim の妥当性そのものは live（実 API）で 2 回検証した**
 → [LIVE.md](LIVE.md)（第 1 次）、[LIVE2.md](LIVE2.md)（第 2 次）、[E0-1](E0-1.md)、[E0-2](E0-2.md)。
 その検証で sim の欠陥が 5 件見つかり、修正したうえで全実験を取り直している
-（詳細は [`IMPROVEMENT.md`](../../IMPROVEMENT.md)）。要点:
+（詳細は [`IMPROVEMENT.md`](../IMPROVEMENT.md)）。要点:
 
 - sim が live と**一致する**量: 合否（一致率 0.82）、ステップ数、検証行動率、重複呼び出し率
 - sim が live と**一致しない**量: `stop_appropriate`（sim 1.0 / live 0.66）。

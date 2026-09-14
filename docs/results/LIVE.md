@@ -6,7 +6,7 @@ API キー: `.env` を `direnv` 経由で読み込み。予算ガード `AGENTEV
 
 このレポートは、それまで sim（ADR-008 のシミュレート・エージェント）だけで得ていた結果に対して、
 **実際の Claude API で実行すると何が変わるか**を確かめた記録である。
-見つかった問題と修正の詳細は [`IMPROVEMENT.md`](../../IMPROVEMENT.md)。
+見つかった問題と修正の詳細は [`IMPROVEMENT.md`](../IMPROVEMENT.md)。
 
 ## 1. 何を実行したか
 
