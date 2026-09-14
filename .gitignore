@@ -233,3 +233,20 @@ REPORT.md
 .DS_Store
 
 blog/
+
+# --- 秘匿情報の取りこぼし対策 ---
+# `.env` だけでは `.env.local` や `.env.bak` などの派生が無視されないため明示する。
+# `.env.example`（値が空のテンプレート）だけは追跡対象として残す。
+.env.*
+!.env.example
+# 鍵・証明書・資格情報
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+secrets.yaml
+secrets.yml
+credentials.json
+service-account*.json
