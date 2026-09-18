@@ -1,31 +1,227 @@
 # agent-eval-lab
 
-レポート『AIエージェントで見落とされがちな評価手法』の 3章・4章・8章を例示的に実装し、各手法を「植え込んだ欠陥に反応し、対照には反応しない」ことで検証するプロジェクト。
+**Do AI agent evaluation methods actually work? We implemented them and found out.**
 
-## ディレクトリ構成
+*[日本語版 README はこちら](README.ja.md)*
 
-| パス | 内容 |
+There is plenty of writing about how to evaluate AI agents. There is much less writing about
+whether those evaluation methods actually do what they claim. This repository closes that gap:
+we took the methods proposed in a report on overlooked agent-evaluation techniques, implemented
+them against a small controllable agent, deliberately planted defects, and measured whether each
+method reacted to the planted defect and stayed quiet on the control.
+
+We ran **27 experiments**. Here is how they landed.
+
+| Verdict | Count | Meaning |
+|---|---|---|
+| PASS | 14 | The method worked as claimed |
+| NEGATIVE | 4 | Correctly implemented, but the claim did not hold |
+| FAIL | 9 | Our implementation or experiment design was at fault |
+
+The most useful part is not the tally. It is that **we ran the whole suite against a simulated
+agent first, everything looked consistent, and then $3 of real Claude API calls showed that three
+of our conclusions were wrong** — including two bugs in the evaluator itself. More on that below.
+
+---
+
+## Why this exists
+
+Evaluating an agent is not like evaluating a classifier. An agent takes many steps, observes an
+environment, calls tools, and mutates state along the way. That creates three problems that
+output-only testing cannot see:
+
+- **The result can be right while the process is terrible.** An agent that deletes a file without
+  taking a backup still produces the correct final state.
+- **Each run is expensive**, so you cannot re-run every test on every change.
+- **The tests themselves rot.** External APIs change shape, production traffic drifts, models get
+  updated, and answers leak into training data.
+
+This project implements and stress-tests the methods that address each of those.
+
+## The core idea: a method must react *and* stay quiet
+
+Implementing an evaluation method and saying "it runs" is not verification. It is like building a
+thermometer and reporting that the display lights up. So every experiment here has to clear two
+bars at once.
+
+```mermaid
+flowchart LR
+  subgraph Planted["Planted condition"]
+    P["Agent version with a<br/>deliberate defect"]
+  end
+  subgraph Control["Control condition"]
+    C["Clean version /<br/>unrelated change"]
+  end
+  M{"Evaluation method M"}
+  P --> M
+  C --> M
+  M -->|must react| R1["Detected ✓"]
+  M -->|must stay quiet| R2["Not detected ✓"]
+  R1 --> V{"Verified only when<br/>both hold"}
+  R2 --> V
+```
+
+Each experiment fixes five things **in writing before any code is written**: the hypothesis, the
+planted condition, the control, a numeric pass criterion, and the provenance of every number
+(`live` / `replay` / `simulated` / `unit`). Criteria are never loosened afterwards. When a method
+misses its bar, we record *why*, split into:
+
+- **FAIL** — our implementation or experiment design was wrong. We say what to fix.
+- **NEGATIVE** — the implementation was right and the claim simply did not hold.
+
+That discipline is what turned four disappointments into results worth publishing.
+
+## What we built
+
+| Piece | Details |
 |---|---|
-| `CLAUDE.md` | 作業指示（毎セッション読み込み）。`.claude/rules/` は該当ファイルを開くと読み込まれる |
-| `docs/report/` | 原典レポート（`ai_agent_evaluation_report.md`） |
-| `docs/plan/` | 計画（`00-plan.md`）、実験カタログ（`02-experiment-catalog.md`）、ADR（`03-decisions.md`）、進捗（`progress.md`） |
-| `docs/results/` | 実験ごとの結果ページ、判定サマリ（`summary.md`）、総括（`README.md`）、live 検証レポート（`LIVE.md` / `LIVE2.md`） |
-| `docs/IMPROVEMENT.md` | live 検証で見つかった欠陥・修正計画・実施結果・残作業 |
-| `src/agenteval/` | 実装（`core` / `llm` / `env` / `agent` / `judge` / `pts` / `process` / `drift` / `reports`） |
-| `experiments/` | 実験スクリプトとレジストリ（`registry.yaml`） |
-| `tasks/` `versions/` `prompts/` | タスク定義、版定義（植込み欠陥つき）、システムプロンプト |
-| `tests/` | 単体テスト（API を呼ばない。`conftest.py` が遮断する） |
-| `data/` | 生成物。`data/fixtures/` 以外は git 管理外 |
+| Environment | One SQLite file per run: contacts, calendar, mail, files, backups, notes |
+| Tools | 14 tools, from `calendar_search` to `finish` |
+| Tasks | 46 (including "do nothing", "ask a clarifying question", needle-in-a-haystack, and private canary tasks) |
+| Agent versions | 13 — one baseline plus 12 with planted defects |
+| Agent under test | Claude Haiku 4.5 |
+| Judge / reference policy | Claude Sonnet 5 |
+| Corpus | 5,520 simulated runs |
+| Live verification | 1,308 API calls, **$3.09** total |
 
-ルート直下に置いているのは、標準的な配置（`README.md` / `LICENSE`）、
-ツールが参照する設定（`Makefile` / `pyproject.toml` / `.gitignore` / `.env*`）、
-コードが `REPO_ROOT` 直下として読む `corpus.yaml` と `pricing.yaml`、
-そして Claude Code が作業ディレクトリ直下から読む `CLAUDE.md` だけです。
+Every evaluation method takes only a `Run` (a trajectory) as input. Nothing calls the API to
+compute a metric, which is what makes the provenance labels trustworthy.
 
-## セットアップ
+## Results worth your time
+
+### Process metrics catch what outcome metrics cannot
+
+Three agent versions with **identical pass rates**, two of which are clearly degraded:
+
+| Version | Pass rate | Duplicate-call rate | Verification rate |
+|---|---|---|---|
+| `v01_baseline` | 0.793 | 0.004 | 1.00 |
+| `v03_noverify` (skips checks) | **0.793** | 0.004 | **0.00** |
+| `v04_loopy` (repeats searches) | **0.793** | **0.191** | 1.00 |
+
+If you only look at outcomes, both regressions are invisible.
+
+### Pair every efficiency metric with a quality metric
+
+![Goodhart pairs](docs/results/fig/E4-9_goodhart.png)
+
+Telling the agent to "minimise steps" cut steps to **0.796×** baseline — and dropped the
+verification rate to **0.00**. Efficiency alone always looks like an improvement.
+
+### Ship decisions need `pass^k`, not `pass@k`
+
+![pass@k vs pass^k](docs/results/fig/E4-8_pass_gap.png)
+
+On boundary tasks the gap between "succeeds at least once in 3 tries" and "succeeds all 3 times"
+reached **0.749**. On trivial tasks it was **0.000**.
+
+### Four negative results
+
+| Experiment | Claim that did not hold |
+|---|---|
+| Prefix cache & branch re-execution | Outcomes matched perfectly (1.00), but it **cost more**, not less: every prefix step still needs a billed confirmation call |
+| SPRT early stopping | Error rates were spot on (α 0.046, β 0.052) but trials came to 0.604× fixed-n, just missing the 0.6 bar |
+| Discriminative power | Outcome-only discriminative power **cannot** separate versions that degrade the process but not the result |
+| Surrogate judge | A deterministic stand-in judge agreed with the real Sonnet 5 judge only 0.683 of the time, and was consistently too lenient |
+
+## What the real API taught us that simulation could not
+
+We validated the whole suite against a simulator first. Then we spent $3 on real API calls and
+found **seven defects that simulation structurally could not reveal** — three of them in the
+evaluator itself.
+
+| # | Finding |
+|---|---|
+| 1 | **80% of real runs never called the completion tool**, finishing with prose instead — which silently disabled a linter rule that keyed off that event |
+| 2 | No tool existed to look up a contact, making some tasks unsolvable |
+| 3 | Task prompts carried less information than their acceptance criteria |
+| 4 | Acceptance criteria produced **false negatives on number formatting** (`1,500円` vs `1500`) |
+| 5 | The simulator had a planted defect's effect **backwards** (sim 0.30 vs live 0.97) |
+| 6 | **A planted defect was never actually planted**: the real model resolves a conflict between the system prompt and a tool definition **in favour of the tool definition** |
+| 7 | The model-fingerprint statistic diluted its own signal with terms that carry no discriminating power |
+
+Two of these are worth knowing even if you never touch this repo:
+
+> **When your system prompt and your tool description disagree, the model follows the tool
+> description.** We told the agent to use `YYYY/MM/DD` everywhere. It used that format in its prose
+> to the user, and the tool-documented ISO format in the actual arguments — 12 out of 12 times.
+
+> **Agents often do not call your completion tool.** Plan for a run that ends with plain text, and
+> never write an evaluation rule that keys off a completion event.
+
+## Quick start
+
+Requires Python 3.13 and [uv](https://docs.astral.sh/uv/).
+
 ```bash
 uv sync --all-extras
-export ANTHROPIC_API_KEY=...
-export AGENTEVAL_BUDGET_USD=120
-make check
+make check        # ruff + mypy --strict + pytest (never touches the network)
 ```
+
+Everything below runs offline against the deterministic simulator, so it costs nothing:
+
+```bash
+# Build the corpus (46 tasks x 12 versions x 10 repeats)
+uv run agenteval corpus build --plan corpus.yaml --sim
+
+# Run a single task
+uv run agenteval run --version v01_baseline --task T-001 --mode sim
+
+# Run one experiment and refresh its result page
+uv run agenteval exp E3-1
+
+# Check every experiment against its fixed criteria
+uv run agenteval verify
+
+# See cumulative cost, remaining budget and cache hit rate
+uv run agenteval cost
+```
+
+To use the real API, set both variables. The budget guard refuses to call out without them:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export AGENTEVAL_BUDGET_USD=20
+uv run agenteval corpus build --plan corpus.yaml --dry-run   # estimate first
+```
+
+## Repository layout
+
+| Path | What lives there |
+|---|---|
+| `docs/report/` | The source report being verified |
+| `docs/plan/` | Plan, experiment catalogue, ADRs, progress checklist |
+| `docs/results/` | One page per experiment, plus `summary.md`, the overall write-up, and the two live-verification reports |
+| `docs/IMPROVEMENT.md` | Defects found in live verification, the fix plan, and what is still open |
+| `src/agenteval/` | Implementation: `core` `llm` `env` `agent` `judge` `pts` `process` `drift` `reports` |
+| `experiments/` | 27 experiment scripts and `registry.yaml` (the fixed pass criteria) |
+| `tasks/` `versions/` `prompts/` | Task definitions, agent versions with planted defects, system prompts |
+| `tests/` | 92 unit tests. `conftest.py` blocks the network so they can never call the API |
+| `data/` | Generated artefacts. Everything except `data/fixtures/` is git-ignored |
+
+Only conventional root files stay at the top level: `README*`, `LICENSE`, build config, and the two
+YAML files (`corpus.yaml`, `pricing.yaml`) that the code reads relative to the repository root.
+
+## Where to read more
+
+- **[docs/results/README.md](docs/results/README.md)** — the overall write-up: which claims were
+  verified, which were not, and how circular each experiment is
+- **[docs/results/summary.md](docs/results/summary.md)** — the verdict table (generated, never edited by hand)
+- **[docs/results/LIVE.md](docs/results/LIVE.md)** and **[LIVE2.md](docs/results/LIVE2.md)** — the live-API verification rounds
+- **[docs/IMPROVEMENT.md](docs/IMPROVEMENT.md)** — every defect we found and what we did about it
+
+## Honest limitations
+
+1. Only the evaluation *harness* was validated against the live API. The 25 method experiments
+   still run on simulated trajectories.
+2. This is a teaching environment: SQLite, 14 tools, 46 tasks. It does not reproduce the messiness
+   of a real coding agent or long-running deployment.
+3. "Production traffic" is generated, so nothing here demonstrates real-world effectiveness.
+4. Some experiments are partly circular — we wrote the simulator policy that the metric then
+   detects. Each result page grades its own circularity on a three-point scale.
+5. The task set is homogeneous: 46 tasks collapse into only 13 distinct tool sequences, which
+   directly caused two FAIL verdicts.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
