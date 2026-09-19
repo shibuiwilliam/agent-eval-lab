@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _common import corpus, finalize, labeled
 
 from agenteval.pts import selector as selector_mod
+from agenteval.pts import sprt as sprt_mod
 from agenteval.pts.sprt import SPRT, fixed_n_for_power, monte_carlo
 from agenteval.reports import plotting
 
@@ -78,6 +79,13 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         ),
         "mean_n": labeled(round(mean_n, 4)),
         "fixed_n": labeled(float(fixed_n)),
+        # ADR-023: 改訂前は α 項にプール分散を使う二標本の式で固定 n = 9 になっていた。
+        "fixed_n_legacy_pooled": labeled(
+            float(sprt_mod.fixed_n_pooled_legacy(P0, P1, ALPHA, BETA))
+        ),
+        "mean_n_ratio_legacy": labeled(
+            round(mean_n / sprt_mod.fixed_n_pooled_legacy(P0, P1, ALPHA, BETA), 4)
+        ),
         "undecided_rate_max": labeled(round(max(r["undecided_rate"] for r in results), 4)),
     }
     notes = [
@@ -90,13 +98,32 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         ),
     ]
     ratio = mean_n / fixed_n
+    legacy_n = sprt_mod.fixed_n_pooled_legacy(P0, P1, ALPHA, BETA)
     failure = "negative" if ratio > 0.6 else "fail"
+    notes.append(
+        "**ADR-023 による訂正**: 比較相手（固定 n 法）の試行数に誤りがあった。"
+        "`H0: p = p0` 対 `H1: p = p1` の一標本検定なので第 1 種の誤りの項の分散は帰無仮説下の "
+        "`p0(1−p0)` を使うべきところ、改訂前はプール分散 `((p0+p1)/2)`（二標本の式の α 項）を"
+        f"入れていた。そのため固定 n が {fixed_n} ではなく {legacy_n} と過小になり、"
+        f"比は {round(ratio, 4)} ではなく {round(mean_n / legacy_n, 4)} と出ていた。"
+        "**改訂前はこの差で NEGATIVE、改訂後は PASS である。** "
+        "基準（固定 n の 60% 以下）は一切変えていない。変えたのは比較相手の計算だけで、"
+        "その根拠は判定を見なくても成り立つ（測定器の誤りを直した）。"
+    )
     if failure == "negative":
         notes.append(
             f"判定は NEGATIVE。誤り率の主張（α ≤ 0.07、β ≤ 0.12）は成立したが、"
-            f"平均試行数の主張（固定 n の 60% 以下）は {round(ratio, 3)} でわずかに届かなかった。"
-            "実装の不備ではなく、p_true の格子に最も決着が遅い p_true = 0.5 を含めているため。"
+            f"平均試行数の主張（固定 n の 60% 以下）は {round(ratio, 3)} で届かなかった。"
+            "p_true の格子に最も決着が遅い p_true = 0.5 を含めているため。"
             "格子から 0.5 を除くと比は下がるが、それは基準を後から緩めることになるので行わない。"
+        )
+    else:
+        notes.append(
+            f"判定は PASS。誤り率（α = {round(empirical_alpha, 4)}、β = {round(empirical_beta, 4)}）と "
+            f"平均試行数（固定 n の {round(ratio, 3)} 倍）がともに基準を満たした。"
+            "ただし最も決着が遅い `p_true = 0.5` を格子に含めた上での値である。"
+            "「SPRT は固定 n の 60% 以下」と主張するときは、仮説の設定（p0, p1）と"
+            "評価する p_true の範囲を必ず添える必要がある。"
         )
     return finalize(
         "E3-6",

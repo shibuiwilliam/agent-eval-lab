@@ -96,6 +96,22 @@ The prompts for driving a session (P0 kickoff / corpus build / experiment templa
 - [x] Corrected the stale counts and numbers in `docs/results/README.md` (NEGATIVE 3→4, FAIL 7→9, and others)
 - [x] **DoD**: `make check` passes (97 tests). Verdicts unchanged: PASS 14 / NEGATIVE 4 / FAIL 9 / PENDING 0
 
+## P9 Code and experiment review, and the re-run (2026-09-19)
+- [x] Reviewed all 70 files under `src/agenteval/`, the 27 experiments, the plan, catalogue and ADRs against the source report
+- [x] Identified 8 defects in the evaluator → wrote ADR-016 through ADR-023 before fixing them
+      (flip threshold, the escape-defect rate's F_full, detour rate, stop appropriateness,
+      saturation, the inviolable set in the controls, branch double-billing, SPRT's fixed-n,
+      the history used for uncertainty estimation)
+- [x] Added 7 regression tests (`tests/pts/test_review_fixes.py`)
+- [x] Re-ran all 27 experiments → PASS 15 / NEGATIVE 5 / FAIL 7 / PENDING 0
+- [x] Three verdicts changed (E3-6 NEGATIVE→PASS; E3-3 / E3-7 FAIL→NEGATIVE).
+      **Not one criterion was changed — only the thing compared against it**
+- [x] Implemented a 5-policy ablation in E3-3, showing that the signal lives in coverage (3.2) and
+      that uncertainty (3.4) contributes nothing
+- [x] Implemented an in-budget oracle floor and confirmed E3-7's criterion is attainable (0.031 at 40%)
+- [x] Recorded in `docs/REVIEW.md` / `REVIEW.en.md`. Result pages and the summary rewritten in both languages
+- [x] **DoD**: `make check` passes. Provenance labels preserved. No new live calls (still 3.09 USD)
+
 ## Next
 - R6–R9 from "11. Not yet fixed" in `IMPROVEMENT.md`.
   Highest priority is R6 (re-take E4-2 / E4-6 with a live judge, estimated 0.3 USD)

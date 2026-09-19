@@ -32,7 +32,9 @@ def precision(selected: set[str], flipped: set[str]) -> float:
 def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
     runs = corpus()
     bands = flake_band(runs, "v01_baseline")
-    flipped = flipped_tasks(runs, "v01_baseline", "v02_dateformat", bands)
+    # ADR-016: 閾値を撤廃（v02 は帯の有無で件数が変わらないが、定義をそろえる）
+    flipped = flipped_tasks(runs, "v01_baseline", "v02_dateformat")
+    flipped_legacy = flipped_tasks(runs, "v01_baseline", "v02_dateformat", bands)
 
     client = LLMClient(mode="auto" if live else "sim", run_id="E3-2") if live else None
     prompt_change = next(
@@ -64,6 +66,7 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
     )
 
     metrics = {
+        "n_flipped_legacy_band": labeled(len(flipped_legacy)),
         "recall_of_flipped": labeled(recall),
         "control_selected_ratio": labeled(control.selected_ratio),
         "precision_gain_vs_coverage": labeled(round(impact_precision - coverage_precision, 4)),

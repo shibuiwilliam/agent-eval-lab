@@ -6,20 +6,20 @@
 
 | 判定 | 件数 |
 |---|---|
-| PASS | 14 |
-| NEGATIVE | 4 |
-| FAIL | 9 |
+| PASS | 15 |
+| NEGATIVE | 5 |
+| FAIL | 7 |
 | PENDING | 0 |
 
 | 実験 | 章 | タイトル | 判定 | 主要指標 | 来歴 | コスト(USD) |
 |---|---|---|---|---|---|---|
 | [E3-1](E3-1.md) | 3 | 軌跡カバレッジ依存グラフによる候補絞り込み | PASS | recall_of_flipped=1○ / candidate_ratio=0.348○ / control_false_candidates=0○ | simulated | 0.0 |
 | [E3-2](E3-2.md) | 3 | 意味的影響推定による選択 | PASS | recall_of_flipped=1○ / control_selected_ratio=0○ / precision_gain_vs_coverage=0.0893○ | simulated | 0.0 |
-| [E3-3](E3-3.md) | 3 | 不確実性駆動のテスト選択 | FAIL | escape_ratio_vs_random=0.911× / calibration_error=0.325× | simulated | 0.0 |
+| [E3-3](E3-3.md) | 3 | 不確実性駆動のテスト選択 | NEGATIVE | escape_ratio_vs_random=1.06× / calibration_error=0.08○ | simulated | 0.0 |
 | [E3-4](E3-4.md) | 3 | テストピラミッドの段判定 | PASS | level_ok_rate=1○ / control_nonflake_flips=0○ | simulated | 0.0 |
-| [E3-5](E3-5.md) | 3 | 接頭辞キャッシュと分岐再実行 | NEGATIVE | outcome_agreement=1○ / live_step_ratio_v02=1.11× / divergence_order_ok=0× / self_branch_live_steps=0○ | simulated | 0.0 |
-| [E3-6](E3-6.md) | 3 | SPRT による早期打切り | NEGATIVE | empirical_alpha=0.0455○ / empirical_beta=0.0516○ / mean_n_ratio=0.604× / boundary_mean_n=5.2○ | simulated | 0.0 |
-| [E3-7](E3-7.md) | 3 | 逃走欠陥率・ε-探索・不可侵集合 | FAIL | escape_rate=0.3× / random_included=2○ / inviolable_rate=1○ / full_budget_escape=0○ | simulated | 0.0 |
+| [E3-5](E3-5.md) | 3 | 接頭辞キャッシュと分岐再実行 | NEGATIVE | outcome_agreement=1○ / live_step_ratio_v02=1× / divergence_order_ok=0× / self_branch_live_steps=0○ | simulated | 0.0 |
+| [E3-6](E3-6.md) | 3 | SPRT による早期打切り | PASS | empirical_alpha=0.0455○ / empirical_beta=0.0516○ / mean_n_ratio=0.544○ / boundary_mean_n=5.2○ | simulated | 0.0 |
+| [E3-7](E3-7.md) | 3 | 逃走欠陥率・ε-探索・不可侵集合 | NEGATIVE | escape_rate=0.479× / random_included=2○ / inviolable_rate=1○ / full_budget_escape=0○ | simulated | 0.0 |
 | [E4-1](E4-1.md) | 4 | 軌跡メトリクスの選択的反応 | PASS | dup_ratio_v04_vs_v01=44○ / verification_ratio_v03_vs_v01=0○ / v02_change_within_flake_band=1○ | simulated | 0.0 |
 | [E4-2](E4-2.md) | 4 | アブレーションによる無駄呼び出し判定 | FAIL | waste_rate_diff=0.0241× / surrogate_precision=0.16× / surrogate_recall=1○ / control_useful_rate=1○ | simulated | 0.0 |
 | [E4-3](E4-3.md) | 4 | 軌跡リンターの決定的検出 | PASS | violation_detection_rate=1○ / baseline_violation_rate=0○ / operator_tests_pass=1○ | simulated | 0.0 |

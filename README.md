@@ -14,9 +14,9 @@ We ran **27 experiments**. Here is how they landed.
 
 | Verdict | Count | Meaning |
 |---|---|---|
-| PASS | 14 | The method worked as claimed |
-| NEGATIVE | 4 | Correctly implemented, but the claim did not hold |
-| FAIL | 9 | Our implementation or experiment design was at fault |
+| PASS | 15 | The method worked as claimed |
+| NEGATIVE | 5 | Correctly implemented, but the claim did not hold |
+| FAIL | 7 | Our implementation or experiment design was at fault |
 
 The most useful part is not the tally. It is that **we ran the whole suite against a simulated
 agent first, everything looked consistent, and then $3 of real Claude API calls showed that three
@@ -115,12 +115,12 @@ verification rate to **0.00**. Efficiency alone always looks like an improvement
 On boundary tasks the gap between "succeeds at least once in 3 tries" and "succeeds all 3 times"
 reached **0.749**. On trivial tasks it was **0.000**.
 
-### Four negative results
+### Five negative results
 
 | Experiment | Claim that did not hold |
 |---|---|
-| Prefix cache & branch re-execution | Outcomes matched perfectly (1.00), but it **cost more**, not less: every prefix step still needs a billed confirmation call |
-| SPRT early stopping | Error rates were spot on (α 0.046, β 0.052) but trials came to 0.604× fixed-n, just missing the 0.6 bar |
+| Prefix cache & branch re-execution | Outcomes matched perfectly (1.00), but there were **no savings** (ratio 1.000): every prefix step still needs a billed confirmation call |
+| Uncertainty-driven selection | Calibration held (error 0.080), but the selection is **no better than random** at catching failures (ratio 1.056). An ablation shows the signal lives in coverage, not uncertainty |
 | Discriminative power | Outcome-only discriminative power **cannot** separate versions that degrade the process but not the result |
 | Surrogate judge | A deterministic stand-in judge agreed with the real Sonnet 5 judge only 0.683 of the time, and was consistently too lenient |
 

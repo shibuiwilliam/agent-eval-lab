@@ -40,8 +40,13 @@ def evaluate(task_id: str, runs: list[Run]) -> Discriminative:
     good_rate = sum(r.passed() for r in good) / len(good) if good else 0.0
     bad_rate = sum(r.passed() for r in bad) / len(bad) if bad else 0.0
     d = round(good_rate - bad_rate, 4)
-    all_rate = sum(r.passed() for r in subset) / len(subset) if subset else 0.0
-    saturated = all_rate > 0.95 and abs(d) < 0.1
+    # `.claude/rules/drift.md`: 飽和 = **全版で**合格率 > 0.95 かつ |d| < 0.1。
+    # 改訂前は全 run をプールした合格率を見ており、一部の版だけ低くても飽和と判定しえた。
+    by_version: dict[str, list[bool]] = {}
+    for r in subset:
+        by_version.setdefault(r.version_id, []).append(r.passed())
+    min_rate = min((sum(v) / len(v) for v in by_version.values()), default=0.0)
+    saturated = min_rate > 0.95 and abs(d) < 0.1
     return Discriminative(
         task_id=task_id,
         good_rate=round(good_rate, 4),

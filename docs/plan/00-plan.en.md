@@ -52,6 +52,8 @@ Details are in [02-experiment-catalog.en.md](02-experiment-catalog.en.md).
 
 Adjust the tasks so that the baseline v01 pass rate lands between 50% and 80%. A suite where everything passes — or everything fails — cannot verify PTS or discriminative power. Do the tuning on the task side (ambiguity, required step count, fault injection); never fix it by switching to a stronger model.
 
+**Note (2026-09-19 review, REVIEW.en.md C2)**: this "50-80% pass rate" is in tension with E3-7's "escape-defect rate <= 0.1 at a 40% budget". In a suite with a high failure rate, `|F_full|` grows relative to the budget and Escape cannot easily fall. They were compatible here (the floor at 40% is 0.031), but if difficulty is raised, check with the oracle that E3-7's criterion is still attainable.
+
 ## Phases and definitions of done (DoD)
 
 ### P0 Foundations

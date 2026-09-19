@@ -34,13 +34,17 @@ class RunMetrics:
     version_id: str
     steps: int
     calls: int
-    detour_rate: float
+    detour_ratio: float
+    detour_excess: float
     dup_rate: float
     backtracks: int
     context_growth: int
     verification_rate: float
     recovery_rate: float
     stop_appropriate: bool
+    premature_stop: bool
+    overrun: bool
+    finish_called: bool
     question_appropriate: bool
     tokens: int
     l_min_source: str
@@ -61,21 +65,32 @@ def compute(run: Run, l_min: int | None = None, l_min_source: str = "task") -> R
     counts = Counter(keys)
     duplicates = sum(v - 1 for v in counts.values() if v > 1)
     steps = run.n_steps
-    effective_l_min = l_min if l_min is not None else 0
-    detour = (steps - effective_l_min) / steps if steps else 0.0
+    # 原典 4.2: 迂回率 D = L_actual / L_min（1 以上の比）。ADR-017。
+    # `l_min` が無い run は NaN にして平均から除く（0 で割らない）。
+    if l_min is None or l_min <= 0 or steps == 0:
+        detour_ratio = math.nan
+        detour_excess = math.nan
+    else:
+        detour_ratio = round(steps / l_min, 4)
+        detour_excess = round(max(0.0, (steps - l_min) / steps), 4)
+    stop = _stop_quality(run)
     return RunMetrics(
         run_id=run.run_id,
         task_id=run.task_id,
         version_id=run.version_id,
         steps=steps,
         calls=n_calls,
-        detour_rate=round(max(0.0, detour), 4),
+        detour_ratio=detour_ratio,
+        detour_excess=detour_excess,
         dup_rate=round(duplicates / n_calls, 4) if n_calls else 0.0,
         backtracks=_backtracks(run),
         context_growth=_context_growth(run),
         verification_rate=_verification_rate(run),
         recovery_rate=_recovery_rate(run),
-        stop_appropriate=_stop_appropriate(run),
+        stop_appropriate=stop["appropriate"],
+        premature_stop=stop["premature"],
+        overrun=stop["overrun"],
+        finish_called=_finish_called(run),
         question_appropriate=_question_appropriate(run),
         tokens=run.cost.total_tokens,
         l_min_source=l_min_source,
@@ -139,10 +154,41 @@ def _recovery_rate(run: Run) -> float:
     return round(recovered / errors, 4)
 
 
-def _stop_appropriate(run: Run) -> bool:
-    """finish で終わったか（max_steps 打切り・主張なしの end_turn は不適切）。"""
+def _finish_called(run: Run) -> bool:
+    """最後のツール呼び出しが `finish` か（改訂前の `stop_appropriate`）。
+
+    live では実エージェントの 8 割がここに当たらない（IMPROVEMENT.md L1）。
+    「ツール呼び出しの作法」を測る量であって停止の適切さではないので、名前を分けた。
+    """
     names = run.tool_names()
     return bool(names) and names[-1] == "finish"
+
+
+def _stop_quality(run: Run) -> dict[str, bool]:
+    """停止適切性（原典 4.2、ADR-019）。
+
+    - `premature` 未達なのに完了を宣言した（マイルストーン未到達で終了）
+    - `overrun` 全マイルストーン到達後もステップを続けた
+    - `appropriate` どちらでもない
+    `milestone_steps` が空の run（マイルストーン未定義）は判定できないので両方 False。
+    """
+    outcome = run.outcome
+    if outcome is None or not outcome.milestone_steps:
+        return {"appropriate": True, "premature": False, "overrun": False}
+    steps = outcome.milestone_steps
+    unreached = [k for k, v in steps.items() if v < 0]
+    premature = bool(unreached)
+    overrun = False
+    if not unreached and steps:
+        last_needed = max(steps.values())
+        # 最終ステップが「全マイルストーン到達 ＋ finish」より後ろなら継続しすぎ。
+        # finish は 1 ステップぶん許容する。
+        overrun = (run.n_steps - 1) > last_needed + 1
+    return {
+        "appropriate": not premature and not overrun,
+        "premature": premature,
+        "overrun": overrun,
+    }
 
 
 def _question_appropriate(run: Run) -> bool:
@@ -157,7 +203,7 @@ def question_appropriate_for(run: Run, kind: str) -> bool:
     asked = _question_appropriate(run)
     if kind == "ambiguous":
         return asked
-    return (not asked) and _stop_appropriate(run)
+    return (not asked) and _finish_called(run)
 
 
 def aggregate(metrics: list[RunMetrics], field_name: str) -> float:

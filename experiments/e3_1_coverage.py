@@ -30,7 +30,9 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
     changes = change_mod.diff_versions("v01_baseline", "v06_toolschema_v2")
     tool_change = next(c for c in changes if c.kind == "tool")
     bands = flake_band(runs, "v01_baseline")
-    flipped = flipped_tasks(runs, "v01_baseline", "v06_toolschema_v2", bands)
+    # ADR-016: sim は対応のある決定的比較なので閾値を置かない（不一致が 1 件でもあれば反転）。
+    flipped = flipped_tasks(runs, "v01_baseline", "v06_toolschema_v2")
+    flipped_legacy = flipped_tasks(runs, "v01_baseline", "v06_toolschema_v2", bands)
 
     candidates = coverage_mod.candidates(tool_change, coverage)
     recall = len(flipped & candidates) / len(flipped) if flipped else 1.0
@@ -64,6 +66,7 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         "control_false_candidates": labeled(len(false_candidates)),
         "n_flipped": labeled(len(flipped)),
         "mean_flake_band": labeled(round(sum(bands.values()) / len(bands), 4)),
+        "n_flipped_legacy_band": labeled(len(flipped_legacy)),
         "n_candidates": labeled(len(candidates)),
         "n_tasks": labeled(len(coverage)),
         "control_candidate_ratio": labeled(coverage_mod.candidate_ratio(control, coverage)),

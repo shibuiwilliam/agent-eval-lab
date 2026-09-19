@@ -166,7 +166,7 @@ def select(
     mean_cost = float(np.mean(list(costs.values()))) if costs else 1.0
     budget_tokens = budget_ratio * sum(costs.get(t, mean_cost) for t in task_ids)
 
-    inviolable = [t for t in task_ids if get_task(t).risk == "inviolable"]
+    inviolable = _inviolable(task_ids)
     candidates = [t for t in task_ids if t not in inviolable]
 
     priorities: dict[str, float] = {}
@@ -241,19 +241,31 @@ def select(
     )
 
 
+def _inviolable(task_ids: list[str]) -> list[str]:
+    """不可侵集合（原典 3.8）。選択ロジックの外で必ず実行される。
+
+    ADR-020: 対照（ランダム / 直近失敗優先）にも同じ規則を適用する。
+    片方だけに制約が掛かっている比較は対照になっていない。
+    """
+    return [t for t in task_ids if get_task(t).risk == "inviolable"]
+
+
 def select_random(
     task_ids: list[str], runs: list[Run], budget_ratio: float = 0.3, seed: int = 0
 ) -> Selection:
-    """対照: 同予算のランダム選択。"""
+    """対照: 同予算のランダム選択（不可侵集合は必ず含める。ADR-020）。"""
     rng = np.random.default_rng(seed)
     costs = cost_of(runs)
     mean_cost = float(np.mean(list(costs.values()))) if costs else 1.0
     budget_tokens = budget_ratio * sum(costs.get(t, mean_cost) for t in task_ids)
+    inviolable = _inviolable(task_ids)
+    selected: list[str] = list(inviolable)
+    spent = sum(costs.get(t, mean_cost) for t in inviolable)
     order = rng.permutation(len(task_ids))
-    selected: list[str] = []
-    spent = 0.0
     for index in order:
         task_id = task_ids[int(index)]
+        if task_id in selected:
+            continue
         cost = costs.get(task_id, mean_cost)
         if spent + cost > budget_tokens:
             continue
@@ -270,15 +282,18 @@ def select_random(
 def select_recent_failures(
     task_ids: list[str], runs: list[Run], budget_ratio: float = 0.3
 ) -> Selection:
-    """対照: 直近失敗優先。"""
+    """対照: 直近失敗優先（不可侵集合は必ず含める。ADR-020）。"""
     costs = cost_of(runs)
     mean_cost = float(np.mean(list(costs.values()))) if costs else 1.0
     budget_tokens = budget_ratio * sum(costs.get(t, mean_cost) for t in task_ids)
     stats = history_stats(runs)
     order = sorted(task_ids, key=lambda t: stats.get(t, (0, 0))[1], reverse=True)
-    selected: list[str] = []
-    spent = 0.0
+    inviolable = _inviolable(task_ids)
+    selected = list(inviolable)
+    spent = sum(costs.get(t, mean_cost) for t in inviolable)
     for task_id in order:
+        if task_id in selected:
+            continue
         cost = costs.get(task_id, mean_cost)
         if spent + cost > budget_tokens:
             continue

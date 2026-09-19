@@ -33,15 +33,15 @@
 
     the selection criterion against the observed behaviour.'
   notes:
-  - 'Flipped tasks: [''T-007'', ''T-009'', ''T-011'', ''T-012'', ''T-013'', ''T-014'']'
+  - 'Flipped tasks: [''T-001'', ''T-006'', ''T-007'', ''T-008'', ''T-009'', ''T-010'', ''T-011'', ''T-012'',
+    ''T-013'', ''T-014'', ''T-401'']'
   - 'Mean flake band (binomial 95% half-width from v01''s repeats): 0.1812'
+  - 'Flips under the pre-revision flake band: 6 (ADR-016 removed the threshold)'
   - 'Control (mail_send) candidates: [''T-002'', ''T-004'', ''T-015'', ''T-016'', ''T-017'', ''T-018'',
     ''T-019'', ''T-020'', ''T-021'', ''T-029'', ''T-402'']'
   - The candidate set approximates "referencing a prompt section" with a tool correspondence table (`SECTION_TOOLS`
     in coverage.py). Whether the LLM actually read that section is not observable, so this is an approximation
     rather than section 3.2 itself.
-  - Provenance is simulated (a corpus built with the simulated agent of ADR-008). Re-confirmation under
-    live has not been done.
 - id: E3-2
   title: Selection by semantic impact estimation
   hypothesis: Impact tags enumerated from a prompt diff select the date-related tasks and capture the
@@ -86,61 +86,97 @@
     and most-recently-failed, and expected_escape is calibrated against the measured value
   planted: Each change v02–v09 evaluated leave-one-change-out
   control: Random selection at the same budget (averaged over 1,000 draws) and most-recently-failed
-  verdict_reason: 'Unmet criteria: escape_ratio_vs_random, calibration_error.'
+  verdict_reason: 'Unmet criterion: escape_ratio_vs_random.'
   figures:
   - Escape-defect rate
   - Calibration
-  method: 'There are 8 change events, v01 → v02 through v09. For each event we estimated `p̂_t` from the
+  method: 'There are 8 change events, v01 -> v02 through v09. For each event we estimated `p_hat_t` from
+    **the history of the current deployment, v01_baseline** (ADR-022), and greedily selected in descending
+    order of `H(p_hat)/c` up to a 30% budget (redundancy: skip candidates whose normalised edit-distance
+    similarity over the tool-name sequence exceeds 0.8).
 
-    history with that event removed (leave-one-change-out) and greedily selected in descending
 
-    order of `H(p̂)/c` up to a 30% budget (redundancy: skip candidates whose normalised
+    **The escape-defect rate is measured two ways.**
 
-    edit-distance similarity over the tool-name sequence exceeds 0.8). The escape-defect rate is
+    1. `Escape(S) = |F_full \ S| / |F_full|` (the definition in report 3.8), where `F_full` is the set
+    of tasks that **failed in that full run** (ADR-018). One full run = each test once, so we build `F_full(r)`
+    per repeat and average over the 10 repeats
 
-    the fraction of unselected tests that actually flipped (report 3.8).
+    2. Flip-based (the pre-revision definition), where `F_full` is the set of tasks whose outcome flipped
+    under the change
 
-    The controls are random selection (averaged over 1,000 draws) and most-recently-failed.
 
-    `expected_escape` is `Σ(1 − p̂_t) / |T|` over the unselected tests; we placed it next to the
+    Before the revision we used 2 while comparing against `expected_escape`, which predicts the failure
+    mass `sum(1 - p_hat)`. **That subtracted two incompatible quantities**, so the calibration error could
+    not mean anything either way.
 
-    measured escape-defect rate to obtain the calibration error.'
+
+    The controls are random selection (300 draws per event, averaged) and most-recently-failed; both now
+    include the inviolable set (ADR-020). To isolate which component carries the signal, 5 selection policies
+    are compared on both KPIs. The attainable floor within budget comes from an oracle that knows each
+    repeat''s `F_full` in advance.'
   notes:
-  - 'Per-change-event results: [{''change'': ''v02_dateformat'', ''n_flipped'': 10, ''uncertainty'': 0.9,
-    ''random'': 0.7171000000000001, ''recent'': 0.7, ''expected'': 0.6571, ''selected'': 17, ''no_redundancy'':
-    0.6, ''n_skipped_redundant'': 29}, {''change'': ''v03_noverify'', ''n_flipped'': 0, ''uncertainty'':
-    0.0, ''random'': 0.0, ''recent'': 0.0, ''expected'': 0.6811, ''selected'': 16, ''no_redundancy'':
-    0.0, ''n_skipped_redundant'': 30}, {''change'': ''v04_loopy'', ''n_flipped'': 0, ''uncertainty'':
-    0.0, ''random'': 0.0, ''recent'': 0.0, ''expected'': 0.6434, ''selected'': 18, ''no_redundancy'':
-    0.0, ''n_skipped_redundant'': 28}, {''change'': ''v05_unsafe_delete'', ''n_flipped'': 2, ''uncertainty'':
-    0.0, ''random'': 0.6855, ''recent'': 1.0, ''expected'': 0.6455, ''selected'': 18, ''no_redundancy'':
-    0.0, ''n_skipped_redundant'': 28}, {''change'': ''v06_toolschema_v2'', ''n_flipped'': 6, ''uncertainty'':
-    0.6667, ''random'': 0.7084984, ''recent'': 0.8333, ''expected'': 0.7243, ''selected'': 14, ''no_redundancy'':
-    0.1667, ''n_skipped_redundant'': 22}, {''change'': ''v07_step_minimizer'', ''n_flipped'': 0, ''uncertainty'':
-    0.0, ''random'': 0.0, ''recent'': 0.0, ''expected'': 0.6434, ''selected'': 18, ''no_redundancy'':
-    0.0, ''n_skipped_redundant'': 28}, {''change'': ''v08_summarize_ctx'', ''n_flipped'': 0, ''uncertainty'':
-    0.0, ''random'': 0.0, ''recent'': 0.0, ''expected'': 0.6434, ''selected'': 18, ''no_redundancy'':
-    0.0, ''n_skipped_redundant'': 28}, {''change'': ''v09_model_swap'', ''n_flipped'': 4, ''uncertainty'':
-    1.0, ''random'': 0.70575, ''recent'': 0.5, ''expected'': 0.6462, ''selected'': 18, ''no_redundancy'':
-    1.0, ''n_skipped_redundant'': 28}]'
-  - 'Isolating the cause: the redundancy penalty (from `.claude/rules/pts.md`: "skip candidates whose
-    complement of normalised edit distance over the tool-name sequence exceeds 0.8") drops most of the
-    candidates — an average of 26.8 per draw. In this illustrative environment the tasks'' tool-name sequences
-    are nearly identical (e.g. `calendar_search → calendar_create → checks_run → finish`), so a similarity
-    based on tool names alone cannot tell different tasks apart.'
-  - With the redundancy penalty switched off, the escape-defect rate falls to 0.442 (random is 0.704).
-    In other words the path "narrow by coverage → order by uncertainty" does work; what drops the candidates
-    is the similarity definition.
-  - '**Corrected diagnosis (confirmed live, ADR-014)**: this "tasks of the same kind mark each other as
-    duplicates" effect happens because sim trajectories share almost identical tool-name sequences across
-    tasks. In live trajectories, 10 tasks split into 9 distinct sequences and only 1 of 45 pairs (2%)
-    exceeds a similarity of 0.8. The definition of the redundancy penalty is not changed.'
-  - 'The verdict is FAIL (a flaw in the experiment design). It is not that the method failed to work as
-    claimed; the cause is the combination of an implementation that measures similarity on tool names
-    alone with a task set whose tool-name sequences are homogeneous. Proposed fix: diversify the tasks''
-    tool sequences (ADR-014 withdrew the plan to change the similarity).'
-  - Change events with zero flips have an undefined escape-defect rate and were excluded from the average
-    (the count is recorded in n_measurable_events).
+  - 'Per-change-event results: [{''change'': ''v02_dateformat'', ''n_flipped'': 10, ''n_flipped_legacy_band'':
+    10, ''n_failures_mean'': 17.1, ''escape_fail_uncertainty'': 0.8589, ''escape_fail_random'': 0.7587,
+    ''escape_fail_recent'': 0.6798, ''escape_fail_oracle'': 0.4351, ''escape_flip_uncertainty'': 0.9,
+    ''escape_flip_random'': 0.7643, ''expected'': 0.7342, ''selected'': 14, ''n_skipped_redundant'': 32},
+    {''change'': ''v03_noverify'', ''n_flipped'': 0, ''n_flipped_legacy_band'': 0, ''n_failures_mean'':
+    9.5, ''escape_fail_uncertainty'': 0.7808, ''escape_fail_random'': 0.7549, ''escape_fail_recent'':
+    0.5488, ''escape_fail_oracle'': 0.1164, ''escape_flip_uncertainty'': None, ''escape_flip_random'':
+    None, ''expected'': 0.7092, ''selected'': 14, ''n_skipped_redundant'': 32}, {''change'': ''v04_loopy'',
+    ''n_flipped'': 0, ''n_flipped_legacy_band'': 0, ''n_failures_mean'': 9.5, ''escape_fail_uncertainty'':
+    0.7808, ''escape_fail_random'': 0.756, ''escape_fail_recent'': 0.5488, ''escape_fail_oracle'': 0.1164,
+    ''escape_flip_uncertainty'': None, ''escape_flip_random'': None, ''expected'': 0.7074, ''selected'':
+    14, ''n_skipped_redundant'': 30}, {''change'': ''v05_unsafe_delete'', ''n_flipped'': 2, ''n_flipped_legacy_band'':
+    2, ''n_failures_mean'': 11.5, ''escape_fail_uncertainty'': 0.6414, ''escape_fail_random'': 0.6169,
+    ''escape_fail_recent'': 0.4495, ''escape_fail_oracle'': 0.0986, ''escape_flip_uncertainty'': 0.0,
+    ''escape_flip_random'': 0.0, ''expected'': 0.7078, ''selected'': 14, ''n_skipped_redundant'': 32},
+    {''change'': ''v06_toolschema_v2'', ''n_flipped'': 11, ''n_flipped_legacy_band'': 6, ''n_failures_mean'':
+    12.9, ''escape_fail_uncertainty'': 0.8062, ''escape_fail_random'': 0.7395, ''escape_fail_recent'':
+    0.6092, ''escape_fail_oracle'': 0.2421, ''escape_flip_uncertainty'': 0.8182, ''escape_flip_random'':
+    0.7012, ''expected'': 0.7363, ''selected'': 14, ''n_skipped_redundant'': 32}, {''change'': ''v07_step_minimizer'',
+    ''n_flipped'': 0, ''n_flipped_legacy_band'': 0, ''n_failures_mean'': 9.5, ''escape_fail_uncertainty'':
+    0.7808, ''escape_fail_random'': 0.7584, ''escape_fail_recent'': 0.5488, ''escape_fail_oracle'': 0.1164,
+    ''escape_flip_uncertainty'': None, ''escape_flip_random'': None, ''expected'': 0.7076, ''selected'':
+    14, ''n_skipped_redundant'': 32}, {''change'': ''v08_summarize_ctx'', ''n_flipped'': 0, ''n_flipped_legacy_band'':
+    0, ''n_failures_mean'': 9.5, ''escape_fail_uncertainty'': 0.7808, ''escape_fail_random'': 0.7555,
+    ''escape_fail_recent'': 0.5488, ''escape_fail_oracle'': 0.1164, ''escape_flip_uncertainty'': None,
+    ''escape_flip_random'': None, ''expected'': 0.7072, ''selected'': 14, ''n_skipped_redundant'': 32},
+    {''change'': ''v09_model_swap'', ''n_flipped'': 23, ''n_flipped_legacy_band'': 4, ''n_failures_mean'':
+    5.0, ''escape_fail_uncertainty'': 0.7942, ''escape_fail_random'': 0.7553, ''escape_fail_recent'':
+    0.56, ''escape_fail_oracle'': 0.0, ''escape_flip_uncertainty'': 0.7826, ''escape_flip_random'': 0.7345,
+    ''expected'': 0.707, ''selected'': 14, ''n_skipped_redundant'': 32}]'
+  - 'Policy ablation (ratio < 1 means better than random): {''report_pipeline'': {''escape_failures'':
+    0.778, ''ratio_vs_random_failures'': 1.0558, ''escape_flips'': 0.6252, ''ratio_vs_random_flips'':
+    1.1367}, ''no_redundancy'': {''escape_failures'': 0.6983, ''ratio_vs_random_failures'': 0.9476, ''escape_flips'':
+    0.3421, ''ratio_vs_random_flips'': 0.622}, ''entropy_over_cost_only'': {''escape_failures'': 0.7442,
+    ''ratio_vs_random_failures'': 1.0099, ''escape_flips'': 0.5353, ''ratio_vs_random_flips'': 0.9732},
+    ''failure_probability'': {''escape_failures'': 0.5604, ''ratio_vs_random_failures'': 0.7605, ''escape_flips'':
+    0.4385, ''ratio_vs_random_flips'': 0.7973}, ''coverage_overlap_only'': {''escape_failures'': 0.6185,
+    ''ratio_vs_random_failures'': 0.8393, ''escape_flips'': 0.189, ''ratio_vs_random_flips'': 0.3437}}'
+  - '**Calibration held.** Comparing `expected_escape` against the measured escape-defect rate on the
+    same quantity (failure-based) gives an error of 0.08 (criterion 0.15). The pre-revision 0.325 was
+    an artefact of subtracting a prediction about failures from a measurement about flips (ADR-018). The
+    selector correctly estimates how many failures it is leaving behind.'
+  - '**What did not hold is the selection itself.** The uncertainty-driven escape-defect rate is 0.778
+    against random''s 0.737 — it is **worse** (ratio 1.056, criterion 0.5). Measured on the flip-based
+    KPI the ratio is 1.137, again worse than random. The attainable floor within budget (an oracle that
+    knows each repeat''s F_full) is 0.155, so the criterion itself is not unattainable.'
+  - The ablation separates what carries signal from what does not. (a) Selecting on **coverage overlap
+    alone** is the best on the flip KPI at 0.344x random. (b) **Removing the redundancy penalty** improves
+    it to 0.622x. (c) **`H(p_hat)/c` alone** is 0.973x — essentially random. So in this environment the
+    signal lives in report 3.2 (coverage), not in 3.4's uncertainty, and the redundancy penalty actively
+    destroys signal.
+  - The redundancy penalty drops an average of 31.8 candidates per draw. Per ADR-014 this is not a problem
+    with the similarity definition but with **sim trajectories collapsing to nearly identical tool-name
+    sequences across tasks**. In live trajectories, 10 tasks split into 9 distinct sequences and only
+    1 of 45 pairs (2%) exceeds a similarity of 0.8.
+  - The flip definition dropped its threshold in ADR-016 (any discordant paired repeat counts as a flip).
+    Under the pre-revision flake band, v09 showed 4 flips instead of 23 and v06 showed 6 instead of 11
+    — most real flips were being missed.
+  - The verdict is NEGATIVE (the implementation follows the report but the claim did not hold). The pre-revision
+    diagnosis was FAIL (our redundancy implementation was at fault); the ablation shows that **even without
+    redundancy, H(p_hat) alone cannot beat random**, so the cause is corrected to the method side.
   - The logistic regression was trained leave-one-out at the granularity of change events. With only 8
     events of training data, the average with the Beta posterior dominates.
 - id: E3-4
@@ -215,6 +251,11 @@
     That is a limitation of sim and needs re-confirmation under live.
   - The hypothesis that the median divergence point of the model swap (v09) is smaller than v02's must
     be read together with the counts, because the median is undefined when no divergence occurs.
+  - '**Correction under ADR-021**: the pre-revision code counted the decision confirmation at the divergent
+    step as billable and then re-sent that same step to the model (`resume_from=divergence`). Since the
+    confirmation''s response can be reused when resuming, it was over-counting by one step per branch.
+    Fixing it moved v02''s live step ratio from 1.113 to 1.000. **The verdict stays NEGATIVE** (the criterion
+    is 0.6).'
   - The verdict is NEGATIVE. The parts bearing on the method's correctness held (outcome agreement between
     branch re-execution and normal execution = 1.0; self-branch billed steps = 0), but the savings claim
     did not. The cause is that retracing a prefix needs one "decision confirmation" call per step, and
@@ -262,10 +303,17 @@
     so provenance is simulated.
   - The hypothesis setup (p0=0.5, p1=0.9) was fixed before implementation. Bringing p0 and p1 closer together
     increases the required trials and worsens mean_n_ratio. This criterion depends on the hypothesis setup.
-  - 'The verdict is NEGATIVE. The error-rate claims (α ≤ 0.07, β ≤ 0.12) held, but the mean-trial claim
-    (at most 60% of fixed-n) came to 0.604 and missed by a hair. This is not an implementation flaw: the
-    p_true grid includes p_true = 0.5, the slowest point to settle. Dropping 0.5 from the grid lowers
-    the ratio, but that would be loosening a criterion after the fact, so it was not done.'
+  - '**Correction under ADR-023**: the comparator (the fixed-n procedure) used the wrong trial count.
+    For a one-sample test of `H0: p = p0` against `H1: p = p1`, the type-I term''s variance must be the
+    null variance `p0(1-p0)`; the pre-revision code used the pooled variance `((p0+p1)/2)` — the alpha
+    term of the *two-sample* formula. That made fixed-n 9 instead of 10 and the ratio 0.604 instead of
+    0.5436. **Before the fix this was NEGATIVE; after it, PASS.** No criterion was changed — only the
+    comparator''s arithmetic, and that argument holds without looking at the verdict (a miscalibrated
+    measuring instrument was repaired).'
+  - The verdict is PASS. Both the error-rate claims (alpha = 0.0455, beta = 0.0516) and the mean-trial
+    claim (0.544x fixed-n) are met. But this is with `p_true = 0.5` — the slowest point to settle — included
+    in the grid. Any claim that "SPRT uses at most 60% of fixed-n" must state the hypothesis setup (p0,
+    p1) and the range of p_true being evaluated.
 - id: E3-7
   title: Escape-defect rate, ε-exploration and the inviolable set
   hypothesis: At a 40% budget the escape-defect rate is ≤ 0.1. With ε=0.05 a random test is mixed in every
@@ -275,62 +323,85 @@
   verdict_reason: 'Unmet criterion: escape_rate.'
   figures:
   - Escape-defect rate curve
-  method: 'We selected at budget ratios of 5% / 20% / 40% / 100% and measured the escape-defect rate (the
+  method: 'We selected at budget ratios of 5% / 20% / 40% / 100% and measured the escape-defect rate,
+    the number of random tests mixed in by epsilon-exploration, and the selection rate of the inviolable
+    set (report 3.8).
 
-    fraction of unselected tests that actually flipped), the number of random tests mixed in by
 
-    ε-exploration, and the selection rate of the inviolable set (`risk: inviolable`) (report 3.8).
+    The escape-defect rate follows report 3.8: `Escape(S) = |F_full \ S| / |F_full|`, where `F_full` is
+    the set of tasks that **failed in that full run** (ADR-018). One full run = each test once, so `F_full(r)`
+    is built per repeat and averaged. The flip-based value (the pre-revision definition) is reported alongside
+    as a diagnostic.
 
-    The inviolable set is implemented to be selected outside the selection logic, so we confirmed
 
-    it is at 100% even at a 5% budget. Flips follow the ADR-009 definition.
-
-    The control is a 100% budget (run everything → escape-defect rate 0).'
+    The inviolable set is selected outside the selection logic, so we confirm it is at 100% even at a
+    5% budget. The attainable floor within budget comes from an oracle that knows each repeat''s `F_full`
+    in advance. The history used to estimate uncertainty is restricted to the current deployment, v01_baseline
+    (ADR-022). The control is a 100% budget (run everything -> escape-defect rate 0).'
   notes:
-  - 'Results per budget: [{''change'': ''v02_dateformat'', ''budget'': 0.05, ''n_flipped'': 10, ''escape'':
-    1.0, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 5, ''escape_no_redundancy'':
-    1.0}, {''change'': ''v02_dateformat'', ''budget'': 0.2, ''n_flipped'': 10, ''escape'': 0.8, ''random_included'':
-    2, ''inviolable_rate'': 1.0, ''selected'': 13, ''escape_no_redundancy'': 0.5}, {''change'': ''v02_dateformat'',
-    ''budget'': 0.4, ''n_flipped'': 10, ''escape'': 0.4, ''random_included'': 2, ''inviolable_rate'':
-    1.0, ''selected'': 21, ''escape_no_redundancy'': 0.1}, {''change'': ''v02_dateformat'', ''budget'':
-    1.0, ''n_flipped'': 10, ''escape'': 0.0, ''random_included'': 1, ''inviolable_rate'': 1.0, ''selected'':
-    46, ''escape_no_redundancy'': 0.0}, {''change'': ''v05_unsafe_delete'', ''budget'': 0.05, ''n_flipped'':
-    2, ''escape'': 0.0, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 5, ''escape_no_redundancy'':
-    0.0}, {''change'': ''v05_unsafe_delete'', ''budget'': 0.2, ''n_flipped'': 2, ''escape'': 0.0, ''random_included'':
-    2, ''inviolable_rate'': 1.0, ''selected'': 14, ''escape_no_redundancy'': 0.0}, {''change'': ''v05_unsafe_delete'',
-    ''budget'': 0.4, ''n_flipped'': 2, ''escape'': 0.0, ''random_included'': 2, ''inviolable_rate'': 1.0,
-    ''selected'': 23, ''escape_no_redundancy'': 0.0}, {''change'': ''v05_unsafe_delete'', ''budget'':
-    1.0, ''n_flipped'': 2, ''escape'': 0.0, ''random_included'': 1, ''inviolable_rate'': 1.0, ''selected'':
-    46, ''escape_no_redundancy'': 0.0}, {''change'': ''v06_toolschema_v2'', ''budget'': 0.05, ''n_flipped'':
-    6, ''escape'': 0.8333, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 5, ''escape_no_redundancy'':
-    0.8333}, {''change'': ''v06_toolschema_v2'', ''budget'': 0.2, ''n_flipped'': 6, ''escape'': 0.6667,
-    ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 12, ''escape_no_redundancy'': 0.5},
-    {''change'': ''v06_toolschema_v2'', ''budget'': 0.4, ''n_flipped'': 6, ''escape'': 0.5, ''random_included'':
-    2, ''inviolable_rate'': 1.0, ''selected'': 21, ''escape_no_redundancy'': 0.0}, {''change'': ''v06_toolschema_v2'',
-    ''budget'': 1.0, ''n_flipped'': 6, ''escape'': 0.0, ''random_included'': 0, ''inviolable_rate'': 1.0,
-    ''selected'': 46, ''escape_no_redundancy'': 0.0}, {''change'': ''v07_step_minimizer'', ''budget'':
-    0.05, ''n_flipped'': 0, ''escape'': 0.0, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'':
-    5, ''escape_no_redundancy'': 0.0}, {''change'': ''v07_step_minimizer'', ''budget'': 0.2, ''n_flipped'':
-    0, ''escape'': 0.0, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 14, ''escape_no_redundancy'':
-    0.0}, {''change'': ''v07_step_minimizer'', ''budget'': 0.4, ''n_flipped'': 0, ''escape'': 0.0, ''random_included'':
-    2, ''inviolable_rate'': 1.0, ''selected'': 23, ''escape_no_redundancy'': 0.0}, {''change'': ''v07_step_minimizer'',
-    ''budget'': 1.0, ''n_flipped'': 0, ''escape'': 0.0, ''random_included'': 1, ''inviolable_rate'': 1.0,
-    ''selected'': 46, ''escape_no_redundancy'': 0.0}]'
-  - The inviolable set (T-005, T-011, T-025) is implemented to be included unconditionally, outside the
-    selection logic. It is selected 100% of the time even at a 5% budget.
-  - ε-exploration mixes in at least one test regardless of budget. At a 100% budget everything is already
-    selected and there is no room to mix, so the count reported is the minimum over the conditions with
-    budget < 100%.
-  - 'The escape-defect rate of ≤ 0.1 could not be met. The cause is the same as E3-3: the redundancy penalty
-    (skip similarity > 0.8 over tool-name sequences) treats tasks of the same kind inside the candidate
-    set as mutual duplicates and spends the budget on diverse tasks outside the candidate set. The escape-defect
-    rate of the variant with redundancy switched off is reported alongside.'
-  - '**Corrected diagnosis (confirmed live, ADR-014)**: this effect occurs because sim trajectories collapse
-    to nearly identical tool-name sequences across tasks. In live trajectories, 10 tasks split into 9
-    distinct sequences and only 1 of 45 pairs (2%) exceeds a similarity of 0.8. The definition of the
-    redundancy penalty is not changed (the same correction as in E3-3).'
-  - The verdict is FAIL (a flaw in the experiment design). The inviolable-set guarantee (100% selection
-    even at a 5% budget) and the zero escape-defect rate at a 100% budget do hold.
+  - 'Results per budget: [{''change'': ''v02_dateformat'', ''budget'': 0.05, ''n_flipped'': 10, ''n_failures_mean'':
+    17.1, ''escape'': 0.9544, ''escape_flips'': 1.0, ''escape_oracle'': 0.9944, ''random_included'': 2,
+    ''inviolable_rate'': 1.0, ''selected'': 5, ''escape_no_redundancy'': 0.9544}, {''change'': ''v02_dateformat'',
+    ''budget'': 0.2, ''n_flipped'': 10, ''n_failures_mean'': 17.1, ''escape'': 0.8021, ''escape_flips'':
+    0.8, ''escape_oracle'': 0.6708, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 13,
+    ''escape_no_redundancy'': 0.6998}, {''change'': ''v02_dateformat'', ''budget'': 0.4, ''n_flipped'':
+    10, ''n_failures_mean'': 17.1, ''escape'': 0.5197, ''escape_flips'': 0.5, ''escape_oracle'': 0.1993,
+    ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 21, ''escape_no_redundancy'': 0.353},
+    {''change'': ''v02_dateformat'', ''budget'': 1.0, ''n_flipped'': 10, ''n_failures_mean'': 17.1, ''escape'':
+    0.0, ''escape_flips'': 0.0, ''escape_oracle'': 0.0, ''random_included'': 1, ''inviolable_rate'': 1.0,
+    ''selected'': 46, ''escape_no_redundancy'': 0.0}, {''change'': ''v05_unsafe_delete'', ''budget'':
+    0.05, ''n_flipped'': 2, ''n_failures_mean'': 11.5, ''escape'': 0.7532, ''escape_flips'': 0.0, ''escape_oracle'':
+    0.8114, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 5, ''escape_no_redundancy'':
+    0.7532}, {''change'': ''v05_unsafe_delete'', ''budget'': 0.2, ''n_flipped'': 2, ''n_failures_mean'':
+    11.5, ''escape'': 0.6196, ''escape_flips'': 0.0, ''escape_oracle'': 0.3492, ''random_included'': 2,
+    ''inviolable_rate'': 1.0, ''selected'': 12, ''escape_no_redundancy'': 0.6476}, {''change'': ''v05_unsafe_delete'',
+    ''budget'': 0.4, ''n_flipped'': 2, ''n_failures_mean'': 11.5, ''escape'': 0.4071, ''escape_flips'':
+    0.0, ''escape_oracle'': 0.0, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 21, ''escape_no_redundancy'':
+    0.3261}, {''change'': ''v05_unsafe_delete'', ''budget'': 1.0, ''n_flipped'': 2, ''n_failures_mean'':
+    11.5, ''escape'': 0.0, ''escape_flips'': 0.0, ''escape_oracle'': 0.0, ''random_included'': 0, ''inviolable_rate'':
+    1.0, ''selected'': 46, ''escape_no_redundancy'': 0.0}, {''change'': ''v06_toolschema_v2'', ''budget'':
+    0.05, ''n_flipped'': 11, ''n_failures_mean'': 12.9, ''escape'': 0.9109, ''escape_flips'': 0.9091,
+    ''escape_oracle'': 0.9671, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 5, ''escape_no_redundancy'':
+    0.9109}, {''change'': ''v06_toolschema_v2'', ''budget'': 0.2, ''n_flipped'': 11, ''n_failures_mean'':
+    12.9, ''escape'': 0.7794, ''escape_flips'': 0.7273, ''escape_oracle'': 0.5425, ''random_included'':
+    2, ''inviolable_rate'': 1.0, ''selected'': 13, ''escape_no_redundancy'': 0.7445}, {''change'': ''v06_toolschema_v2'',
+    ''budget'': 0.4, ''n_flipped'': 11, ''n_failures_mean'': 12.9, ''escape'': 0.4916, ''escape_flips'':
+    0.4545, ''escape_oracle'': 0.0464, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'':
+    21, ''escape_no_redundancy'': 0.4788}, {''change'': ''v06_toolschema_v2'', ''budget'': 1.0, ''n_flipped'':
+    11, ''n_failures_mean'': 12.9, ''escape'': 0.0, ''escape_flips'': 0.0, ''escape_oracle'': 0.0, ''random_included'':
+    1, ''inviolable_rate'': 1.0, ''selected'': 46, ''escape_no_redundancy'': 0.0}, {''change'': ''v07_step_minimizer'',
+    ''budget'': 0.05, ''n_flipped'': 0, ''n_failures_mean'': 9.5, ''escape'': 0.9198, ''escape_flips'':
+    0.0, ''escape_oracle'': 0.99, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 5, ''escape_no_redundancy'':
+    0.9198}, {''change'': ''v07_step_minimizer'', ''budget'': 0.2, ''n_flipped'': 0, ''n_failures_mean'':
+    9.5, ''escape'': 0.7328, ''escape_flips'': 0.0, ''escape_oracle'': 0.4221, ''random_included'': 2,
+    ''inviolable_rate'': 1.0, ''selected'': 11, ''escape_no_redundancy'': 0.6704}, {''change'': ''v07_step_minimizer'',
+    ''budget'': 0.4, ''n_flipped'': 0, ''n_failures_mean'': 9.5, ''escape'': 0.497, ''escape_flips'':
+    0.0, ''escape_oracle'': 0.0, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 21, ''escape_no_redundancy'':
+    0.3749}, {''change'': ''v07_step_minimizer'', ''budget'': 1.0, ''n_flipped'': 0, ''n_failures_mean'':
+    9.5, ''escape'': 0.0, ''escape_flips'': 0.0, ''escape_oracle'': 0.0, ''random_included'': 0, ''inviolable_rate'':
+    1.0, ''selected'': 46, ''escape_no_redundancy'': 0.0}]'
+  - The inviolable set (T-005, T-011, T-025) is included unconditionally, outside the selection logic.
+    It is selected 100% of the time even at a 5% budget.
+  - Epsilon-exploration mixes in at least one test regardless of budget. At a 100% budget everything is
+    already selected, so the count reported is the minimum over budgets < 100%.
+  - 'The escape-defect rate of <= 0.1 was not met (0.479 at a 40% budget). **The criterion is not unattainable,
+    though**: an oracle that knows each repeat''s `F_full` in advance reaches 0.061 at the same budget,
+    so a 40% budget is enough to cover the failures. What falls short is the selection.'
+  - This is consistent with the E3-3 ablation. Removing the redundancy penalty brings it down to 0.383,
+    still far from 0.1. E3-3 compares 5 policies and shows that in this environment the signal lives in
+    coverage overlap (report 3.2), not in H(p_hat) uncertainty (3.4).
+  - '**Corrected diagnosis (confirmed live, ADR-014)**: the "tasks of the same kind mark each other as
+    duplicates" effect happens because sim trajectories collapse to nearly identical tool-name sequences.
+    In live trajectories, 10 tasks split into 9 distinct sequences and only 1 of 45 pairs (2%) exceeds
+    a similarity of 0.8. The similarity definition is unchanged.'
+  - The flip-based escape-defect rate (the pre-revision definition) is 0.318 at a 40% budget. The flip
+    judgement dropped its threshold under ADR-016.
+  - 'The verdict is NEGATIVE. **The skeleton of the method holds**: the inviolable set is selected 100%
+    of the time even at a 5% budget, epsilon-exploration mixes in 2 tests every time, and a 100% budget
+    gives an escape-defect rate of 0. What did not hold is only the selection-quality claim, "escape-defect
+    rate <= 0.1 at a 40% budget". The pre-revision diagnosis was FAIL (our redundancy implementation);
+    the E3-3 ablation shows it falls short even without redundancy, so the cause is corrected to the method
+    side.'
 - id: E4-1
   title: Selective reaction of trajectory metrics
   hypothesis: A planted version moves only the metric it corresponds to
@@ -1086,6 +1157,13 @@
   - Sim is deterministic in (task, seed, repeat), so it is being compared against a single live execution.
     The live-side variance (responses change even under identical conditions) is only observed across
     3 repeats.
+  - '**Correction under ADR-019**: restoring the report 4.2 definition of stop appropriateness (rate of
+    declaring completion while unmet; rate of continuing after achieving) made live and sim **agree**.
+    The pre-revision implementation only checked whether the last tool call was `finish`, and on that
+    quantity sim read 1.0 against live''s 0.66. That gap was not a difference in how appropriately the
+    agent stops — it was a difference in **tool-calling convention**. The convention is now reported separately
+    as `finish_called` (this is where round 1''s finding that 80% of real agents never call `finish` shows
+    up).'
 - id: E0-2
   title: Judge agreement and stability (live Sonnet 5 vs the deterministic surrogate)
   hypothesis: The deterministic surrogate judge (judge/rubric.py) agrees well enough with the live Sonnet

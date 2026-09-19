@@ -170,7 +170,11 @@ class BranchRunner:
             "confirmations": confirmations,
         }
 
-        billable = 0 if new_version.hash() == base_run.version_hash else confirmations
+        # ADR-021: 分岐が起きたステップの判断確認は、その応答をそのまま再開に使えるので
+        # 二重に数えない。分岐しなかった場合は全ステップぶんの確認が課金される。
+        same_version = new_version.hash() == base_run.version_hash
+        confirmations_billed = confirmations if divergence is None else max(0, confirmations - 1)
+        billable = 0 if same_version else confirmations_billed
 
         if divergence is None:
             # 最後まで一致した: 旧軌跡の結果をそのまま新版の結果とみなす

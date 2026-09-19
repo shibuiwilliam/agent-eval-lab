@@ -58,7 +58,26 @@ class SPRT:
 
 
 def fixed_n_for_power(p0: float, p1: float, alpha: float, beta: float) -> int:
-    """同じ検出力を持つ固定 n 法の試行数（正規近似）。"""
+    """同じ検出力を持つ固定 n 法の試行数（一標本・正規近似、ADR-023）。
+
+    `H0: p = p0` 対 `H1: p = p1` の一標本検定なので、第 1 種の誤りの項の分散は
+    **帰無仮説下の** `p0(1-p0)` を使う。
+
+        n = [z_a sqrt(p0(1-p0)) + z_b sqrt(p1(1-p1))]^2 / (p1-p0)^2
+
+    改訂前はここにプール分散 `((p0+p1)/2)` を入れていた（二標本の公式の α 項）。
+    そのぶん固定 n が過小になり、SPRT との比が実際より大きく出ていた。
+    """
+    from scipy.stats import norm
+
+    z_a = float(norm.ppf(1 - alpha))
+    z_b = float(norm.ppf(1 - beta))
+    numerator = z_a * math.sqrt(p0 * (1 - p0)) + z_b * math.sqrt(p1 * (1 - p1))
+    return max(1, math.ceil((numerator / (p1 - p0)) ** 2))
+
+
+def fixed_n_pooled_legacy(p0: float, p1: float, alpha: float, beta: float) -> int:
+    """改訂前の式（α 項にプール分散）。結果ページに「改訂前」として併記するためだけに残す。"""
     from scipy.stats import norm
 
     z_a = float(norm.ppf(1 - alpha))

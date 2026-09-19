@@ -36,7 +36,9 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
     for version_id, kind in PLANTED.items():
         merged = change_mod.merge(change_mod.diff_versions("v01_baseline", version_id))
         assert merged is not None
-        flipped = flipped_tasks(runs, "v01_baseline", version_id, bands)
+        # ADR-016: 閾値を撤廃
+        flipped = flipped_tasks(runs, "v01_baseline", version_id)
+        flipped_legacy = flipped_tasks(runs, "v01_baseline", version_id, bands)
         decided = pyramid_mod.decide_level(merged)
         observed = pyramid_mod.observed_min_level(bool(flipped), kind)
         at_least = pyramid_mod.at_least(decided, observed)
@@ -48,6 +50,7 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
                 "decided": decided,
                 "observed_min": observed,
                 "n_flipped": len(flipped),
+                "n_flipped_legacy_band": len(flipped_legacy),
                 "ok": at_least,
             }
         )
@@ -55,7 +58,7 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
     control = change_mod.synthetic("code", set())
     control_level = pyramid_mod.decide_level(control)
     # 対照: 版ハッシュが変わらない変更なので、同じ版どうしの比較になる（反転は定義上 0）
-    control_flips = flipped_tasks(runs, "v01_baseline", "v01_baseline", bands)
+    control_flips = flipped_tasks(runs, "v01_baseline", "v01_baseline")
 
     fig = plotting.bar_compare(
         "E3-4",

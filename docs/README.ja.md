@@ -18,6 +18,7 @@
 | `results/E*.md` | 実験ごとのページ。5項目・方法・来歴ラベル付きの数値・判定・気づきと限界。`uv run agenteval exp <id>` の生成物 |
 | [results/LIVE.md](results/LIVE.md) | live 検証 第 1 次。sim では観測できなかった欠陥 5 件と、それが壊していたもの |
 | [results/LIVE2.md](results/LIVE2.md) | live 検証 第 2 次。評価器側の欠陥と、live で否定されて取り下げた診断 1 件 |
+| [REVIEW.md](REVIEW.md) | **2026-09-19 のコード・実験レビュー**: 評価器側の欠陥 8 件、判定が変わった 3 件、再実行で分かったこと |
 | [IMPROVEMENT.md](IMPROVEMENT.md) | live で見つかった欠陥、修正計画、実施結果、まだ直していないこと（R6〜R9） |
 
 ## 計画と設計

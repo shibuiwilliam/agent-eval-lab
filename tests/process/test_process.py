@@ -60,9 +60,43 @@ def test_recovery_rate() -> None:
     assert m.recovery_rate == 1.0
 
 
-def test_stop_appropriateness() -> None:
-    assert metrics_mod.compute(_run(["finish"]), l_min=1).stop_appropriate
-    assert not metrics_mod.compute(_run(["file_write"]), l_min=1).stop_appropriate
+def _with_milestones(run: Run, milestone_steps: dict[str, int]) -> Run:
+    run.outcome = Outcome(passed=True, milestone_steps=milestone_steps)
+    return run
+
+
+def test_stop_appropriateness_uses_milestones() -> None:
+    """原典 4.2 / ADR-019: 未達の完了宣言と達成後の継続を見る（finish の有無ではない）。"""
+    # 全マイルストーン到達 → 適切
+    ok = _with_milestones(_run(["file_write", "checks_run", "finish"]), {"M1": 0, "M2": 1})
+    assert metrics_mod.compute(ok, l_min=3).stop_appropriate
+    assert not metrics_mod.compute(ok, l_min=3).premature_stop
+
+    # 未達なのに終了 → 早すぎる停止
+    early = _with_milestones(_run(["file_write", "finish"]), {"M1": 0, "M2": -1})
+    assert metrics_mod.compute(early, l_min=2).premature_stop
+    assert not metrics_mod.compute(early, l_min=2).stop_appropriate
+
+    # 達成後も動き続ける → 継続しすぎ
+    late = _with_milestones(
+        _run(["file_write", "checks_run", "file_read", "file_read", "finish"]),
+        {"M1": 0, "M2": 1},
+    )
+    assert metrics_mod.compute(late, l_min=2).overrun
+    assert not metrics_mod.compute(late, l_min=2).stop_appropriate
+
+
+def test_finish_called_is_separate_from_stop_quality() -> None:
+    """`finish` を呼んだかは作法の話であって停止の適切さではない（ADR-019）。"""
+    assert metrics_mod.compute(_run(["finish"]), l_min=1).finish_called
+    assert not metrics_mod.compute(_run(["file_write"]), l_min=1).finish_called
+
+
+def test_detour_ratio_follows_report_definition() -> None:
+    """原典 4.2 / ADR-017: D = L_actual / L_min（1 以上の比）。"""
+    m = metrics_mod.compute(_run(["file_read", "file_write", "finish"]), l_min=2)
+    assert m.detour_ratio == 1.5
+    assert math.isnan(metrics_mod.compute(_run(["finish"]), l_min=None).detour_ratio)
 
 
 def test_pass_at_k_and_pow_k() -> None:

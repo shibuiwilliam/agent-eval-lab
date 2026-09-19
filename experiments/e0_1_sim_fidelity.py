@@ -152,10 +152,17 @@ def main(live: bool = False, seed: int = SEED) -> dict[str, Any]:
         ),
         "live_dup_rate": labeled(round(metric(live_runs, "dup_rate"), 4), "live"),
         "sim_dup_rate": labeled(round(metric(sim_runs, "dup_rate"), 4), "simulated"),
+        # ADR-019: 停止適切性は原典 4.2 の定義（未達完了宣言・達成後継続）で測る。
         "live_stop_appropriate": labeled(round(metric(live_runs, "stop_appropriate"), 4), "live"),
         "sim_stop_appropriate": labeled(
             round(metric(sim_runs, "stop_appropriate"), 4), "simulated"
         ),
+        "live_premature_stop": labeled(round(metric(live_runs, "premature_stop"), 4), "live"),
+        "sim_premature_stop": labeled(round(metric(sim_runs, "premature_stop"), 4), "simulated"),
+        # 改訂前の `stop_appropriate` に相当する量（ツール呼び出しの作法）。
+        # live の 8 割が `finish` を呼ばないという第 1 次 live 検証の観測はここに現れる。
+        "live_finish_called": labeled(round(metric(live_runs, "finish_called"), 4), "live"),
+        "sim_finish_called": labeled(round(metric(sim_runs, "finish_called"), 4), "simulated"),
         "live_usd": labeled(round(usd, 4), "live"),
         "n_separable_version_pairs": labeled(len(separable), "live"),
         "ordering_ok_on_separable_pairs": labeled(int(ordering_on_separable), "live"),
@@ -170,6 +177,15 @@ def main(live: bool = False, seed: int = SEED) -> dict[str, Any]:
         (
             "sim は (task, seed, repeat) に対して決定的なので、live の 1 回の実行と比べている。"
             "live 側の揺れ（同じ条件でも応答が変わる）は反復 3 回ぶんしか見ていない。"
+        ),
+        (
+            "**ADR-019 による訂正**: 停止適切性の定義を原典 4.2（未達で完了宣言した率・"
+            "達成後も継続した率）に戻したところ、live と sim が**一致した**。"
+            "改訂前の実装は「最後のツール呼び出しが `finish` か」だけを見ており、"
+            "その量では sim 1.0 / live 0.66 と大きく食い違っていた。"
+            "この食い違いは停止の適切さの差ではなく、**ツール呼び出しの作法の差**だった。"
+            "作法の差は `finish_called` に分離して併記している"
+            "（第 1 次 live 検証で見つけた「実エージェントの 8 割が `finish` を呼ばない」はこちら）。"
         ),
     ]
     return finalize(

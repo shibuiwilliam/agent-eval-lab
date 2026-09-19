@@ -94,15 +94,73 @@ def disagreement(runs: list[Run], base: str, target: str) -> dict[str, float]:
 def flipped_tasks(
     runs: list[Run], base: str, target: str, bands: dict[str, float] | None = None
 ) -> set[str]:
-    """base → target で反転したタスク（ADR-009 の定義）。
+    """base → target で反転したタスク（ADR-009 ＋ ADR-016）。
 
-    反転 = **同じ (task, repeat) の対**で合否が変わった割合が、そのタスクのフレーク帯
-    （ベースライン版の反復から出した二項の 95% 半幅）を超えること。
-    対応のある比較にすることで、反復ごとの揺れ（同じ seed / repeat から引く「運」）が相殺される。
+    反転 = **同じ (task, repeat) の対**で合否が変わったものが 1 件でもあること。
+
+    ADR-016: sim は `(task_id, seed, repeat)` に対して決定的で、版をまたいで同じ運を使う。
+    したがって「版に効果が無い」という帰無仮説の下での不一致は**厳密に 0** であり、
+    閾値を置く根拠が無い。改訂前は周辺合格率の Wald 半幅を不一致率の閾値に流用しており、
+    合格率 0.5 付近のタスクで 0.31 という大きな閾値を課して実在する反転を取り逃していた
+    （v09 で 23 件中 19 件、v06 で 11 件中 5 件）。
+
+    `bands` を明示的に渡した場合はその閾値を使う（改訂前の値を出すための経路）。
+    live のように同じ条件でも応答が揺れる場合は `mcnemar_flipped()` を使う。
     """
-    band = bands if bands is not None else flake_band(runs, base)
     diff = disagreement(runs, base, target)
-    return {task_id for task_id, rate in diff.items() if rate > band.get(task_id, 0.0)}
+    if bands is None:
+        return {task_id for task_id, rate in diff.items() if rate > 0.0}
+    return {task_id for task_id, rate in diff.items() if rate > bands.get(task_id, 0.0)}
+
+
+def mcnemar_flipped(runs: list[Run], base: str, target: str, alpha: float = 0.05) -> set[str]:
+    """live 用の反転判定: 対応のある不一致に McNemar 正確検定をかける。
+
+    sim では帰無仮説下の不一致が 0 なので使わない（`flipped_tasks` を使う）。
+    live で同じ条件でも応答が揺れる場合、不一致の向きが偏っているかを二項検定で見る。
+    """
+    from scipy.stats import binomtest
+
+    a, b = paired_outcomes(runs, base), paired_outcomes(runs, target)
+    discordant: dict[str, list[int]] = {}
+    for key, passed in a.items():
+        if key not in b or passed == b[key]:
+            continue
+        # +1 = base 合格 → target 不合格（退行）、-1 = その逆
+        discordant.setdefault(key[0], []).append(1 if passed else -1)
+    out = set()
+    for task_id, signs in discordant.items():
+        n = len(signs)
+        k = sum(1 for s in signs if s > 0)
+        if binomtest(k, n, 0.5).pvalue < alpha:
+            out.add(task_id)
+    return out
+
+
+def failures_by_repeat(runs: list[Run], version_id: str) -> dict[int, set[str]]:
+    """反復ごとの「フル実行で見つかった失敗」`F_full`（原典 3.8、ADR-018）。
+
+    フル実行 1 回 = 各テストを 1 回ずつ走らせること。反復 r のフル実行で不合格になった
+    タスク集合が `F_full(r)` である。逃走欠陥率は反復ごとに出して平均する
+    （「過半数で落ちるか」で集約すると、合格率 0.6〜0.7 のタスクが失敗に数えられず
+    分母がほとんど空になる）。
+    """
+    out: dict[int, set[str]] = {}
+    for run in runs:
+        if run.version_id == version_id and not run.passed():
+            out.setdefault(run.repeat, set()).add(run.task_id)
+    for run in runs:
+        if run.version_id == version_id:
+            out.setdefault(run.repeat, set())
+    return out
+
+
+def escape_over_failures(selected: set[str], failures: dict[int, set[str]]) -> float:
+    """`Escape(S) = |F_full \\ S| / |F_full|` を反復ごとに出して平均する。"""
+    import numpy as np
+
+    rates = [len(fails - selected) / len(fails) for fails in failures.values() if fails]
+    return round(float(np.mean(rates)), 4) if rates else 0.0
 
 
 def flaky_tasks(runs: list[Run], version_id: str) -> set[str]:
