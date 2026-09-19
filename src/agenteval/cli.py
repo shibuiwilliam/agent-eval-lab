@@ -105,6 +105,38 @@ def exp(
 
 
 @app.command()
+def pages() -> None:
+    """既存の結果 JSON から結果ページを日英とも描き直す（実験は再実行しない）。"""
+    from agenteval.reports.pages import write
+    from agenteval.reports.verify import load_registry, load_result
+
+    registry = load_registry()
+    written: list[str] = []
+    skipped: list[str] = []
+    untranslated: list[str] = []
+    for entry in registry:
+        result = load_result(entry["id"])
+        if result is None:
+            skipped.append(entry["id"])
+            continue
+        paths = write(entry, result)
+        written.extend(p.name for p in paths)
+        if len(paths) == 1:
+            untranslated.append(entry["id"])
+    typer.echo(
+        json.dumps(
+            {
+                "written": len(written),
+                "no_result_json": skipped,
+                "missing_english": untranslated,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@app.command()
 def verify() -> None:
     """全実験の合格基準を照合し docs/results/summary.md を生成する。"""
     from agenteval.reports.verify import verify_all

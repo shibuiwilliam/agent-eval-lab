@@ -79,6 +79,18 @@
 - [x] 新規 L6: 植込み版 v02 の欠陥が実モデルで再現していなかった → プロンプトを立て直し live で確認
 - [x] **DoD**: live 1,308 呼び出し / 3.09 USD。PASS 14 / NEGATIVE 4 / FAIL 9 / PENDING 0（27 実験）
 
+## P8 ドキュメントの 2 言語化
+- [x] 手書き文書 11 本の英語版（`*.en.md`）。日本語を正路に残し、英語を隣に置く
+- [x] 結果ページの生成器を 2 言語化（`reports/i18n.py`、`pages.TEMPLATE_EN`、`verify.write_summary_en`）。
+      数値・図・判定は共通で、文章だけ `experiments/registry.en.yaml` から差し替える
+- [x] CLI `agenteval pages`（既存 JSON から日英とも描き直す。英訳の欠落を `missing_english` に出す）
+- [x] 27 実験ぶんの英訳 → `docs/results/E*.en.md` と `summary.en.md`
+- [x] 索引 `docs/README.md`（英）/ `docs/README.ja.md`（日）
+- [x] 英訳の過程で見つかった日本語側の古い数値 5 件を実測値に直した
+      （E3-3 の診断は ADR-014 未反映、E4-2 / E4-6 / E4-9 / E8-3 は固定値。いずれも f-string 化して再発を防止）
+- [x] `docs/results/README.md` の古い集計・数値を修正（NEGATIVE 3→4 件、FAIL 7→9 件ほか）
+- [x] **DoD**: `make check` 通過（97 テスト）。判定は変わらず PASS 14 / NEGATIVE 4 / FAIL 9 / PENDING 0
+
 ## 次にやること
 - `IMPROVEMENT.md` の「11. まだ直していないこと」の R6〜R9。
   最優先は R6（E4-2 / E4-6 を live ジャッジで取り直す、見積り 0.3 USD）

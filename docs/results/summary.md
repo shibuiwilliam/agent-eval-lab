@@ -1,5 +1,7 @@
 # 検証サマリ
 
+*English: [summary.en.md](summary.en.md)*
+
 このファイルは `uv run agenteval verify` の生成物。手で編集しない。
 
 | 判定 | 件数 |

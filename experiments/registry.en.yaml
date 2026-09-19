@@ -1,0 +1,1134 @@
+# 結果ページの英語版に差し込む文章（`docs/results/E*.en.md`）。
+#
+# 数値・図・判定・合格基準は `data/results/E*.json` と `registry.yaml` から来るので、ここには書かない。
+# ここにあるのは「タイトル・5項目・方法・判定理由・気づき・図の見出し」の英訳だけである。
+# 日本語側（registry.yaml と experiments/e*.py）を直したらここも直す。
+# 欠けている実験は `uv run agenteval pages` が missing_english に出す。
+
+- id: E3-1
+  title: Narrowing candidates with a trajectory coverage dependency graph
+  hypothesis: Every test that actually flipped under a tool change is contained in the candidate set T_cand(Δ),
+    and the candidate set is meaningfully smaller than the full suite
+  planted: v06_toolschema_v2 (argument change in calendar_search). Flips are measured from v01 → v06
+  control: A synthetic change Change(kind=tool, components={mail_send}). Tests that never call mail_send
+    must not enter the candidate set
+  verdict_reason: All criteria were met.
+  figures:
+  - Candidate ratio
+  method: 'From every run of v01_baseline we extracted `U(t)` (the tools called, the prompt sections
+
+    referenced, the resources touched) and took the tasks intersecting the elements that the
+
+    `Change` touches, `C(Δ)`, as the candidate set `T_cand(Δ)` (report 3.2).
+
+    The planted condition is v01 → v06_toolschema_v2 (a rename of `calendar_search`''s arguments,
+
+    `kind=tool`). A flip is a task whose pass rate crossed 0.5 between v01 and v06; tasks whose
+
+    outcomes vary across v01''s repeats (the flake band) are not counted as flips. The control is
+
+    the synthetic change `Change(kind=tool, components={mail_send})`, where we checked that the
+
+    selected tasks really do call `mail_send` in another version''s trajectories (v03) — matching
+
+    the selection criterion against the observed behaviour.'
+  notes:
+  - 'Flipped tasks: [''T-007'', ''T-009'', ''T-011'', ''T-012'', ''T-013'', ''T-014'']'
+  - 'Mean flake band (binomial 95% half-width from v01''s repeats): 0.1812'
+  - 'Control (mail_send) candidates: [''T-002'', ''T-004'', ''T-015'', ''T-016'', ''T-017'', ''T-018'',
+    ''T-019'', ''T-020'', ''T-021'', ''T-029'', ''T-402'']'
+  - The candidate set approximates "referencing a prompt section" with a tool correspondence table (`SECTION_TOOLS`
+    in coverage.py). Whether the LLM actually read that section is not observable, so this is an approximation
+    rather than section 3.2 itself.
+  - Provenance is simulated (a corpus built with the simulated agent of ADR-008). Re-confirmation under
+    live has not been done.
+- id: E3-2
+  title: Selection by semantic impact estimation
+  hypothesis: Impact tags enumerated from a prompt diff select the date-related tasks and capture the
+    flipped tests with high recall
+  planted: v02_dateformat (a change to the date-format instruction)
+  control: v02b_tone, a diff that changes only tone (no runs needed — the diff alone is used)
+  verdict_reason: All criteria were met.
+  figures:
+  - Precision comparison
+  method: 'We enumerated impact tags from the v01 → v02_dateformat prompt diff (section: date_format),
+
+    vectorised each task''s tags, category and kind with TF-IDF over character 2–3-grams, and
+
+    selected the tasks whose cosine similarity was at least the 0.15 threshold (report 3.3).
+
+    Flips follow the ADR-009 definition (disagreement rate over matched repeats > the flake band).
+
+    The control is v01 → v02b_tone (tone-only diff, no runs created), where we look at
+
+    selected_ratio under the same procedure. We compared precision against coverage alone (the
+
+    tasks that reference the date_format section).
+
+    Because live was unavailable, tag enumeration uses deterministic extraction from the diff text
+
+    (`impact.tags_offline`) rather than an LLM, so provenance is simulated. The live path that
+
+    has Haiku enumerate the tags (`impact.tags_live`) is implemented but not executed.'
+  notes:
+  - 'Enumerated impact tags: [''calendar_create'', ''date'', ''scheduling'']'
+  - 'Control (v02b_tone) tags: [], selection ratio 0.0'
+  - 'Flipped tasks: [''T-001'', ''T-006'', ''T-007'', ''T-008'', ''T-009'', ''T-010'', ''T-012'', ''T-013'',
+    ''T-014'', ''T-401'']'
+  - 'Tasks selected by impact estimation: [''T-001'', ''T-006'', ''T-007'', ''T-008'', ''T-009'', ''T-010'',
+    ''T-011'', ''T-012'', ''T-013'', ''T-014'', ''T-101'', ''T-102'', ''T-103'', ''T-401'']'
+  - Tag enumeration is deterministic extraction (KEYWORD_TAGS), so the contribution of an LLM's semantic
+    understanding is not verified. What this experiment confirmed is that the path "tags → TF-IDF matching
+    → selection" works.
+- id: E3-3
+  title: Uncertainty-driven test selection
+  hypothesis: At a 30% budget, selection by H(p̂)/c has a lower escape-defect rate than random selection
+    and most-recently-failed, and expected_escape is calibrated against the measured value
+  planted: Each change v02–v09 evaluated leave-one-change-out
+  control: Random selection at the same budget (averaged over 1,000 draws) and most-recently-failed
+  verdict_reason: 'Unmet criteria: escape_ratio_vs_random, calibration_error.'
+  figures:
+  - Escape-defect rate
+  - Calibration
+  method: 'There are 8 change events, v01 → v02 through v09. For each event we estimated `p̂_t` from the
+
+    history with that event removed (leave-one-change-out) and greedily selected in descending
+
+    order of `H(p̂)/c` up to a 30% budget (redundancy: skip candidates whose normalised
+
+    edit-distance similarity over the tool-name sequence exceeds 0.8). The escape-defect rate is
+
+    the fraction of unselected tests that actually flipped (report 3.8).
+
+    The controls are random selection (averaged over 1,000 draws) and most-recently-failed.
+
+    `expected_escape` is `Σ(1 − p̂_t) / |T|` over the unselected tests; we placed it next to the
+
+    measured escape-defect rate to obtain the calibration error.'
+  notes:
+  - 'Per-change-event results: [{''change'': ''v02_dateformat'', ''n_flipped'': 10, ''uncertainty'': 0.9,
+    ''random'': 0.7171000000000001, ''recent'': 0.7, ''expected'': 0.6571, ''selected'': 17, ''no_redundancy'':
+    0.6, ''n_skipped_redundant'': 29}, {''change'': ''v03_noverify'', ''n_flipped'': 0, ''uncertainty'':
+    0.0, ''random'': 0.0, ''recent'': 0.0, ''expected'': 0.6811, ''selected'': 16, ''no_redundancy'':
+    0.0, ''n_skipped_redundant'': 30}, {''change'': ''v04_loopy'', ''n_flipped'': 0, ''uncertainty'':
+    0.0, ''random'': 0.0, ''recent'': 0.0, ''expected'': 0.6434, ''selected'': 18, ''no_redundancy'':
+    0.0, ''n_skipped_redundant'': 28}, {''change'': ''v05_unsafe_delete'', ''n_flipped'': 2, ''uncertainty'':
+    0.0, ''random'': 0.6855, ''recent'': 1.0, ''expected'': 0.6455, ''selected'': 18, ''no_redundancy'':
+    0.0, ''n_skipped_redundant'': 28}, {''change'': ''v06_toolschema_v2'', ''n_flipped'': 6, ''uncertainty'':
+    0.6667, ''random'': 0.7084984, ''recent'': 0.8333, ''expected'': 0.7243, ''selected'': 14, ''no_redundancy'':
+    0.1667, ''n_skipped_redundant'': 22}, {''change'': ''v07_step_minimizer'', ''n_flipped'': 0, ''uncertainty'':
+    0.0, ''random'': 0.0, ''recent'': 0.0, ''expected'': 0.6434, ''selected'': 18, ''no_redundancy'':
+    0.0, ''n_skipped_redundant'': 28}, {''change'': ''v08_summarize_ctx'', ''n_flipped'': 0, ''uncertainty'':
+    0.0, ''random'': 0.0, ''recent'': 0.0, ''expected'': 0.6434, ''selected'': 18, ''no_redundancy'':
+    0.0, ''n_skipped_redundant'': 28}, {''change'': ''v09_model_swap'', ''n_flipped'': 4, ''uncertainty'':
+    1.0, ''random'': 0.70575, ''recent'': 0.5, ''expected'': 0.6462, ''selected'': 18, ''no_redundancy'':
+    1.0, ''n_skipped_redundant'': 28}]'
+  - 'Isolating the cause: the redundancy penalty (from `.claude/rules/pts.md`: "skip candidates whose
+    complement of normalised edit distance over the tool-name sequence exceeds 0.8") drops most of the
+    candidates — an average of 26.8 per draw. In this illustrative environment the tasks'' tool-name sequences
+    are nearly identical (e.g. `calendar_search → calendar_create → checks_run → finish`), so a similarity
+    based on tool names alone cannot tell different tasks apart.'
+  - With the redundancy penalty switched off, the escape-defect rate falls to 0.442 (random is 0.704).
+    In other words the path "narrow by coverage → order by uncertainty" does work; what drops the candidates
+    is the similarity definition.
+  - '**Corrected diagnosis (confirmed live, ADR-014)**: this "tasks of the same kind mark each other as
+    duplicates" effect happens because sim trajectories share almost identical tool-name sequences across
+    tasks. In live trajectories, 10 tasks split into 9 distinct sequences and only 1 of 45 pairs (2%)
+    exceeds a similarity of 0.8. The definition of the redundancy penalty is not changed.'
+  - 'The verdict is FAIL (a flaw in the experiment design). It is not that the method failed to work as
+    claimed; the cause is the combination of an implementation that measures similarity on tool names
+    alone with a task set whose tool-name sequences are homogeneous. Proposed fix: diversify the tasks''
+    tool sequences (ADR-014 withdrew the plan to change the similarity).'
+  - Change events with zero flips have an undefined escape-defect rate and were excluded from the average
+    (the count is recorded in n_measurable_events).
+  - The logistic regression was trained leave-one-out at the granularity of change events. With only 8
+    events of training data, the average with the Beta posterior dominates.
+- id: E3-4
+  title: Deciding the test-pyramid level
+  hypothesis: The level decided from the change classification is at least the smallest level at which
+    a flip is observed. A change invisible to the LLM stops at L1
+  planted: v02 (prompt → L2 or above), v06 (tool → L3 or above), v09 (model → L4)
+  control: Change(kind=code) (a refactor of the tool wrappers; the version hash is unchanged)
+  verdict_reason: All criteria were met.
+  figures:
+  - Level decision
+  method: 'For each planted version we computed a `Change` and compared the level returned by
+
+    `decide_level` against the smallest level at which a flip was actually observed
+
+    (`observed_min_level`) (report 3.5). Flips follow the ADR-009 definition.
+
+    The control is `Change(kind=code)` (a refactor of the tool wrappers; the version hash does not
+
+    change), where we confirmed that it stops at L0–L1 with zero non-flake flips.
+
+    In this illustrative environment L2–L4 are all represented by "executing a trajectory", so the
+
+    granularity of the levels is coarser than in the report.'
+  notes:
+  - 'Level decisions: [{''version'': ''v02_dateformat'', ''change_kind'': ''prompt'', ''decided'': ''L2'',
+    ''observed_min'': ''L2'', ''n_flipped'': 10, ''ok'': True}, {''version'': ''v06_toolschema_v2'', ''change_kind'':
+    ''tool'', ''decided'': ''L3'', ''observed_min'': ''L3'', ''n_flipped'': 6, ''ok'': True}, {''version'':
+    ''v09_model_swap'', ''change_kind'': ''model'', ''decided'': ''L4'', ''observed_min'': ''L4'', ''n_flipped'':
+    4, ''ok'': True}]'
+  - 'Control (kind=code) level: L1 (stops at L1). Because the version hash does not change, flips are
+    0 by definition.'
+  - For a version with zero flips, observed_min falls to L1, so decided ≥ observed holds automatically.
+    This criterion therefore only confirms "never picks too low a level"; it does not confirm "never picks
+    too high a level".
+- id: E3-5
+  title: Prefix cache and branch re-execution
+  hypothesis: Branch re-execution agrees with normal execution on outcomes and greatly reduces live steps
+    for small changes. The larger the change, the earlier it diverges
+  planted: Branch-re-execute v02 (small change) and v09 (model swap) from v01's trajectories
+  control: Self-branching v01 → v01. It hits the cassette / identical policy, so it never diverges and
+    uses 0 live steps
+  verdict_reason: 'Unmet criteria: live_step_ratio_v02, divergence_order_ok.'
+  figures:
+  - Live step ratio
+  method: 'Taking a v01_baseline run (repeat=0, whose snapshots are stored) as the base, we retraced the
+
+    prefix under a new version (v02_dateformat / v09_model_swap / v01_baseline itself).
+
+    At each step the old trajectory''s conversation is handed to the new version and the returned
+
+    action is compared with the old one through `normalize_args`. On a match we continue; on a
+
+    mismatch we record `divergence_step`, restore that step''s snapshot, and run to the end with the
+
+    normal loop (report 3.6).
+
+    The billed step count `live_steps` is the number of decision confirmations whose request does
+
+    not exactly match the old version (i.e. confirmation calls when the version hash differs) plus
+
+    the number of execution steps after divergence. If the version hash is the same, the cassette
+
+    hits and it counts as 0. Validity was checked by comparing `outcome.passed` against a normal
+
+    run of the same (task, version).'
+  notes:
+  - 'Divergence points: v02=[1, 1, 1, 1, 1, 1, 1, 1, 1], v09=[2, 1, 1, 2]'
+  - 'Self-branch (v01→v01) divergences: 0 (0 is the expected value)'
+  - In sim mode the response to a given version is deterministic, so a self-branch always matches. Under
+    live the response varies even for the same version, so self-branch agreement could fall below 1.0.
+    That is a limitation of sim and needs re-confirmation under live.
+  - The hypothesis that the median divergence point of the model swap (v09) is smaller than v02's must
+    be read together with the counts, because the median is undefined when no divergence occurs.
+  - The verdict is NEGATIVE. The parts bearing on the method's correctness held (outcome agreement between
+    branch re-execution and normal execution = 1.0; self-branch billed steps = 0), but the savings claim
+    did not. The cause is that retracing a prefix needs one "decision confirmation" call per step, and
+    once the version changes that is always billed. v02 changes format at the second step (calendar_create),
+    so it diverges early and ends up costing more than a normal run — two confirmations plus the re-execution
+    after divergence. The token ratio is 1.024, lower than the step ratio, because the shared prefix does
+    benefit from the cache.
+- id: E3-6
+  title: Early stopping with SPRT
+  hypothesis: SPRT settles in fewer trials than a fixed-n procedure while keeping error rates close to
+    the nominal α=0.05, β=0.10
+  planted: Monte Carlo over p_true ∈ {0.1, 0.3, 0.5, 0.7, 0.9} (10,000 trials each) plus 5 boundary tests
+  control: A fixed-n procedure with the same power
+  verdict_reason: 'Unmet criterion: mean_n_ratio.'
+  figures:
+  - Mean trial count
+  method: 'We Monte-Carloed an SPRT of `H0: p = 0.5` against `H1: p = 0.9` at a nominal α = 0.05 / β =
+
+    0.10, with 10,000 trials at each point of `p_true ∈ {0.1, 0.3, 0.5, 0.7, 0.9}` (no API needed;
+
+    provenance simulated).
+
+    Empirical α is the fraction accepting H1 when p_true = p0; empirical β is the fraction
+
+    accepting H0 when p_true = p1. The fixed-n procedure is the normal-approximation trial count
+
+    with the same power. `mean_n_ratio` is the mean trial count across the grid divided by fixed-n.
+
+    For the boundary tests we picked 5 tasks whose Beta posterior in the corpus lies between 0.3
+
+    and 0.7, and fed v01''s sequence of repeat outcomes into the SPRT in order, measuring the number
+
+    of trials to settle (provenance simulated; not re-confirmed under live).'
+  notes:
+  - 'Results per p_true: [{''p_true'': 0.1, ''accept_rate'': 0.0, ''reject_rate'': 1.0, ''undecided_rate'':
+    0.0, ''mean_n'': 2.2518, ''fixed_n'': 9.0}, {''p_true'': 0.3, ''accept_rate'': 0.0015, ''reject_rate'':
+    0.9985, ''undecided_rate'': 0.0, ''mean_n'': 3.2164, ''fixed_n'': 9.0}, {''p_true'': 0.5, ''accept_rate'':
+    0.0455, ''reject_rate'': 0.9545, ''undecided_rate'': 0.0, ''mean_n'': 5.278, ''fixed_n'': 9.0}, {''p_true'':
+    0.7, ''accept_rate'': 0.3773, ''reject_rate'': 0.6227, ''undecided_rate'': 0.0, ''mean_n'': 9.0481,
+    ''fixed_n'': 9.0}, {''p_true'': 0.9, ''accept_rate'': 0.9484, ''reject_rate'': 0.0516, ''undecided_rate'':
+    0.0, ''mean_n'': 7.3866, ''fixed_n'': 9.0}]'
+  - 'Boundary tests: [''T-001'', ''T-003'', ''T-004'', ''T-006'', ''T-007''], trials to settle [3, 7,
+    2, 9, 5]'
+  - The boundary tests were settled against v01's sequence of repeat outcomes, not a live outcome sequence,
+    so provenance is simulated.
+  - The hypothesis setup (p0=0.5, p1=0.9) was fixed before implementation. Bringing p0 and p1 closer together
+    increases the required trials and worsens mean_n_ratio. This criterion depends on the hypothesis setup.
+  - 'The verdict is NEGATIVE. The error-rate claims (α ≤ 0.07, β ≤ 0.12) held, but the mean-trial claim
+    (at most 60% of fixed-n) came to 0.604 and missed by a hair. This is not an implementation flaw: the
+    p_true grid includes p_true = 0.5, the slowest point to settle. Dropping 0.5 from the grid lowers
+    the ratio, but that would be loosening a criterion after the fact, so it was not done.'
+- id: E3-7
+  title: Escape-defect rate, ε-exploration and the inviolable set
+  hypothesis: At a 40% budget the escape-defect rate is ≤ 0.1. With ε=0.05 a random test is mixed in every
+    time. The inviolable set is always selected regardless of budget
+  planted: Comparing full-execution results against selection results across all changes
+  control: A 100% budget → escape-defect rate 0
+  verdict_reason: 'Unmet criterion: escape_rate.'
+  figures:
+  - Escape-defect rate curve
+  method: 'We selected at budget ratios of 5% / 20% / 40% / 100% and measured the escape-defect rate (the
+
+    fraction of unselected tests that actually flipped), the number of random tests mixed in by
+
+    ε-exploration, and the selection rate of the inviolable set (`risk: inviolable`) (report 3.8).
+
+    The inviolable set is implemented to be selected outside the selection logic, so we confirmed
+
+    it is at 100% even at a 5% budget. Flips follow the ADR-009 definition.
+
+    The control is a 100% budget (run everything → escape-defect rate 0).'
+  notes:
+  - 'Results per budget: [{''change'': ''v02_dateformat'', ''budget'': 0.05, ''n_flipped'': 10, ''escape'':
+    1.0, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 5, ''escape_no_redundancy'':
+    1.0}, {''change'': ''v02_dateformat'', ''budget'': 0.2, ''n_flipped'': 10, ''escape'': 0.8, ''random_included'':
+    2, ''inviolable_rate'': 1.0, ''selected'': 13, ''escape_no_redundancy'': 0.5}, {''change'': ''v02_dateformat'',
+    ''budget'': 0.4, ''n_flipped'': 10, ''escape'': 0.4, ''random_included'': 2, ''inviolable_rate'':
+    1.0, ''selected'': 21, ''escape_no_redundancy'': 0.1}, {''change'': ''v02_dateformat'', ''budget'':
+    1.0, ''n_flipped'': 10, ''escape'': 0.0, ''random_included'': 1, ''inviolable_rate'': 1.0, ''selected'':
+    46, ''escape_no_redundancy'': 0.0}, {''change'': ''v05_unsafe_delete'', ''budget'': 0.05, ''n_flipped'':
+    2, ''escape'': 0.0, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 5, ''escape_no_redundancy'':
+    0.0}, {''change'': ''v05_unsafe_delete'', ''budget'': 0.2, ''n_flipped'': 2, ''escape'': 0.0, ''random_included'':
+    2, ''inviolable_rate'': 1.0, ''selected'': 14, ''escape_no_redundancy'': 0.0}, {''change'': ''v05_unsafe_delete'',
+    ''budget'': 0.4, ''n_flipped'': 2, ''escape'': 0.0, ''random_included'': 2, ''inviolable_rate'': 1.0,
+    ''selected'': 23, ''escape_no_redundancy'': 0.0}, {''change'': ''v05_unsafe_delete'', ''budget'':
+    1.0, ''n_flipped'': 2, ''escape'': 0.0, ''random_included'': 1, ''inviolable_rate'': 1.0, ''selected'':
+    46, ''escape_no_redundancy'': 0.0}, {''change'': ''v06_toolschema_v2'', ''budget'': 0.05, ''n_flipped'':
+    6, ''escape'': 0.8333, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 5, ''escape_no_redundancy'':
+    0.8333}, {''change'': ''v06_toolschema_v2'', ''budget'': 0.2, ''n_flipped'': 6, ''escape'': 0.6667,
+    ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 12, ''escape_no_redundancy'': 0.5},
+    {''change'': ''v06_toolschema_v2'', ''budget'': 0.4, ''n_flipped'': 6, ''escape'': 0.5, ''random_included'':
+    2, ''inviolable_rate'': 1.0, ''selected'': 21, ''escape_no_redundancy'': 0.0}, {''change'': ''v06_toolschema_v2'',
+    ''budget'': 1.0, ''n_flipped'': 6, ''escape'': 0.0, ''random_included'': 0, ''inviolable_rate'': 1.0,
+    ''selected'': 46, ''escape_no_redundancy'': 0.0}, {''change'': ''v07_step_minimizer'', ''budget'':
+    0.05, ''n_flipped'': 0, ''escape'': 0.0, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'':
+    5, ''escape_no_redundancy'': 0.0}, {''change'': ''v07_step_minimizer'', ''budget'': 0.2, ''n_flipped'':
+    0, ''escape'': 0.0, ''random_included'': 2, ''inviolable_rate'': 1.0, ''selected'': 14, ''escape_no_redundancy'':
+    0.0}, {''change'': ''v07_step_minimizer'', ''budget'': 0.4, ''n_flipped'': 0, ''escape'': 0.0, ''random_included'':
+    2, ''inviolable_rate'': 1.0, ''selected'': 23, ''escape_no_redundancy'': 0.0}, {''change'': ''v07_step_minimizer'',
+    ''budget'': 1.0, ''n_flipped'': 0, ''escape'': 0.0, ''random_included'': 1, ''inviolable_rate'': 1.0,
+    ''selected'': 46, ''escape_no_redundancy'': 0.0}]'
+  - The inviolable set (T-005, T-011, T-025) is implemented to be included unconditionally, outside the
+    selection logic. It is selected 100% of the time even at a 5% budget.
+  - ε-exploration mixes in at least one test regardless of budget. At a 100% budget everything is already
+    selected and there is no room to mix, so the count reported is the minimum over the conditions with
+    budget < 100%.
+  - 'The escape-defect rate of ≤ 0.1 could not be met. The cause is the same as E3-3: the redundancy penalty
+    (skip similarity > 0.8 over tool-name sequences) treats tasks of the same kind inside the candidate
+    set as mutual duplicates and spends the budget on diverse tasks outside the candidate set. The escape-defect
+    rate of the variant with redundancy switched off is reported alongside.'
+  - '**Corrected diagnosis (confirmed live, ADR-014)**: this effect occurs because sim trajectories collapse
+    to nearly identical tool-name sequences across tasks. In live trajectories, 10 tasks split into 9
+    distinct sequences and only 1 of 45 pairs (2%) exceeds a similarity of 0.8. The definition of the
+    redundancy penalty is not changed (the same correction as in E3-3).'
+  - The verdict is FAIL (a flaw in the experiment design). The inviolable-set guarantee (100% selection
+    even at a 5% budget) and the zero escape-defect rate at a 100% budget do hold.
+- id: E4-1
+  title: Selective reaction of trajectory metrics
+  hypothesis: A planted version moves only the metric it corresponds to
+  planted: v04_loopy (duplicate-call rate and backtracking ↑), v03_noverify (verification rate ↓)
+  control: v01's repeats (small metric variance), and v02 (these metrics must not move)
+  verdict_reason: All criteria were met.
+  figures:
+  - Duplicate-call rate
+  - Verification rate
+  method: 'Trajectory metrics were computed from the whole corpus using nothing but `Run` (report 4.2).
+
+    `L_min` comes from each task YAML''s `l_min`. A duplicate call is an exact match on
+
+    `(name, args_norm)`. The denominator of the verification rate is "runs that called a write-type
+
+    tool at least once" (read-only runs are NaN and excluded from the mean).
+
+    The planted versions are v04_loopy (instructed to retrace the same search twice) and
+
+    v03_noverify (the verification section removed). The controls are v01''s repeats (used to derive
+
+    the flake band) and v02_dateformat (these metrics should not move).
+
+    "Inside the flake band" is defined as the 95% interval of the metric ratio obtained by randomly
+
+    splitting v01''s repeats into two groups.'
+  notes:
+  - 'v02''s metric ratios: dup=1.0, verification=1.0'
+  - v04 is instructed to "retrace the same search once more", so its duplicate-call rate and backtrack
+    count rise while its verification rate does not move. v03 has the verification section removed, so
+    only its verification rate falls. This selectivity — only the corresponding metric moves — is the
+    substance of the hypothesis.
+  - v03 and v04 barely move the pass rate (both are 0.79, the same as v01). An evaluation that looks only
+    at outputs cannot detect the degradation in these two versions; they separate only on process metrics.
+    This matches the claim in report 4.1 that outcome and process are independent axes.
+- id: E4-2
+  title: Detecting wasted calls by ablation
+  hypothesis: v04's wasted-call rate U is higher than v01's, and the judge surrogate metric agrees well
+    enough with ablation
+  planted: 5 runs of v04 and 5 of v01 (every call ablated)
+  control: A call whose result the immediately following action uses (search → create) is judged useful
+  verdict_reason: 'Unmet criteria: waste_rate_diff, surrogate_precision.'
+  figures:
+  - Wasted-call rate
+  method: 'Taking 5 runs each of v01_baseline and v04_loopy, we built for every tool call a conversation
+
+    in which that call''s result is replaced by `[result omitted by ablation]`, restored the
+
+    snapshot after step i, and re-executed from step i+1 onwards (report 4.3). If `outcome.passed`
+
+    does not change, that call is judged "wasted". The wasted-call rate `U(τ)` is the fraction of
+
+    calls judged wasted.
+
+    The surrogate metric asks the judge, via `submit_verdict`, whether the result was referenced by
+
+    a later decision; precision and recall are computed against the ablation result as ground
+
+    truth.
+
+    The control is calls whose immediately following action depends on the result, such as
+
+    `calendar_search → calendar_create`, where we look at the fraction judged useful.
+
+    Because live was unavailable, the ablation re-execution ran in sim mode and the judge is the
+
+    deterministic surrogate (`offline_ablation_judge` in `judge/rubric.py`). Provenance is
+
+    simulated.'
+  notes:
+  - 'Ablated call counts: {''v01_baseline'': 18, ''v04_loopy'': 23}'
+  - The call at the final step cannot have its influence measured, because no decision follows. The implementation
+    counts it on the "wasted" side (the non-conservative side, so U may be overstated).
+  - The judge is the deterministic surrogate, not live Sonnet. The surrogate metric's precision and recall
+    are the performance of that surrogate, not of an LLM judge. Re-measurement under live is needed.
+  - 'The verdict is FAIL (a flaw in the experiment design). U pinned to the ceiling for both versions.
+    The cause is that this environment''s agent has a checks_run → repair loop: even with a search result
+    hidden, it detects the duplicate and rebuilds, so removing a result does not change the outcome. Since
+    U measures "would it still pass without this call", it always reads high for an agent with a repair
+    loop. Ablation itself works as specified (the control useful-rate is 1.0); the absence of a gap between
+    versions is a ceiling effect.'
+- id: E4-3
+  title: Deterministic detection with the trajectory linter
+  hypothesis: Violations of ordering and prohibition constraints are detected deterministically, with
+    no false positives on the baseline
+  planted: v05_unsafe_delete (no_delete_without_backup), v03_noverify (claim_done_requires_checks)
+  control: v01, plus hand-written event sequences and hypothesis-based property tests
+  verdict_reason: All criteria were met.
+  figures:
+  - Violation detection rate
+  method: 'Each run in the corpus was turned into an event sequence by `to_events` in `core/events.py`,
+
+    and the global rule set plus task-specific rules (`forbidden` in the YAML) were applied
+
+    (report 4.4).
+
+    The denominator of the detection rate is limited to "runs containing the action the rule
+
+    targets": for `no_delete_without_backup`, runs that called `file_delete`; for
+
+    `claim_done_requires_checks`, runs that called a write-type tool and then `finish`.
+
+    The control is v01_baseline''s violation rate over the same denominator.
+
+    The operators (always / once_before / not_until / count_le / next_after / eventually) were
+
+    checked exhaustively against hand-written event sequences (re-run inside this experiment and
+
+    recorded in `operator_tests_pass`).'
+  notes:
+  - 'v01''s violation rates: delete=0.0 (n=20), checks=0.0 (n=330)'
+  - The detection rate uses "runs containing the action the rule targets" as its denominator. Using all
+    runs would make violations automatically 0 on runs that perform no deletion, and the detection rate
+    would look understated.
+  - The linter is deterministic (it uses no LLM), so the same trajectory always yields the same violations.
+    Whether the trajectory came from sim or live does not affect the correctness of detection. However,
+    "how many trajectories containing a violation get generated" depends on the agent's behaviour, so
+    the counts (n) reflect properties of sim.
+- id: E4-4
+  title: Partial credit from partial-order milestones
+  hypothesis: Partial credit is consistent with the quality ordering of versions and awards full marks
+    to legitimate paths that differ only in order
+  planted: The v01 / v03 / v05 corpora, plus synthetic trajectories with different orderings
+  control: A synthetic trajectory whose arrival order violates the constraints is penalised
+  verdict_reason: 'Unmet criterion: spearman_rho.'
+  figures:
+  - Partial credit vs pass rate
+  method: 'For each run in the corpus we averaged the `milestone_score` recorded at execution time (a
+
+    partial-order judgement over the per-step state sequence) by version, and took the Spearman
+
+    rank correlation against the acceptance pass rate of the same version (report 4.5).
+
+    For the synthetic trajectories we hand-built three: (a) the constrained order (search → create
+
+    → check), (b) a wrong order (check → create), and (c) a trajectory that never arrives, and
+
+    confirmed that the partial credit came out as expected.
+
+    A milestone reached in violation of an `after` constraint is not counted toward partial credit.'
+  notes:
+  - 'Per-version values: [{''version'': ''v01_baseline'', ''milestone_score'': 0.9384, ''pass_rate'':
+    0.7935}, {''version'': ''v03_noverify'', ''milestone_score'': 0.7399, ''pass_rate'': 0.7935}, {''version'':
+    ''v05_unsafe_delete'', ''milestone_score'': 0.8949, ''pass_rate'': 0.75}, {''version'': ''v07_step_minimizer'',
+    ''milestone_score'': 0.7399, ''pass_rate'': 0.7935}]'
+  - Spearman is taken over 4 versions, so its statistical strength is weak (the p value is reported alongside).
+    Adding versions would stabilise it, but that only increases the input to the rank correlation — it
+    does not change the substance of what is being verified.
+  - 'Synthetic-trajectory verdicts: correct order = 1.0, wrong order = 0.667, never reached = 0.333. In
+    the wrong order, M3 (after=[M2]) earns no partial credit.'
+  - 'Diagnostic (outside the criteria): taking the same correlation over all 12 versions of the corpus
+    gives ρ = 0.63 (p = 0.028). Across the 4 versions the catalogue specifies, the simulator fix based
+    on live verification (IMPROVEMENT.md L5) left v01 / v03 / v07 with nearly identical pass rates, making
+    the rank correlation hard to define.'
+  - 'The verdict is FAIL (a flaw in the experiment design). The ordering judgement on the synthetic trajectories
+    came out as expected and the partial-order implementation itself works. What did not hold is "partial
+    credit is consistent with the quality ordering of versions", because only 4 versions are compared
+    and 3 of them have nearly tied pass rates (p = 0.728, not significant). Proposed fix: add versions,
+    or take the correlation per task rather than per version (either changes the criteria, so an ADR would
+    be needed).'
+- id: E4-5
+  title: Step-level judging (rubric and reference-policy agreement)
+  hypothesis: A step whose action has been mutated scores lower than the original under both rubric judging
+    and reference-policy agreement
+  planted: 30 steps extracted from healthy v01 runs, each replaced with a wrong tool / wrong argument
+    / destructive operation
+  control: Judge the unmutated steps twice to see stability
+  verdict_reason: All criteria were met.
+  figures:
+  - Judge scores
+  method: 'We extracted 30 steps from passing v01_baseline runs and built synthetic steps mutating each
+
+    into 3 kinds (wrong tool / wrong argument / destructive operation) (report 4.6).
+
+    The rubric judge''s input is "the events of the last 3 steps + the expected tool + whether the
+
+    state changed"; the agent''s self-report text is not included (separating claim from evidence,
+
+    per 5.2).
+
+    Reference-policy agreement sends the same prefix to the reference policy K=5 times and measures
+
+    the fraction where the action''s equivalence class (tool name + normalised arguments) matches.
+
+    For mutated steps we look at how often the mutated action matches what the reference policy
+
+    produces.
+
+    Re-judge agreement is the fraction of cases where judging the same input twice yields scores
+
+    within ±1.
+
+    Because live was unavailable, the judge is the deterministic surrogate and the reference policy
+
+    is the simulator (provenance simulated).'
+  notes:
+  - 'The judge is the deterministic surrogate, so the re-judge agreement rate is 1.0 by definition. With
+    live Sonnet it should be below 1.0, so this number does not amount to having verified "judging stability".
+    It is an item needing re-measurement under live — which E0-2 then did (within ±1: 1.000, exact: 0.967).'
+  - The degradation rate of reference-policy agreement is 1.0 because mutated actions fall outside the
+    reference policy's equivalence class. That too is a consequence of using the surrogate (the simulator)
+    as the reference policy, and is not the value one would get with live Sonnet as the reference policy.
+  - 'Mean reference-policy agreement (original steps): 0.972'
+- id: E4-6
+  title: Plan externalisation and deviation rate
+  hypothesis: Forcing the plan out as structured output makes DAG checking work, and a version that ignores
+    its plan has a high deviation rate
+  planted: v12_ignore_plan (instructed to emit a plan and then ignore it)
+  control: 'v01p (v01 with plan_first: true)'
+  verdict_reason: 'Unmet criterion: delta_gap.'
+  figures:
+  - Deviation rate
+  method: 'For runs of the `plan_first: true` versions (v01p and v12_ignore_plan) we ran a DAG check on
+    the
+
+    submitted plan (acyclicity, validity of `depends_on` references, existence of the tool names)
+
+    and computed the valid-DAG rate (report 4.7). The deviation rate δ is the edit distance between
+
+    the plan''s tool-name sequence and the execution''s tool-name sequence, divided by the longer of
+
+    the two (the ADR-005 approximation; arguments are not inspected).
+
+    We extracted only the deviation points (tools planned but not executed, tools executed but not
+
+    planned), asked the judge to rule on their justification, and computed the fraction ruled
+
+    unjustified.
+
+    Because live was unavailable, the judge is the deterministic surrogate
+
+    (`offline_deviation_judge`).'
+  notes:
+  - 'Per-version results: {''v01p'': {''n'': 460, ''valid_rate'': 1.0, ''delta'': 0.2192, ''n_deviating'':
+    260, ''unjustified_rate'': 0.4615}, ''v12_ignore_plan'': {''n'': 460, ''valid_rate'': 1.0, ''delta'':
+    0.4158, ''n_deviating'': 460, ''unjustified_rate'': 0.9783}}'
+  - δ is measured on tool-name sequences alone (ADR-005), so a deviation that differs only in arguments
+    does not show up in δ. v12's planted defect is "does not execute the planned verification step", which
+    does appear in the tool-name sequence and is detectable.
+  - The deviation-justification judge is the deterministic surrogate, ruling by the rules "a planned step
+    was not executed → unjustified" and "the tool result contained an error → justified as environmental".
+    The semantic judgement of an LLM judge is not verified.
+  - 'The verdict is FAIL (a flaw in the experiment design). δ opened to roughly double, but the gap missed
+    the criterion of 0.2. The cause is that the control v01p''s δ is not 0: on ambiguous / do_nothing
+    tasks "not writing as planned is the correct behaviour", so not following the plan adds to δ. Restricting
+    δ to normal tasks widens the gap, but that would mean re-choosing the target after seeing the result,
+    so it was not done. Metric-side proposed fix: subtract justified deviations (those the judge rules
+    justified) from δ.'
+- id: E4-7
+  title: In-trajectory NIAH (recall and context strategy)
+  hypothesis: Recall R(n) falls as noise n rises, and the summarising strategy (v08) has a higher AUC
+    than raw (v01)
+  planted: 4 niah task types × n ∈ {0, 2, 4, 8} × 3 repeats
+  control: At n = 0 both versions have high recall
+  verdict_reason: 'Unmet criterion: auc_gain_v08.'
+  figures:
+  - Recall curve
+  method: 'For the 4 tasks of `kind: niah`, `NoiseInjector` appended irrelevant long text (1,200
+
+    characters per step) to the tool responses of n steps from step 0 onwards, and we ran
+
+    n ∈ {0, 2, 4, 8} × 3 repeats (report 4.9). Recall R(n) is the fraction of runs whose final text
+
+    contains the `key_fact`.
+
+    The versions are v01_baseline (raw) and v08_summarize_ctx (tool results older than k steps are
+
+    replaced by a summary). AUC uses the trapezoid rule with n normalised to 0–1.
+
+    Because this experiment injects noise, it does not use the corpus runs — it generates runs
+
+    inside the experiment (the injection is recorded in the manifest).'
+  notes:
+  - 'Raw recall data: [{''version'': ''v01_baseline'', ''n'': 0, ''recall'': 1.0, ''runs'': 12}, {''version'':
+    ''v01_baseline'', ''n'': 2, ''recall'': 0.3333, ''runs'': 12}, {''version'': ''v01_baseline'', ''n'':
+    4, ''recall'': 0.3333, ''runs'': 12}, {''version'': ''v01_baseline'', ''n'': 8, ''recall'': 0.3333,
+    ''runs'': 12}, {''version'': ''v08_summarize_ctx'', ''n'': 0, ''recall'': 1.0, ''runs'': 12}, {''version'':
+    ''v08_summarize_ctx'', ''n'': 2, ''recall'': 0.3333, ''runs'': 12}, {''version'': ''v08_summarize_ctx'',
+    ''n'': 4, ''recall'': 0.3333, ''runs'': 12}, {''version'': ''v08_summarize_ctx'', ''n'': 8, ''recall'':
+    0.3333, ''runs'': 12}]'
+  - The simulator's recall model is a deterministic rule that lowers recall probability linearly in the
+    fraction of characters occupied by noise in the conversation sent. The summarising strategy (v08)
+    truncates old tool results to the first 160 characters, dropping the noise appended at the end and
+    keeping the key_fact (which sits near the front of the body). So any advantage to v08 is a structural
+    consequence of where the injection happens and how the summary is implemented — it is not evidence
+    that summarising generally helps recall.
+  - 'Report 4.11 notes that summarising can drop information. Any AUC gain here is a conditional result:
+    "the information dropped happened to be the noise."'
+  - 'The verdict is FAIL (a flaw in the experiment design). R(0) = 1.0 and v01''s fall to R(8) of 0.67
+    show a clear reaction to noise, but the AUC difference was 0.0. The cause is that the niah tasks run
+    only 2–3 steps and reach finish before the summarising strategy (`summarize_after = 2`) ever fires
+    — so v08 sends the same conversation as v01 and there is no comparison. Proposed fix: make the niah
+    tasks multi-stage (requiring several mail searches and file reads) to increase the step count.'
+- id: E4-8
+  title: pass@k / pass^k and consistency
+  hypothesis: On boundary tasks the gap between pass@k and pass^k is large, making pass^k necessary as
+    a reliability metric
+  planted: 5 repeats of v01 × boundary tasks, 3 repeats of v04
+  control: On trivial tasks pass@3 ≈ pass^3
+  verdict_reason: All criteria were met.
+  figures:
+  - Gap between pass@k and pass^k
+  method: 'From v01_baseline''s repeats in the corpus (10 of them) we computed pass@k and pass^k per task
+
+    using the formulas in report 4.10. Boundary tasks are those with a v01 pass rate between 0.3
+
+    and 0.7; trivial tasks are T-901 / T-902.
+
+    Step-count variance comes from the repeats of v01 and v04_loopy.
+
+    pass@k is "the probability of succeeding at least once in k draws" and pass^k is "the
+
+    probability of succeeding in all k draws"; the larger the gap, the more the test is one that
+
+    "works sometimes".'
+  notes:
+  - 'Boundary tasks: [''T-001'', ''T-003'', ''T-004'', ''T-006'', ''T-007'', ''T-008'', ''T-009'', ''T-010'',
+    ''T-015'', ''T-016'', ''T-017'', ''T-018'', ''T-019'', ''T-020'', ''T-021'', ''T-022'', ''T-026'',
+    ''T-029'', ''T-202'', ''T-402'', ''T-404'']'
+  - Trivial tasks (T-901 / T-902) pass on every repeat, so pass@3 = pass^3 = 1.0 and the gap is 0. On
+    boundary tasks pass@3 climbs close to 1.0 while pass^3 stays low — a large gap between "draw 3 times
+    and one will pass" and "all 3 pass".
+  - In sim mode a given (task, version, repeat) is deterministic, but the "luck" changes across repeats,
+    producing variation between repeats. That stands in for live sampling variance and is not necessarily
+    drawn from the same distribution as live variance.
+- id: E4-9
+  title: Cost budgets and Goodhart-paired metrics
+  hypothesis: The step-minimising version improves the efficiency metric but degrades its paired verification
+    rate. A p95 budget rejects only the loopy version
+  planted: v07_step_minimizer, v04_loopy
+  control: v01
+  verdict_reason: All criteria were met.
+  figures:
+  - Goodhart pair
+  method: 'From v01_baseline''s runs we computed the token p95 × 1.5 per category as the initial budget
+
+    (report 4.11), and judged whether each version''s runs exceed it.
+
+    The Goodhart pair places "step count ↔ verification rate" in the same table.
+
+    v07_step_minimizer is the version instructed to minimise steps; v04_loopy is the one that
+
+    retraces the same search.'
+  notes:
+  - 'Per-category p95 x 1.5 budget (tokens): {''edge'': 3543, ''files'': 7768, ''mail'': 9806, ''mixed'':
+    7724, ''scheduling'': 6754}'
+  - 'Goodhart table: {''v01_baseline'': {''steps'': 3.7565, ''verification_rate'': 1.0, ''tokens'': 4002.1957,
+    ''milestone_score'': 0.9384, ''violations'': 0.0739, ''pass_rate'': 0.7935}, ''v04_loopy'': {''steps'':
+    4.6348, ''verification_rate'': 1.0, ''tokens'': 5318.35, ''milestone_score'': 0.9384, ''violations'':
+    0.0739, ''pass_rate'': 0.7935}, ''v07_step_minimizer'': {''steps'': 2.9913, ''verification_rate'':
+    0.0, ''tokens'': 3099.5913, ''milestone_score'': 0.7399, ''violations'': 0.7913, ''pass_rate'': 0.7935}}'
+  - 'v07 cuts the step count to 0.7963x but at the same time its verification rate falls to 0x (the pass
+    rate is unchanged: v01 0.7935 vs v07 0.7935). This is exactly the point report 4.11 makes: looking
+    at the efficiency metric alone, it reads as an improvement. And because the pass rate does not move,
+    an evaluation that looks only at outputs never catches this degradation.'
+  - 'The p95 budget is built from v01 itself, so v01''s overrun rate being 0 is close to trivial by definition.
+    What this criterion checks is only the other side: that the budget rejects a redundant version like
+    v04.'
+- id: E8-1
+  title: Mock fidelity and TTL
+  hypothesis: When the external service changes, F drops and the mismatching keys are identified. Expired
+    cassettes are flagged
+  planted: DriftInjector.bump_external(v2) (price → unit_price, plus value changes)
+  control: Before the change, F = 1.0
+  verdict_reason: All criteria were met.
+  figures:
+  - Fidelity
+  method: 'We recorded the responses of external service v1 into cassettes
+
+    (`data/cassettes/external/`), then compared them against a service changed as by
+
+    `DriftInjector.bump_external(v2)` (renaming `price` → `unit_price` plus value changes) to
+
+    obtain the fidelity `F` (report 8.5).
+
+    Matching applies layered assertions in order (exact match → structural match → semantic
+
+    judgement) and counts which layer made the call.
+
+    For TTL, a cassette past `ttl_days` from its recording date counts as expired; we deliberately
+
+    created expired cassettes and measured the detection rate. This experiment uses no LLM.'
+  notes:
+  - 'Mismatching keys: [''price'', ''unit_price''] (changed keys: [''price'', ''unit_price''])'
+  - 'Judgements per layer (after the change): {''exact'': 0, ''structural'': 0, ''semantic'': 5}'
+  - Because the change renames a key, layered assertions never even reach "structural match" and fall
+    through to the "semantic judgement" layer. A change only to values would be caught at the structural
+    layer.
+  - Since we define the external service ourselves, this is not a verification that "a real service changed".
+    What was verified is that the computation of F, the identification of mismatching keys, and the TTL
+    judgement all work.
+- id: E8-2
+  title: Freshness and distribution distance
+  hypothesis: JS divergence captures the shift in the production distribution, and MMD captures co-adaptive
+    rephrasing
+  planted: ProdStream's day-by-day shift (new-category share 0% → 40%) plus rephrasing
+  control: A resample from the same distribution
+  verdict_reason: All criteria were met.
+  figures:
+  - JS over time
+  method: '`ProdStream` (the production stand-in of ADR-006) generated 60 sessions for each of days 0–4.
+
+    As the days advance, the share of the new category (expense) rises and prompts drift toward
+
+    "how a familiar user would say it".
+
+    The suite-side distribution is the `category` distribution in the task YAMLs. JS divergence
+
+    uses the formula in report 8.3 (base 2).
+
+    The alarm threshold is the 95th percentile of JS when resampling the same number from the suite
+
+    distribution (bootstrap, simulated).
+
+    Co-adaptation is detected by the MMD between the rephrased prompts and the original prompts
+
+    (TF-IDF over character 2–3-grams + RBF), with p values from a permutation test. The control is
+
+    two groups resampled from the same distribution, where we look at how often p ≥ 0.05.'
+  notes:
+  - 'JS per day: [0.013826, 0.027569, 0.160572, 0.183587, 0.266444]; new-category share: [0.0, 0.05, 0.267,
+    0.3, 0.417]'
+  - 'MMD of the rephrasing: 4.2e-05（p=0.0166）; control p values: [0.6238, 0.4059, 0.4851, 0.2772, 0.604]...'
+  - Production is stood in for by a generator (ADR-006). Both the magnitude of the distribution shift
+    and the manner of rephrasing are ours to choose, so what this experiment shows is that JS and MMD
+    react to a shift — not that they can capture a real operational distribution shift.
+  - The rephrasing is produced by deterministic substitution rules (`PARAPHRASE_RULES`). The live path,
+    which would have Haiku generate them, is designed but not executed.
+- id: E8-3
+  title: Discriminative power and saturation
+  hypothesis: Trivial tasks are judged saturated, and boundary tasks have high discriminative power
+  planted: Trivial tasks T-901, T-902 (pass under every version)
+  control: Boundary tasks (v01 pass rate 0.3–0.7)
+  verdict_reason: 'Unmet criterion: boundary_d.'
+  figures:
+  - Discriminative power
+  method: 'We took `d(t)` as the difference in pass rate between the `quality_label` groups (good / bad)
+
+    in the version YAMLs (report 8.4; neutral is excluded), and judged a test saturated when its
+
+    pass rate exceeds 0.95 under every version and |d| < 0.1.
+
+    The planted condition is the trivial tasks T-901 / T-902 (they pass if you call finish). The
+
+    control is boundary tasks (v01_baseline pass rate between 0.3 and 0.7).
+
+    We also confirmed that a test judged saturated reaches the state machine in `lifecycle.py` and
+
+    transitions Active → Saturated.'
+  notes:
+  - 'Tasks judged saturated: [''T-023'', ''T-024'', ''T-030'', ''T-201'', ''T-302'', ''T-303'', ''T-304'',
+    ''T-901'', ''T-902'']'
+  - 'Top d(t): [(0.175, ''T-008''), (0.143, ''T-025''), (0.143, ''T-013''), (0.143, ''T-005''), (0.136,
+    ''T-401'')]'
+  - The good / bad labels describe the "quality" of a version, not its pass rate. v03_noverify and v04_loopy
+    are labelled bad but their pass rates are no different from v01, so they push d(t) down. In other
+    words, discriminative power measured on outputs alone cannot distinguish a version whose planted defect
+    is in the process.
+  - The verdict is NEGATIVE. The saturation judgement on trivial tasks (|d| = 0, saturated = true) and
+    the notification to the lifecycle held, but discriminative power on boundary tasks missed the criterion
+    of 0.3. This is not an implementation flaw. The cause is that among the 7 bad-labelled versions, the
+    "process-only degraded" ones — v03_noverify, v04_loopy and the v08 equivalent — do not lower the pass
+    rate at all (the same observation as E4-1). Since `d(t)` tries to separate quality labels using outcomes
+    alone, **a version whose output is the same and whose process has degraded cannot be discriminated
+    in principle**. This is the mirror image of report 4.1's claim that outcome and process are independent
+    axes, and shows that the discriminative power of 8.4 needs to be defined over process metrics as well
+    (linter violation rate, verification rate).
+- id: E8-4
+  title: Dual-track κ
+  hypothesis: The mock-vs-live outcome agreement κ falls when drift is injected
+  planted: After bump_external(v2), re-run the tasks that use external_lookup
+  control: κ before injection
+  verdict_reason: All criteria were met.
+  figures:
+  - Change in κ
+  method: 'Restricting to tasks that always use `external_lookup` (the mixed category), we ran the same
+
+    task set on a "mock track" (external service v1) and a "live track" (the current external
+
+    service) and measured agreement on `outcome.passed` with Cohen''s κ (report 8.6).
+
+    Before injection both tracks use v1; after injection only the live track has
+
+    `DriftInjector.bump_external(v2)` applied.
+
+    κ comes from `sklearn.metrics.cohen_kappa_score`. When either group''s outcomes have no
+
+    variance, κ is undefined, so we treat perfect agreement as 1.0 and perfect disagreement as 0.0
+
+    (an implementation note).'
+  notes:
+  - 'Target tasks (those using external_lookup): [''T-004'', ''T-028'', ''T-029'', ''T-030'', ''T-404'']'
+  - '**A pre-injection κ of 1.0 is trivial given sim''s structure.** In sim mode a given (task, seed,
+    repeat) executes deterministically, so if the external service version is the same the mock and live
+    tracks must agree. Under live, responses vary even under identical conditions and κ would be below
+    1.0. This experiment therefore shows only that "κ falls when drift is injected"; it does not amount
+    to verifying that "κ is high before injection".'
+  - The mechanism behind the drop in κ is that the external service's response key changes from `price`
+    to `unit_price`, so the agent cannot read the price and fails. The mock side is still on v1 and passes.
+- id: E8-5
+  title: Drift attribution (factor-wise swapping)
+  hypothesis: Factor-wise swapping identifies the factor with the largest main effect, and it matches
+    the planted cause
+  planted: 3 single-factor changes and 1 two-factor change
+  control: No change (all main effects inside the flake band)
+  verdict_reason: All criteria were met.
+  figures:
+  - Main effects
+  method: 'For the 2^3 = 8 combinations of the factors {model, prompt, tool}, we built composite versions
+
+    taking each factor from a planted version (model from v09, prompt from v02, tool schema from
+
+    v06), ran the same 10 tasks × 3 repeats and measured the pass rate (report 8.8).
+
+    The main effect is the mean change in pass rate when that factor is swapped. The predicted
+
+    cause is the factor with the largest absolute main effect.
+
+    The control is no change (all factors off), where we confirm the main effects fall inside the
+
+    flake band.
+
+    The two-factor change is the prompt + tool pair, where we check whether the top 2 factors
+
+    match.'
+  notes:
+  - 'Per-cell pass rate with all three factors swapped: {''model=0,prompt=0,tool=0'': 0.667, ''model=0,prompt=0,tool=1'':
+    0.567, ''model=0,prompt=1,tool=0'': 0.267, ''model=0,prompt=1,tool=1'': 0.267, ''model=1,prompt=0,tool=0'':
+    0.9, ''model=1,prompt=0,tool=1'': 0.767, ''model=1,prompt=1,tool=0'': 0.4, ''model=1,prompt=1,tool=1'':
+    0.4}'
+  - 'Main effects for the two-factor case (prompt + tool): {''model'': 0.0, ''prompt'': -0.35, ''tool'':
+    -0.05}'
+  - 'Single-factor verdicts: [{''planted'': ''model'', ''predicted'': ''model'', ''effects'': {''model'':
+    0.2333, ''prompt'': 0.0, ''tool'': 0.0}}, {''planted'': ''prompt'', ''predicted'': ''prompt'', ''effects'':
+    {''model'': 0.0, ''prompt'': -0.4, ''tool'': 0.0}}, {''planted'': ''tool'', ''predicted'': ''tool'',
+    ''effects'': {''model'': 0.0, ''prompt'': 0.0, ''tool'': -0.1}}]'
+  - 'Control (no change): running the same v01 twice with different seeds gives a pass-rate difference
+    of 0.0, and with a flake band of 0.1812 that is judged as no alarm.'
+  - In the two-factor case we do not swap the model factor (the model did not change in that deployment).
+    The first implementation derived main effects from the table with all three factors swapped, which
+    attributed a main effect to a model change that never happened and made the top 2 factors {prompt,
+    model}. Factor-wise swapping must swap only the factors that actually differ between the old and new
+    deployments.
+  - The composite versions are built by substituting v01's prompt, model and tools. The prompt factor
+    therefore carries all of v02's prompt, so sections other than date_format are swapped along with it.
+    The granularity of a factor is "a version attribute", not a section.
+- id: E8-6
+  title: Detecting a model swap by fingerprinting
+  hypothesis: Comparing distributions over fixed probes raises no alarm when the same model is re-sampled,
+    and raises one when the model is swapped
+  planted: Swapping Haiku → Sonnet (a stand-in for a silent update)
+  control: Sampling Haiku twice
+  verdict_reason: All criteria were met.
+  figures:
+  - Fingerprint distance
+  method: 'Using the fixed 30 probes in `data/fixtures/probes.yaml` (no tools, short answers) plus 10
+
+    mini-tasks, we took a fingerprint from the response-length distribution, the first-20-character
+
+    agreement rate, and the tool-selection distribution (report 8.8).
+
+    The reference distribution is the difference obtained by sampling the same model twice, taken
+
+    as the null; detection is a permutation test at p < 0.05.
+
+    The false-alarm rate of the control (sampling the same model twice) was measured over 20
+
+    bootstrap rounds.
+
+    **Important**: for the artificial-distribution part, probe responses come from a deterministic
+
+    stand-in generator whose response lengths and endings differ by model — they are not real Haiku
+
+    or Sonnet responses. That part therefore verified only that the fingerprint statistic and the
+
+    permutation test react to a difference in distributions. The live fingerprint below is what
+
+    tests a real model swap.'
+  notes:
+  - '**Live fingerprint (IMPROVEMENT.md R2)**: on the real API we sampled Haiku 4.5 twice and Sonnet 5
+    once (30 probes + 10 mini-tasks × 3 rounds = 120 calls). Mean response length was 58.2 characters
+    for Haiku and 29.4 for Sonnet.'
+  - '**The pre-revision composite statistic could not detect the swap**: control p = 1.0, swap p = 0.1178
+    (above 0.05). On the artificial distribution it had detected it at p = 0.002, so that result had been
+    propped up by the artificial distribution.'
+  - 'ADR-013 removed the non-discriminating terms (first-character agreement, tool-selection distribution)
+    from the statistic. A response-length-only permutation test separates cleanly: control p = 0.7161,
+    swap p = 0.0455. The first-character agreement rate is 0.2 even for the same model twice and 0.1 across
+    models — almost no difference — and 80% of the mini-task tool selections collapsed to `__no_tool__`
+    (the real model answers in prose).'
+  - That said, with 30 probes the swap's p is right at the edge of 0.05. It will not be stable without
+    more probes, or mini-tasks that reliably force a tool call.
+  - 'The artificial probe responses come from a stand-in generator: the Haiku role averages 40 characters,
+    the Sonnet role 90, with different opening phrasings and tool-selection distributions. That part artificially
+    constructs "two groups that differ" and feeds them to the test, so detecting the swap there is structurally
+    inevitable.'
+  - 'What that part really confirmed is two things: (1) no false alarm on the control (two groups from
+    the same distribution), and (2) the permutation test''s p value is computed as implemented. Whether
+    a silent update of a real model can be detected is answered by the live fingerprint above.'
+- id: E8-7
+  title: Production→test pipeline
+  hypothesis: The stratified sampler prioritises important sessions, the drafted acceptance criteria are
+    approved, and registering them shrinks the distance between the suite and production
+  planted: 20 sessions drawn from 3 days of ProdStream sessions
+  control: Uniform sampling
+  verdict_reason: 'Unmet criterion: stratified_lift.'
+  figures:
+  - Capture rate
+  method: '`ProdStream` generated 3 days of sessions (20 each); those corresponding to existing tasks
+    were
+
+    executed as those tasks under v01_baseline to build a body of "production traffic" runs
+
+    (ADR-006).
+
+    The stratified sampler treats failed runs, high-cost runs (above the per-category p95) and new
+
+    categories as strata and draws an equal number from each; the control is uniform sampling. Lift
+
+    is "the fraction of important sessions (failed / high-cost / new-category) captured by
+
+    stratification ÷ the same fraction under uniform sampling".
+
+    From the sampled runs we had the judge draft the equivalent of `draft_task` (a deterministic
+
+    drafter, since live was unavailable) and computed the approval rate using "the acceptance
+
+    criteria are expressible with known check functions alone" as the approval condition
+
+    (equivalent to `--auto-approve`; the result page says "auto-approved" explicitly).
+
+    We compared the JS divergence between the suite''s category distribution and production''s before
+
+    and after registration.'
+  notes:
+  - Approval is automatic (equivalent to `--auto-approve`). The approval condition is that the acceptance
+    criteria are expressible with known check functions alone.
+  - Sessions in the new category (expense) have no definition in `tasks/`, so an ad-hoc Task is assembled
+    and executed (`prodstream.new_category_task`). That is the 8.2 path of "taking in what production
+    has and the suite does not".
+  - 'Category breakdown of the drafted tests: {''scheduling'': 3, ''expense'': 6, ''files'': 2, ''mixed'':
+    3, ''mail'': 6}'
+  - Production is stood in for by a generator (ADR-006). Provenance is simulated (synthetic prod). We
+    make no claim to have "drafted tests from real operational sessions".
+  - 'The verdict is FAIL (a flaw in the experiment design). Stratification did raise the capture rate
+    for important sessions from 0.45 to 0.85, but lift came to 1.889 against a criterion of 3.0. **This
+    criterion is unattainable in principle for this production stream**: uniform sampling already captures
+    45% important sessions (failed / high-cost / new-category), so lift is capped at 1 / 0.45 = 2.2. The
+    draft approval rate (1.0) and the shrinkage of JS from 0.100 to 0.018 after registration did hold.
+    Proposed fix: lower the production stream''s failure rate (making important sessions rare), or write
+    the criterion as an absolute capture rate rather than a lift (needs an ADR).'
+- id: E8-8
+  title: The test lifecycle state machine
+  hypothesis: The transition conditions act deterministically on metrics, and Retired is terminal
+  planted: Supplying the metrics that trigger each transition
+  control: Metrics that do not meet a condition cause no transition
+  verdict_reason: All criteria were met.
+  figures:
+  - Transition checks
+  method: 'For each transition of the state machine we supplied the metrics that trigger it and checked
+
+    the return value of `next_state` (report 8.10). As a control we confirmed that metrics failing
+
+    the condition leave the state unchanged.
+
+    We also confirmed that a transition out of `Retired` raises (`TerminalState`), and that
+
+    `data/lifecycle.jsonl` is append-only (after a write the line count increases monotonically and
+
+    existing lines are unchanged).
+
+    This experiment uses neither an LLM nor any run (provenance unit).'
+  notes:
+  - 'Transition check results: [(''Created'', ''Validated'', ''Validated''), (''Validated'', ''Active'',
+    ''Active''), (''Active'', ''Stale'', ''Stale''), (''Active'', ''Saturated'', ''Saturated''), (''Active'',
+    ''Hardened'', ''Hardened''), (''Saturated'', ''Retired'', ''Retired''), (''Stale'', ''Rerecorded'',
+    ''Rerecorded''), (''Rerecorded'', ''Active'', ''Active''), (''Hardened'', ''Active'', ''Active'')]'
+  - The thresholds for the transition conditions (fidelity < 0.8 → Stale, |d| < 0.1 → Saturated, flake_rate
+    > 0.3 → Hardened) are written in `drift/lifecycle.py`. Metric computation is separated into `drift/state_source.py`
+    so that the transition decision and the computation do not end up in the same function (as the rules
+    require).
+  - Against the diagram in report 8.10, this implementation hard-codes a priority for the branches out
+    of Active (fidelity → discriminative power → flake). The report does not specify the behaviour when
+    several conditions hold at once, so that is an implementation decision.
+- id: E8-9
+  title: Contamination detection (canary scanning)
+  hypothesis: Canary scanning detects the contaminated version, and the public/private pass-rate gap widens
+    for it
+  planted: v10_contaminated (canary-bearing examples from private tasks mixed into the few-shot block)
+  control: v01
+  verdict_reason: 'Unmet criterion: gap_v10.'
+  figures:
+  - public/private gap
+  method: 'We scanned `prompts/`, `versions/`, `docs/` and the system portion of the LLM cassettes for
+    the
+
+    canary strings embedded in the 4 tasks marked `visibility: private` (report 8.9).
+
+    The planted version is v10_contaminated (canary-bearing examples from private tasks mixed into
+
+    the few-shot block); the control is v01_baseline.
+
+    The detection rate is "canaries found by the scan ÷ canaries mixed in".
+
+    The public/private pass-rate difference is computed per version
+
+    (gap = private pass rate − public pass rate).'
+  notes:
+  - 'Canaries detected in v10: [''T-401'', ''T-402'', ''T-403'', ''T-404'']'
+  - 'Whole-repository scan: 4 hits across 1029 files'
+  - In the whole-repository scan, a canary string appearing in a result page or an experiment script also
+    gets detected. `docs/results/` is not excluded from the scan target, so this number counts "occurrences
+    of the string" rather than "detections of a contaminated version".
+  - How much contamination raises the pass rate is a consequence of the simulator hard-coding "ability
+    0.9 for the contaminated version on private tasks". How much a real LLM would reuse an answer from
+    its few-shot block is not answerable from this experiment. What was verified is that the scan and
+    the gap computation work.
+  - The verdict is FAIL (a flaw in the experiment design). Canary scanning had a detection rate of 1.0
+    with 0 false positives on the control, so **the detection method itself worked as claimed**. What
+    fell short is the gap ≥ 0.2 side. The size of the gap is set directly by the simulator's free parameter
+    ("the contaminated version has ability 0.9 on private tasks"), so in sim this criterion is not a meaningful
+    verification. Setting the ability to 1.0 would meet the criterion, but that would mean tuning the
+    strength of the planting to fit the criterion, so it was not done. Measuring "how much having the
+    answer in the few-shot block raises the pass rate" needs live.
+- id: E0-1
+  title: Agreement between the simulated agent and live (sim validity)
+  hypothesis: Trajectories built with sim (ADR-008) agree with live trajectories on the same (task, version,
+    repeat) at the level of the quantities evaluation methods look at
+  planted: Run the same 10 tasks × 3 versions × 3 repeats under both live and sim and match up the quantities
+    the evaluation methods use
+  control: Compare matched (task, version, repeat) triples; never compare across versions
+  verdict_reason: 'Unmet criteria: pass_rate_gap, version_ordering_preserved.'
+  figures:
+  - Pass-rate comparison
+  method: "We executed the same (task, version, repeat) triples under both live and sim and matched up\
+    \ the\nquantities the evaluation methods take as input. Live uses `AGENTEVAL_LLM_MODE=record`\n(Haiku\
+    \ 4.5, prompt caching enabled); sim uses the same triples from the existing corpus.\nMatching is an\
+    \ exact match on (task, version, repeat); no comparison is made across versions.\nQuantities compared:\n\
+    \  - agreement rate of `outcome.passed` (how often the same triple agrees on pass/fail)\n  - per-version\
+    \ pass-rate difference (how far sim shifts the level away from live)\n  - tool-name sequence similarity\
+    \ (the complement of normalised edit distance, the same\n    definition as in `pts/selector.py`)\n\
+    \  - whether version ordering is preserved (do live and sim agree on the ordering of pass rates)\n\
+    This is the one experiment whose provenance is `live` (being a **comparison** of live and sim,\nboth\
+    \ sets of numbers appear. They are split into separate columns in the table, and no mixed\nstatistic\
+    \ is constructed)."
+  notes:
+  - 'Live pass rate per version: {''v01_baseline'': 0.933, ''v03_noverify'': 0.867, ''v07_step_minimizer'':
+    0.933, ''v02_dateformat'': 0.7}'
+  - 'Sim pass rate per version: {''v01_baseline'': 0.75, ''v03_noverify'': 0.75, ''v07_step_minimizer'':
+    0.75, ''v02_dateformat'': 0.617}'
+  - Pass-rate ordering live=['v01_baseline', 'v07_step_minimizer', 'v03_noverify', 'v02_dateformat'] /
+    sim=['v01_baseline', 'v03_noverify', 'v07_step_minimizer', 'v02_dateformat']
+  - Sim is deterministic in (task, seed, repeat), so it is being compared against a single live execution.
+    The live-side variance (responses change even under identical conditions) is only observed across
+    3 repeats.
+- id: E0-2
+  title: Judge agreement and stability (live Sonnet 5 vs the deterministic surrogate)
+  hypothesis: The deterministic surrogate judge (judge/rubric.py) agrees well enough with the live Sonnet
+    5 judge, and the live judge is itself stable under re-judging
+  planted: Judge the same 30 steps as E4-5 plus 3 mutation kinds (120 items) with both live Sonnet 5 and
+    the deterministic surrogate
+  control: Judge the same input twice with the live judge and see whether the scores fall within ±1 (an
+    item sim could not verify, being 1.0 by definition)
+  verdict_reason: 'Unmet criterion: score_agreement_within_1.'
+  figures:
+  - Mean scores
+  method: "Following the same procedure as E4-5, we extracted 30 steps from passing v01_baseline runs\
+    \ and\nadded 90 mutations of 3 kinds (wrong tool / wrong argument / destructive operation), for 120\n\
+    items in total.\nThose 120 items were judged by both\n  (a) the deterministic surrogate `judge/rubric.py:\
+    \ offline_step_judge`, and\n  (b) live `claude-sonnet-5` (the `submit_verdict` tool with forced `tool_choice`\
+    \ and\n      `output_config.effort = low`).\nIn (b) the original 30 steps were judged a **second**\
+    \ time to measure re-judge stability.\nAs in E4-5, the input is \"the events of the last 3 steps +\
+    \ the expected tool + whether the\nstate changed + the action in question\"; the self-report text\
+    \ is not included (report 5.2).\nThe judgements are saved to `data/results/E0-2_judgements.json` and\
+    \ reused on re-runs without\ncalling live."
+  notes:
+  - 'Mean score per mutation (live): {''original'': 3.7, ''wrong_tool'': 1.73, ''wrong_args'': 1.37, ''destructive'':
+    1.0}'
+  - 'Mean score per mutation (surrogate judge): {''original'': 4.87, ''wrong_tool'': 4.0, ''wrong_args'':
+    1.97, ''destructive'': 1.0}'
+  - '**The one thing only this experiment can measure**: E4-5''s `rejudge_agreement` is 1.0 by definition
+    because the surrogate judge is deterministic, so it did not amount to verifying "judging stability".
+    Measured with the live judge, agreement within ±1 is 1.0 and exact agreement is 0.967.'
+  - 'The judge''s model ID is `claude-sonnet-5` and the call count is recorded in `n_judgements`, following
+    `.claude/rules/process.md`: "pin the judge''s model and write the model ID on the result page".'
+  - 'The verdict is NEGATIVE. The second half of the hypothesis (the live judge is stable under re-judging)
+    held strongly (within ±1: 1.0, exact: 0.967), but the first half (the surrogate agrees well enough
+    with live) did not (within ±1: 0.683 < 0.7, exact: 0.35).'
+  - The nature of the disagreement is clear. **The surrogate is consistently too lenient.** On the original
+    steps live gives 3.7 against the surrogate's 4.87, and on wrong-tool mutations live gives 1.73 against
+    4.0 — a gap of more than 2 points. `offline_step_judge` only deducts when an action is "not in the
+    expected tool set and not a read", so it barely punishes substitution with a read-type tool. Live
+    Sonnet 5 deducted heavily, treating it as "an action that makes no sense in this situation".
+  - '**Effect on E4-5**: E4-5''s criteria are met under live too (mutation degradation 0.989 ≥ 0.8, original
+    mean 3.7 ≥ 3.5, re-judge agreement 1.0 ≥ 0.8). E4-5''s conclusion (mutated steps score lower) is supported
+    under live as well. What cannot be trusted is the **absolute score level**, not the direction of mutation
+    detection.'
+  - Tuning the surrogate to match live would raise the agreement rate, but that would be tweaking the
+    implementation until it matches the criteria, so it was not done (CLAUDE.md). The right path is to
+    use live in experiments that need a judge, and to state explicitly that the surrogate is only for
+    reading the direction.

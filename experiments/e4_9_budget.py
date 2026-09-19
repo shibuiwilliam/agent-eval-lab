@@ -75,8 +75,12 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         f"種別ごとの p95 × 1.5 予算（トークン）: { {k: round(v) for k, v in budgets.items()} }",
         f"Goodhart 表: { {v: {k: round(x, 4) for k, x in row.items()} for v, row in table.items()} }",
         (
-            "v07 はステップ数を 0.77 倍に減らすが、同時に検証行動率が落ち、合格率も大きく下がる。"
+            f"v07 はステップ数を {steps_v07 / steps_v01:.4g} 倍に減らすが、同時に検証行動率が "
+            f"{ver_v07 / ver_v01 if ver_v01 else 0.0:.4g} 倍に落ちる"
+            f"（合格率は v01 {table['v01_baseline']['pass_rate']:.4g} に対し"
+            f" v07 {table['v07_step_minimizer']['pass_rate']:.4g} で変わらない）。"
             "効率指標だけを見れば「改善」に見えるという原典 4.11 の指摘がそのまま出ている。"
+            "しかも合格率が動かないので、成果物だけを見る評価ではこの劣化は捕まらない。"
         ),
         (
             "p95 予算は v01 自身から作っているので、v01 の超過率が 0 になるのは定義上ほぼ自明である。"
