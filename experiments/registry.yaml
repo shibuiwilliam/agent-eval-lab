@@ -479,3 +479,19 @@
     - {metric: exploration_cost, op: "<=", value: 0.10}
   provenance: simulated
   budget_usd: 0
+
+- id: E3-10
+  chapter: 3
+  title: 変更履歴に沿った逐次評価とラーニングカーブ
+  script: experiments/e3_10_prequential.py
+  hypothesis: "変更履歴・テスト履歴を記録してラグと変更量を特徴量にすると、時系列順の運用で予測が積み上がり依存グラフ単独を上回る"
+  planted_text: "合成変更 65 件を seq 順に処理。同じ要素が 2〜7 回変更されるのでラグに値が入る。予測には seq 未満の記録だけを使う"
+  control_text: "カバレッジ重なりのみ、履歴特徴を外した同じモデル（アブレーション）、ランダム選択"
+  criteria:
+    - {metric: prequential_auc, op: ">=", value: 0.75}
+    - {metric: history_feature_gain, op: ">", value: 0.0}
+    - {metric: late_auc_gt_early_auc, op: "==", value: 1}
+    - {metric: recall_at_budget_30, op: ">=", value: 0.60}
+    - {metric: beats_coverage_baseline, op: "==", value: 1}
+  provenance: simulated
+  budget_usd: 0

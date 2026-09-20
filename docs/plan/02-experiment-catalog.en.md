@@ -91,6 +91,26 @@ Every experiment carries five items: hypothesis, planted condition, control, pas
   - `exploration_cost` ≤ 0.10 (the recall given up in the current round stays within 10 points)
 - Provenance: simulated
 
+### E3-10 Prequential evaluation along the change history, and the learning curve
+- Hypothesis: **recording change history and test history as a ledger** and feeding in recency
+  (how many changes since this test last ran / last failed, since this unit was last changed) and
+  change size (lines changed, units touched) makes a realistic sequential deployment work — where
+  only past records are available to predict the next change — such that (a) prediction improves as
+  history accumulates and (b) it surpasses the dependency graph alone
+- Planted: 65 synthetic changes ordered by `seq`. The set is built so that the same unit is changed
+  2–7 times (drop / truncate / emphasize per section, four `max_steps` values, tool faults in an
+  "always" and a "from step 2" variant), so the lag features take real values. Predicting change t
+  may use **only records with `seq < t`** — the future is structurally invisible
+- Control: (a) coverage overlap only, (b) **the same model with the history features removed**
+  (ablation), (c) random selection. All at the same budget and inviolable-set constraint
+- Criteria:
+  - `prequential_auc` ≥ 0.75 (AUC when training only on the past and predicting the next change)
+  - `history_feature_gain` > 0 (AUC with history/lag features minus AUC without)
+  - `late_auc_gt_early_auc` == 1 (later changes score higher than earlier ones — learning accrues)
+  - `recall_at_budget_30` ≥ 0.60 (regression recall under the temporal protocol)
+  - `beats_coverage_baseline` == 1 (prequential AUC exceeds coverage alone)
+- Provenance: simulated
+
 ---
 
 ## Chapter 4 — Process and plan evaluation

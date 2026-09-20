@@ -8,7 +8,7 @@
 |---|---|
 | PASS | 15 |
 | NEGATIVE | 6 |
-| FAIL | 8 |
+| FAIL | 9 |
 | PENDING | 0 |
 
 | 実験 | 章 | タイトル | 判定 | 主要指標 | 来歴 | コスト(USD) |
@@ -40,7 +40,8 @@
 | [E8-9](E8-9.md) | 8 | 汚染検知（カナリア走査） | FAIL | canary_detection_rate=1○ / baseline_hits=0○ / gap_v10=0.177× / gap_v01=-0.0476○ | simulated | 0.0 |
 | [E0-1](E0-1.md) | 0 | シミュレート・エージェントと live の一致度（sim の妥当性） | FAIL | outcome_agreement=0.817○ / pass_rate_gap=0.183× / tool_sequence_similarity=0.668○ / version_ordering_preserved=0× / n_separable_version_pairs=2○ / ordering_ok_on_separable_pairs=1○ | live | 1.6793 |
 | [E0-2](E0-2.md) | 0 | ジャッジの一致度と安定性（live Sonnet 5 と決定的代替判定器） | NEGATIVE | score_agreement_within_1=0.683× / mutation_drop_rate_live=0.989○ / rejudge_agreement_live=1○ / original_mean_score_live=3.7○ | live | 0.6382 |
-| [E3-8](E3-8.md) | 3 | 学習済み故障予測によるテスト選択 | FAIL | roc_auc=0.826○ / recall_at_budget_30=0.535× / recall_ratio_vs_random=1.16× / escape_ratio_vs_random=0.868× / control_random_recall=0.463○ | simulated | 0.0 |
+| [E3-8](E3-8.md) | 3 | 学習済み故障予測によるテスト選択 | FAIL | roc_auc=0.814○ / recall_at_budget_30=0.819○ / recall_ratio_vs_random=1.76× / escape_ratio_vs_random=0.319○ / control_random_recall=0.467○ | simulated | 0.0 |
 | [E3-9](E3-9.md) | 3 | 不確実性の役割は探索である（校正の維持） | NEGATIVE | calibration_gain=-0.0023× / escape_gain=0.0096○ / exploration_cost=0.0487○ | simulated | 0.0 |
+| [E3-10](E3-10.md) | 3 | 変更履歴に沿った逐次評価とラーニングカーブ | FAIL | prequential_auc=0.76○ / history_feature_gain=-0.0754× / late_auc_gt_early_auc=1○ / recall_at_budget_30=0.81○ / beats_coverage_baseline=0× | simulated | 0.0 |
 
 総コスト: 2.3175 USD

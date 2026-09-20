@@ -48,14 +48,13 @@ def _fit(observed: list[ds.Row]) -> Any:
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
 
-    from agenteval.pts.model import _change_stub
+    from agenteval.pts.model import _history_of
 
     labels = [r.label_regressed for r in observed]
     if len(observed) < 20 or len(set(labels)) < 2:
         return None
-    x = np.array(
-        [r.vector(ds.history_features(r.task_id, _change_stub(r), observed)) for r in observed]
-    )
+    history = _history_of(observed)
+    x = np.array([r.vector(ds.history_features(history, r)) for r in observed])
     clf = make_pipeline(
         StandardScaler(), LogisticRegression(max_iter=2000, class_weight="balanced")
     )
@@ -64,13 +63,12 @@ def _fit(observed: list[ds.Row]) -> Any:
 
 
 def _predict(clf: Any, rows: list[ds.Row], observed: list[ds.Row]) -> dict[str, float]:
-    from agenteval.pts.model import _change_stub
+    from agenteval.pts.model import _history_of
 
     if clf is None:
         return {r.task_id: 1.0 - r.static["base_pass_rate"] for r in rows}
-    x = np.array(
-        [r.vector(ds.history_features(r.task_id, _change_stub(r), observed)) for r in rows]
-    )
+    history = _history_of(observed)
+    x = np.array([r.vector(ds.history_features(history, r)) for r in rows])
     probs = clf.predict_proba(x)[:, 1]
     return {r.task_id: float(p) for r, p in zip(rows, probs, strict=True)}
 

@@ -182,9 +182,7 @@ def cross_validate(
         def dyn(
             row: Row, pool: list[Row] | None = None, _train: list[Row] = train
         ) -> dict[str, float]:
-            return history_features(
-                row.task_id, _change_stub(row), pool if pool is not None else _train
-            )
+            return history_features(_history_of(pool if pool is not None else _train), row)
 
         chosen: ModelName = model_name
         if model_name == "auto":
@@ -208,6 +206,46 @@ def cross_validate(
     }
     _score(result, rows, label)
     return result
+
+
+def _history_of(rows: list[Row]) -> Any:
+    """行の集合から変更履歴の台帳を組み立てる（`seq` 順）。"""
+    from agenteval.pts.history import ChangeRecord, History, TestRunRecord
+
+    history = History()
+    seen: dict[str, Row] = {}
+    for row in rows:
+        seen.setdefault(row.change_id, row)
+    for change_id, sample in sorted(seen.items(), key=lambda kv: kv[1].seq):
+        kind = next(
+            (
+                k
+                for k in ("prompt", "tool", "config", "model", "fixture", "code")
+                if sample.static.get(f"change_kind_{k}", 0.0) == 1.0
+            ),
+            "prompt",
+        )
+        history.add_change(
+            ChangeRecord(
+                seq=sample.seq,
+                change_id=change_id,
+                kind=kind,
+                family=sample.family,
+                units=set(sample.units),
+                churn={},
+            )
+        )
+    for row in rows:
+        history.add_run(
+            TestRunRecord(
+                seq=row.seq,
+                change_id=row.change_id,
+                task_id=row.task_id,
+                passed=not row.label_failed,
+                regressed=bool(row.label_regressed),
+            )
+        )
+    return history
 
 
 def _change_stub(row: Row) -> Any:

@@ -10,13 +10,13 @@ we took the methods proposed in a report on overlooked agent-evaluation techniqu
 them against a small controllable agent, deliberately planted defects, and measured whether each
 method reacted to the planted defect and stayed quiet on the control.
 
-We ran **29 experiments**. Here is how they landed.
+We ran **30 experiments**. Here is how they landed.
 
 | Verdict | Count | Meaning |
 |---|---|---|
 | PASS | 15 | The method worked as claimed |
 | NEGATIVE | 6 | Correctly implemented, but the claim did not hold |
-| FAIL | 8 | Our implementation or experiment design was at fault |
+| FAIL | 9 | Our implementation or experiment design was at fault |
 
 The most useful part is not the tally. It is that **we ran the whole suite against a simulated
 agent first, everything looked consistent, and then $3 of real Claude API calls showed that three
@@ -114,6 +114,24 @@ verification rate to **0.00**. Efficiency alone always looks like an improvement
 
 On boundary tasks the gap between "succeeds at least once in 3 tries" and "succeeds all 3 times"
 reached **0.749**. On trivial tasks it was **0.000**.
+
+### PTS only works once you record change history
+
+Predictive Test Selection is a real, industrially-proven mechanism — but it needs the right inputs.
+Our first attempt lost to a one-line dependency-graph heuristic. The reason was structural: we had
+never recorded change history, so **recency features could not even be written** (lag is undefined
+without an ordering over changes).
+
+After adding an append-only change/test ledger and deriving lag and change-size features from it:
+
+| | Before the ledger | After |
+|---|---|---|
+| Regression recall at a 30% budget | 0.535 | **0.819** |
+| Escape-defect rate vs random | 0.868× | **0.319×** |
+
+An ablation over feature groups shows **recency alone is the strongest learned signal** (AUC 0.878,
+above the dependency graph's 0.776) — while piling on every history group overfits 122 positives and
+drops it to 0.747. Full write-up: [docs/PTS.en.md](docs/PTS.en.md).
 
 ### Six negative results
 

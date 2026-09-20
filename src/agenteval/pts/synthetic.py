@@ -41,7 +41,12 @@ EXTRA_SECTIONS: dict[str, str] = {
 
 @dataclass
 class SyntheticChange:
-    """合成変更 1 件。版と、その変更が触る要素 `C(Δ)` を持つ。"""
+    """合成変更 1 件。版と、その変更が触る要素 `C(Δ)` と**変更量**を持つ。
+
+    `churn` は産業用 PTS が使う「変更量」特徴（変更行数・変更文字数・変更要素数）。
+    `seq` は変更履歴上の位置で、ラグ特徴（前回この要素が変更されてから何変更経ったか）を
+    定義するために必要になる。
+    """
 
     id: str
     family: Family
@@ -51,6 +56,8 @@ class SyntheticChange:
     fault_tool: str | None = None
     note: str = ""
     meta: dict[str, Any] = field(default_factory=dict)
+    churn: dict[str, float] = field(default_factory=dict)
+    seq: int = 0
 
     def change(self) -> Change:
         """`C(Δ)` を持つ `Change`。"""
@@ -65,7 +72,8 @@ class SyntheticChange:
         """ツール障害を起こす変更ならその注入器。"""
         if self.fault_tool is None:
             return None
-        return FaultInjector(tool=self.fault_tool, at_steps=tuple(range(32)), fault="error")
+        start = 2 if self.meta.get("window") == "late" else 0
+        return FaultInjector(tool=self.fault_tool, at_steps=tuple(range(start, 32)), fault="error")
 
 
 def _sections(text: str) -> list[tuple[str, str]]:
@@ -79,6 +87,26 @@ def _sections(text: str) -> list[tuple[str, str]]:
         sid = re.search(r"section:\s*([a-z0-9_]+)", marker)
         out.append((sid.group(1) if sid else f"s{i}", marker + body))
     return out
+
+
+def _churn(before: str, after: str, n_units: int = 1) -> dict[str, float]:
+    """変更量。行の増減・文字数の増減・触る要素数（産業用 PTS の change size 特徴）。"""
+    import difflib
+
+    a, b = before.splitlines(), after.splitlines()
+    added = removed = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
+        if tag in ("replace", "delete"):
+            removed += i2 - i1
+        if tag in ("replace", "insert"):
+            added += j2 - j1
+    return {
+        "lines_added": float(added),
+        "lines_removed": float(removed),
+        "lines_changed": float(added + removed),
+        "chars_delta": float(abs(len(after) - len(before))),
+        "n_units": float(n_units),
+    }
 
 
 def _write_prompt(change_id: str, text: str) -> str:
@@ -128,19 +156,43 @@ def generate() -> list[SyntheticChange]:
     section_ids = [sid for sid, _ in parts if sid != "__head__"]
     out: list[SyntheticChange] = []
 
-    # --- 1) プロンプト: section を 1 つ落とす -----------------------------
+    # --- 1) プロンプト: section ごとに 3 種類の変更を作る -------------------
+    # 同じ要素（section）が複数回変更されるようにする。そうしないと
+    # 「前回この要素が変更されてから何変更経ったか」というラグ特徴が定義できない。
     for sid in section_ids:
-        text = "".join(body for s, body in parts if s != sid)
-        out.append(
-            SyntheticChange(
-                id=f"syn_drop_{sid}",
-                family="prompt",
-                kind="prompt",
-                components={sid},
-                version=_version(f"syn_drop_{sid}", text),
-                note=f"section `{sid}` を落とす",
+        variants: list[tuple[str, str, str]] = []
+        dropped = "".join(body for s, body in parts if s != sid)
+        variants.append(("drop", dropped, f"section `{sid}` を落とす"))
+
+        def _edit(target: str, fn: Any) -> str:
+            return "".join(fn(body) if s == target else body for s, body in parts)
+
+        def _truncate(body: str) -> str:
+            lines = body.splitlines()
+            keep = max(2, len(lines) // 2)
+            return "\n".join(lines[:keep]) + "\n"
+
+        variants.append(("truncate", _edit(sid, _truncate), f"section `{sid}` の後半を削る"))
+        variants.append(
+            (
+                "emphasize",
+                _edit(sid, lambda b: b.rstrip() + "\nこの節の指示は他のどの記述よりも優先する。\n"),
+                f"section `{sid}` を強調する",
             )
         )
+        for label, text, note in variants:
+            cid = f"syn_{label}_{sid}"
+            out.append(
+                SyntheticChange(
+                    id=cid,
+                    family="prompt",
+                    kind="prompt",
+                    components={sid},
+                    version=_version(cid, text),
+                    note=note,
+                    churn=_churn(base_text, text),
+                )
+            )
 
     # --- 2) プロンプト: section を 1 つ足す -------------------------------
     for sid in EXTRA_SECTIONS:
@@ -153,6 +205,7 @@ def generate() -> list[SyntheticChange]:
                 components={sid},
                 version=_version(f"syn_add_{sid}", text),
                 note=f"section `{sid}` を足す",
+                churn=_churn(base_text, text),
             )
         )
 
@@ -176,6 +229,7 @@ def generate() -> list[SyntheticChange]:
                 components={"date_format"},
                 version=_version(f"syn_date_{label}", text),
                 note=f"日付書式を {fmt} にする",
+                churn=_churn(base_text, text),
             )
         )
 
@@ -192,6 +246,13 @@ def generate() -> list[SyntheticChange]:
                 ),
                 note=f"max_steps を {steps} に下げる",
                 meta={"max_steps": steps},
+                churn={
+                    "lines_added": 0.0,
+                    "lines_removed": 0.0,
+                    "lines_changed": 0.0,
+                    "chars_delta": 0.0,
+                    "n_units": 1.0,
+                },
             )
         )
     for after in (1, 2):
@@ -207,6 +268,13 @@ def generate() -> list[SyntheticChange]:
                     config=VersionConfig(context_strategy="summarize", summarize_after=after),
                 ),
                 note=f"{after} ステップより古いツール結果を要約に置き換える",
+                churn={
+                    "lines_added": 0.0,
+                    "lines_removed": 0.0,
+                    "lines_changed": 0.0,
+                    "chars_delta": 0.0,
+                    "n_units": 2.0,
+                },
             )
         )
     out.append(
@@ -217,6 +285,13 @@ def generate() -> list[SyntheticChange]:
             components={"plan_first"},
             version=_version("syn_plan_first", base_text, config=VersionConfig(plan_first=True)),
             note="計画を先に出させる",
+            churn={
+                "lines_added": 0.0,
+                "lines_removed": 0.0,
+                "lines_changed": 0.0,
+                "chars_delta": 0.0,
+                "n_units": 1.0,
+            },
         )
     )
 
@@ -229,6 +304,13 @@ def generate() -> list[SyntheticChange]:
             components={"calendar_search"},
             version=_version("syn_toolset_v2", base_text, toolset="v2"),
             note="calendar_search の引数名を変える",
+            churn={
+                "lines_added": 2.0,
+                "lines_removed": 2.0,
+                "lines_changed": 4.0,
+                "chars_delta": 40.0,
+                "n_units": 1.0,
+            },
         )
     )
 
@@ -241,6 +323,13 @@ def generate() -> list[SyntheticChange]:
             components={"model"},
             version=_version("syn_model_swap", base_text, model="agent_swap"),
             note="被験モデルを入れ替える",
+            churn={
+                "lines_added": 0.0,
+                "lines_removed": 0.0,
+                "lines_changed": 0.0,
+                "chars_delta": 0.0,
+                "n_units": 1.0,
+            },
         )
     )
 
@@ -249,17 +338,29 @@ def generate() -> list[SyntheticChange]:
     for tool in TOOL_NAMES:
         if tool in ("finish", "submit_plan"):
             continue
-        out.append(
-            SyntheticChange(
-                id=f"syn_fault_{tool}",
-                family="fault",
-                kind="tool",
-                components={tool},
-                version=_version(f"syn_fault_{tool}", base_text),
-                fault_tool=tool,
-                note=f"`{tool}` が常にエラーを返すようになる",
+        # 同じツールを「常時」と「2 ステップ目以降」の 2 通りで壊す。
+        # 同じ要素が 2 回変更されるので、ラグ特徴に値が入る。
+        for label, window in (("always", tuple(range(32))), ("late", tuple(range(2, 32)))):
+            cid = f"syn_fault_{tool}_{label}"
+            out.append(
+                SyntheticChange(
+                    id=cid,
+                    family="fault",
+                    kind="tool",
+                    components={tool},
+                    version=_version(cid, base_text),
+                    fault_tool=tool,
+                    note=f"`{tool}` が{'常に' if label == 'always' else '2 ステップ目以降'}エラーを返す",
+                    meta={"window": label},
+                    churn={
+                        "lines_added": 0.0,
+                        "lines_removed": 0.0,
+                        "lines_changed": 0.0,
+                        "chars_delta": 0.0,
+                        "n_units": 1.0,
+                    },
+                )
             )
-        )
 
     # --- 8) 組合せ（2 要因同時変更） -------------------------------------
     combos: list[tuple[str, set[str], ChangeKind, str, int]] = [
@@ -277,10 +378,24 @@ def generate() -> list[SyntheticChange]:
                 components=set(comps),
                 version=_version(cid, text, config=VersionConfig(max_steps=steps)),
                 note=f"section `{drop}` を落とし、同時に max_steps を {steps} にする",
+                churn=_churn(base_text, text, n_units=2),
             )
         )
 
-    return out
+    # --- 変更履歴上の順序を決める ---------------------------------------
+    # 同じ要素が固まらないように族を交互に並べる。この順序がラグ特徴の基準になる。
+    by_family_out: dict[str, list[SyntheticChange]] = {}
+    for change in out:
+        by_family_out.setdefault(change.family, []).append(change)
+    ordered: list[SyntheticChange] = []
+    families_out = sorted(by_family_out)
+    while any(by_family_out[f] for f in families_out):
+        for family in families_out:
+            if by_family_out[family]:
+                ordered.append(by_family_out[family].pop(0))
+    for index, change in enumerate(ordered):
+        change.seq = index
+    return ordered
 
 
 PTS_CORPUS_DIR = REPO_ROOT / "data" / "pts_corpus"
@@ -311,21 +426,17 @@ def build_corpus(
     tasks = load_tasks()
     baseline = get_version("v01_baseline")
 
-    units: list[tuple[Any, Any, int, str | None]] = []
+    units: list[tuple[Any, Any, int, Any]] = []
     for task in tasks.values():
         for repeat in range(repeats):
             if only_family is None:
                 units.append((task, baseline, repeat, None))
             for change in changes:
-                units.append((task, change.version, repeat, change.fault_tool))
+                units.append((task, change.version, repeat, change))
 
-    def one(unit: tuple[Any, Any, int, str | None]) -> str:
-        task, version, repeat, fault_tool = unit
-        fault = (
-            FaultInjector(tool=fault_tool, at_steps=tuple(range(32)), fault="error")
-            if fault_tool
-            else None
-        )
+    def one(unit: tuple[Any, Any, int, Any]) -> str:
+        task, version, repeat, change = unit
+        fault = change.injector() if change is not None else None
         run = run_task(
             task,
             version,

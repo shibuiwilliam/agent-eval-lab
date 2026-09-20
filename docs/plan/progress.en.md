@@ -129,6 +129,26 @@ The prompts for driving a session (P0 kickoff / corpus build / experiment templa
 - [x] **DoD**: PASS 15 / NEGATIVE 6 / FAIL 8 / PENDING 0 (29 experiments). `make check` passes
       (125 tests). No new live calls (still 3.09 USD). Recorded in `docs/PTS.en.md`
 
+## P11 Giving PTS a change/test history ledger (2026-09-20/21)
+- [x] The heart of the feedback: industrial PTS learns from **changed files, changed locations, the
+      lag since the previous change, and change size**. This project had none of them, because
+      **lag cannot be defined without an ordering over changes**
+- [x] `pts/history.py` (append-only ledger; only records before `seq` are visible) plus 6 recency /
+      5 test-history / 4 cross / 11 churn features
+- [x] Synthetic changes grown 37 → 65, arranged so **the same unit is changed 2–7 times** and the
+      lag features take real values (drop / truncate / emphasize per section, four `max_steps`
+      values, faults "always" and "from step 2")
+- [x] PTS corpus rebuilt (15,180 runs). The old one is kept at `data/pts_corpus_old_37changes/`
+- [x] E3-10 (prequential evaluation along the change history) added **with criteria fixed first**
+- [x] E3-8 improved substantially: recall 0.535 → **0.819**, escape 0.868× random → **0.319×**.
+      **4 of 5 criteria met** (the miss demands absolute recall 0.933 against a ceiling of 0.934)
+- [x] E3-10: **lag features alone give AUC 0.878, above coverage's 0.776**. Delegating group choice
+      to inner validation cannot decide, landing at 0.761 (too little history)
+- [x] Removed the O(n^2) in `History.features` by indexing (2,760 rows in 0.01 s)
+- [x] Added 8 regression tests (ledger leakage, recency, unit failure rate, churn, repeated units)
+- [x] **DoD**: PASS 15 / NEGATIVE 6 / FAIL 9 / PENDING 0 (30 experiments). `make check` passes.
+      No new live calls (still 3.09 USD). Recorded in `docs/PTS.en.md`
+
 ## Next
 - R6–R9 from "11. Not yet fixed" in `IMPROVEMENT.md`.
   Highest priority is R6 (re-take E4-2 / E4-6 with a live judge, estimated 0.3 USD)

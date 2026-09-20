@@ -68,6 +68,8 @@ class Row:
     change_id: str
     family: str
     task_id: str
+    seq: int
+    units: set[str]
     label_regressed: int
     label_failed: int
     cost: float
@@ -150,25 +152,15 @@ def static_features(
     return out
 
 
-def history_features(task_id: str, change: Change, train_rows: list[Row]) -> dict[str, float]:
-    """過去の変更のラベルから作る特徴量（原典 3.4 の「反転回数」）。
+def history_features(history: Any, row: Row) -> dict[str, float]:
+    """変更履歴・テスト履歴から作るラグ／交差特徴（`pts/history.py`）。
 
-    **訓練フォールドの行だけ**を渡すこと。全行を渡すと hold-out のラベルが漏れる。
+    `history` には**その行より前の変更しか入っていない**か、あるいは
+    `History.features` が `seq` で切るので、未来の記録は参照されない。
+    交差検証では訓練フォールドだけから台帳を組み立てる。
     """
-    same_task = [r for r in train_rows if r.task_id == task_id]
-    same_kind = [r for r in same_task if r.static.get(f"change_kind_{change.kind}", 0.0) == 1.0]
-    touching = [r for r in same_task if r.static.get("touches_change", 0.0) == 1.0]
-
-    def rate(rows: list[Row]) -> float:
-        return sum(r.label_regressed for r in rows) / len(rows) if rows else 0.0
-
-    return {
-        "hist_regress_rate": rate(same_task),
-        "hist_regress_rate_same_kind": rate(same_kind),
-        "hist_regress_rate_when_touching": rate(touching),
-        "hist_n_changes": float(len(same_task)),
-        "hist_n_regressions": float(sum(r.label_regressed for r in same_task)),
-    }
+    features: dict[str, float] = history.features(row.seq, row.task_id, row.units)
+    return features
 
 
 def build_rows(
@@ -200,23 +192,39 @@ def build_rows(
         for run in target_runs:
             per_task[run.task_id].append(run)
         ch = change.change()
+        churn = _churn_features(getattr(change, "churn", {}) or {})
         for task_id, group in per_task.items():
             regressed = any(
                 base_outcome.get((task_id, r.repeat), False) and not r.passed() for r in group
             )
             failed = sum(1 for r in group if not r.passed()) > len(group) / 2
+            static = static_features(task_id, ch, stats, getattr(change, "version", None))
+            static.update(churn)
             rows.append(
                 Row(
                     change_id=change.id,
                     family=change.family,
                     task_id=task_id,
+                    seq=int(getattr(change, "seq", 0)),
+                    units=set(ch.components),
                     label_regressed=int(regressed),
                     label_failed=int(failed),
                     cost=stats.tokens.get(task_id, 1.0),
-                    static=static_features(task_id, ch, stats, getattr(change, "version", None)),
+                    static=static,
                 )
             )
     return add_within_change_ranks(rows), stats
+
+
+def _churn_features(churn: dict[str, float]) -> dict[str, float]:
+    """変更量（行数・文字数・要素数）。産業用 PTS の change size 特徴。"""
+    out: dict[str, float] = {}
+    for key in ("lines_added", "lines_removed", "lines_changed", "chars_delta", "n_units"):
+        value = float(churn.get(key, 0.0))
+        out[f"churn_{key}"] = value
+        out[f"churn_log_{key}"] = math.log1p(value)
+    out["churn_is_pure_config"] = 1.0 if churn.get("lines_changed", 0.0) == 0.0 else 0.0
+    return out
 
 
 # 変更の中で値が変わる連続特徴。これらの「変更内での順位」を足す（ADR-027）。

@@ -162,3 +162,38 @@ Format: `ADR-NNN Title` / Situation / Decision / Rationale / Consequences. New d
   - `H(p̂)` appears in E3-8 as a control (the losing side) and in E3-9 as the exploration slot (the
     winning side). The two experiments make it explicit that the same quantity is judged differently
     depending on the role it is asked to play
+
+## ADR-028 Record change and test history as a ledger; use recency and churn as features
+- Situation: the features built for E3-8 were **missing, wholesale, the two groups industrial PTS
+  weighs most heavily**
+  - **Recency (lag)**: how many changes since this test last ran / last failed, and since this unit
+    was last changed
+  - **Change size (churn)**: lines added / removed, character delta, units touched
+- The cause is structural. **Lag cannot be defined without an ordering over changes**, and the
+  implementation treated changes as an unordered set. With no ordering, those features were not
+  merely absent — they were unwritable
+- Decision:
+  1. Put an **append-only ledger** in `pts/history.py` (`ChangeRecord` / `TestRunRecord`).
+     `History.features(seq, task_id, units)` sees **only records before `seq`**
+  2. Give synthetic changes a `seq` (position in the change history) and `churn` (line-level diff
+     size via difflib)
+  3. Grow the synthetic change set so the same unit is changed 2–7 times (65 changes): drop /
+     truncate / emphasize per section, four `max_steps` values, tool faults "always" and "from step
+     2". **If a unit is only ever changed once, every lag reads "first time" and the feature is
+     dead**
+  4. Add **prequential** evaluation (E3-10): predicting change t may use only records with
+     `seq < t`, so the future is structurally invisible
+- Rationale: the "flip count" in report 3.4's feature table *is* a history feature, and "over the
+  last k changes" only means something once an ordering exists. The implementation had collapsed it
+  into an average over all history. What industrial PTS actually uses are temporal features
+  including recency and churn
+- Consequences:
+  - Synthetic changes go 37 → 65; the PTS corpus goes 8,740 → 15,180 runs
+  - Features go 57 → about 90 (17 history + 11 churn added)
+  - The old corpus (37 changes) is moved aside to `data/pts_corpus_old_37changes/`, not deleted
+  - E3-8's criteria are **unchanged**: adding features is an implementation improvement, not a
+    change of hypothesis
+  - E3-10 is added, with its criteria written into the catalogue and registry **before**
+    implementation
+- Remaining limitation: the ledger is a series of synthetic changes, not a real commit history. The
+  lag distribution (how often the same unit gets touched) is a design parameter we chose
