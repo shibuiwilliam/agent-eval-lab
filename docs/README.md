@@ -19,6 +19,7 @@ If you are new here, start with the repository [README](../README.md), then read
 | [results/LIVE.en.md](results/LIVE.en.md) | Live verification, round 1. Five defects that sim could not observe, and what they broke |
 | [results/LIVE2.en.md](results/LIVE2.en.md) | Live verification, round 2. Defects on the evaluator side, and one diagnosis that live refuted |
 | [REVIEW.en.md](REVIEW.en.md) | **The 2026-09-19 code and experiment review**: 8 defects found in the evaluator, the three verdicts that changed, and what the re-run showed |
+| [PTS.en.md](PTS.en.md) | **The 2026-09-20 chapter-3 rebuild**: synthetic changes for cold start, a supervised failure model, 4 more evaluator defects, and what chapter 3 adds up to |
 | [IMPROVEMENT.en.md](IMPROVEMENT.en.md) | Every defect found under live, the fix plan, the results, and what is still open (R6–R9) |
 
 ## Plan and design

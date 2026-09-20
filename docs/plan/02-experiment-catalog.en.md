@@ -58,6 +58,39 @@ Every experiment carries five items: hypothesis, planted condition, control, pas
 - Criteria: escape ≤ 0.1, ≥ 1 random test mixed in per draw, inviolable selection rate = 100% (even at a 5% budget)
 - Provenance: replay
 
+### E3-8 Test selection from a learned failure model (estimating 3.4's `p̂_t` supervised)
+- Hypothesis: learning **the probability that this test regresses under this change** from
+  change × test features catches regressions at a higher recall than random selection at the same
+  budget. Report 3.4's feature table is effective
+- Planted: 37 synthetic changes built per report 3.8's "cold start" (13 prompt-section
+  additions/removals / 7 config / 1 tool schema / 1 model swap / 12 tool faults / 3 two-factor).
+  Each change × 46 tasks × 5 repeats is executed in sim into `data/pts_corpus/` (kept separate
+  from the existing corpus)
+- Control: (a) random selection, (b) baseline failure rate only (blind to the change),
+  (c) coverage overlap only, (d) uncertainty `H(p̂)` (the policy E3-3 tested). All run under the
+  same budget and the same inviolable-set constraint
+- Criteria:
+  - `roc_auc` ≥ 0.75 (on changes held out by **leave-one-group-out over change families**)
+  - `recall_at_budget_30` ≥ 0.80 (catch 80% of regressions at a 30% budget)
+  - `recall_ratio_vs_random` ≥ 2.0
+  - `escape_ratio_vs_random` ≤ 0.5 (report 3.8's KPI measured on regressions; the same bar as E3-3)
+  - `control_random_recall` ≤ 0.6 (confirming the task is not trivially easy)
+- Provenance: simulated
+
+### E3-9 Uncertainty's role is exploration (separating 3.4 from 3.8)
+- Hypothesis: selecting by `H(p̂)` does not reduce *this round's* escape-defect rate; it exists to
+  **keep the selector calibrated** (the role report 3.8 gives ε-exploration). Under partial
+  feedback, mixing in exploration improves late-round calibration and escape
+- Planted: the 37 synthetic changes processed sequentially in a family-interleaved order, updating
+  the model with **only the results of the tests that were selected**. Exploration ratios
+  ε ∈ {0.0, 0.05, 0.2}, with the exploration slot filled either by top-`H(p̂)` or at random
+- Control: ε = 0 (pure exploitation). Full observation is reported as the performance ceiling
+- Criteria:
+  - `calibration_gain` > 0 (late-round Brier at ε = 0.05 is lower than at ε = 0)
+  - `escape_gain` ≥ 0 (late-round escape-defect rate at ε = 0.05 is no worse than at ε = 0)
+  - `exploration_cost` ≤ 0.10 (the recall given up in the current round stays within 10 points)
+- Provenance: simulated
+
 ---
 
 ## Chapter 4 — Process and plan evaluation

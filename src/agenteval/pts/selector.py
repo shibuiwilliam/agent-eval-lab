@@ -305,3 +305,69 @@ def select_recent_failures(
         budget=budget_tokens,
         expected_escape=0.0,
     )
+
+
+def select_by_risk(
+    scores: dict[str, float],
+    costs: dict[str, float],
+    budget_ratio: float = 0.3,
+    inviolable: list[str] | None = None,
+    epsilon: float = 0.0,
+    seed: int = 20260920,
+    explore_scores: dict[str, float] | None = None,
+) -> Selection:
+    """予測リスク `score/cost` の降順に予算まで詰める（産業用 PTS の選択）。
+
+    原典 3.4 の `H(p̂)/c` を `p̂_fail/c` に置き換えたもの。
+    情報利得ではなく**期待検出数**を最大化する貪欲解で、予算付きナップサックの標準的な近似である。
+
+    `epsilon > 0` なら探索枠を確保する。`explore_scores` を渡すとその降順（例: 不確実性）で、
+    渡さなければランダムに選ぶ（原典 3.8 の ε-探索）。
+    """
+    task_ids = sorted(scores)
+    always = list(inviolable or [])
+    budget = budget_ratio * sum(costs.get(t, 1.0) for t in task_ids)
+    selected = list(always)
+    reasons: dict[str, str] = dict.fromkeys(always, "inviolable")
+    spent = sum(costs.get(t, 1.0) for t in always)
+
+    n_explore = round(epsilon * len(task_ids)) if epsilon > 0 else 0
+    explore_budget = budget * epsilon if epsilon > 0 else 0.0
+
+    ranked = sorted(task_ids, key=lambda t: scores[t] / max(1.0, costs.get(t, 1.0)), reverse=True)
+    for task_id in ranked:
+        if task_id in selected:
+            continue
+        cost = costs.get(task_id, 1.0)
+        if spent + cost > budget - explore_budget:
+            continue
+        selected.append(task_id)
+        reasons[task_id] = "risk"
+        spent += cost
+
+    if n_explore > 0:
+        pool = [t for t in task_ids if t not in selected]
+        if explore_scores is not None:
+            order = sorted(pool, key=lambda t: explore_scores.get(t, 0.0), reverse=True)
+        else:
+            rng = np.random.default_rng(seed)
+            order = [pool[int(i)] for i in rng.permutation(len(pool))]
+        for task_id in order[:n_explore]:
+            cost = costs.get(task_id, 1.0)
+            if spent + cost > budget:
+                break
+            selected.append(task_id)
+            reasons[task_id] = "epsilon"
+            spent += cost
+
+    skipped = [t for t in task_ids if t not in selected]
+    total = sum(scores.values())
+    escape = sum(scores[t] for t in skipped) / total if total else 0.0
+    return Selection(
+        selected=selected,
+        skipped=skipped,
+        budget=budget,
+        expected_escape=round(escape, 4),
+        priorities={t: scores[t] / max(1.0, costs.get(t, 1.0)) for t in task_ids},
+        reasons=reasons,
+    )

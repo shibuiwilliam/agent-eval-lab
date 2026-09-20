@@ -106,6 +106,20 @@
 - [x] `docs/REVIEW.md` / `REVIEW.en.md` に記録。結果ページと総括を日英とも書き直した
 - [x] **DoD**: `make check` 通過。来歴ラベルは維持。live 呼び出しは追加していない（3.09 USD のまま）
 
+## P10 3章（PTS）の作り直し（2026-09-20）
+- [x] 原因特定: 変更イベント 8 件のうち 5 件が回帰を 1 件も生まず、学習も評価も成立していなかった。
+      原典 3.8 の「コールドスタート（合成変更で反転データを作る）」が未実施だった
+- [x] `pts/synthetic.py` で合成変更 37 件を生成 → PTS 専用コーパス 8,740 run（ADR-024）
+- [x] `pts/dataset.py`（原典 3.4 の特徴量表 ＋ 交差特徴）、`pts/model.py`（教師あり故障予測、
+      族単位 leave-one-group-out、内側交差検証によるモデル選択）、`selector.select_by_risk`
+- [x] 作り直しで評価器の欠陥 4 件を発見・修正
+      （障害注入が書き込みを残す ADR-026 / 設定変更が特徴量で区別できない /
+      モデルの決め打ち / 評価と学習の単位の食い違い ADR-027）
+- [x] E3-8（学習済み故障予測）と E3-9（探索と校正）を**基準を先に固定して**新設（ADR-025）
+- [x] 回帰テスト 19 件を追加（`tests/pts/test_learned_pts.py`、`tests/env/test_injectors.py`）
+- [x] **DoD**: PASS 15 / NEGATIVE 6 / FAIL 8 / PENDING 0（29 実験）。`make check` 通過（125 テスト）。
+      live 呼び出しは追加していない（3.09 USD のまま）。記録は `docs/PTS.md`
+
 ## 次にやること
 - `IMPROVEMENT.md` の「11. まだ直していないこと」の R6〜R9。
   最優先は R6（E4-2 / E4-6 を live ジャッジで取り直す、見積り 0.3 USD）

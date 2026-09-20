@@ -110,3 +110,55 @@ Format: `ADR-NNN Title` / Situation / Decision / Rationale / Consequences. New d
   3. **Add** `ordering_ok_on_separable_pairs`, restricted to statistically separable pairs, and `n_separable_version_pairs >= 1`
 - Rationale: replacing the criterion would make E0-1 PASS, but that is "tweaking until it matches the criteria" (CLAUDE.md). The fact that the criterion is ill-posed is written on the result page with numbers, and the verdict falls on the strict side
 - Consequences: E0-1's criteria went from 4 to 6 (making the verdict stricter). The verdict remains FAIL
+
+## ADR-024 Build the PTS training data from synthetic changes, in a separate corpus
+- Situation: chapter 3 had only 8 change events (the planted versions). Measured, **5 of those 8
+  produce no regressions at all** (v03 / v04 / v07 / v08 do not move the pass rate, and v09 improves
+  it). Only 3 (v02 / v05 / v06) produce regressions. Eight rows cannot train a supervised failure
+  model, and are not enough to evaluate one either
+- And report 3.8 explicitly prescribes the remedy under "cold start": "when there is no training
+  data (change → outcome flip), create flip data by deliberately introducing synthetic changes such
+  as prompt perturbations and model swaps". The project had not done this
+- Decision: `pts/synthetic.py` mechanically builds 37 synthetic changes by perturbing v01_baseline
+  (13 prompt-section additions/removals / 7 config / 1 tool schema / 1 model swap / 12 tool faults /
+  3 two-factor). Each change × 46 tasks × 5 repeats runs in sim into **`data/pts_corpus/`**
+- Rationale: (1) it is the procedure the report prescribes; (2) the kind and magnitude of each
+  change is controlled, so it is possible to isolate which features carry signal; (3) sim is free,
+  so 8,740 runs are affordable
+- Consequences:
+  - **Physically separated from `data/traces/`**, for the same reason as ADR-012 (never mix
+    provenances): synthetic runs must not leak into other experiments' `corpus()`
+  - The generated versions are not written to `versions/` (they are assembled in memory, with only
+    the prompts written to `data/synthetic/prompts/`). Adding 37 version YAMLs would change the
+    version list, discriminative power and attribution of every other experiment
+  - The regression rate lands near 5%, a far better regime for evaluating PTS than a suite with a
+    21% chronic failure rate
+  - **Tool faults do not change the version hash.** Chapter 3's change classification looks at the
+    version hash, so "the external service broke" is invisible to version diffing. This experiment
+    constructs them explicitly as `Change(kind="tool", components={tool})` (pinned by a unit test)
+
+## ADR-025 Split 3.4's claim into "prediction" and "exploration" (E3-3 stays)
+- Situation: E3-3 showed that selecting by `H(p̂)/c` cannot beat random (NEGATIVE). But report 3.4
+  actually makes two claims at once: (a) `p̂_t` estimated from features is usable for selection, and
+  (b) selecting the tests with the highest uncertainty `H(p̂)` is good
+- E3-3 refuted only (b). Claim (a) was never really tested, because the `p̂_t` estimator was a weak
+  average of a Beta posterior and a tiny logistic regression
+- Report 3.8 also gives ε-exploration a *different* role: "keeping the selector calibrated".
+  `H(p̂)` is theoretically sound for **that** role (maximising information gain is the standard
+  criterion in active learning)
+- Decision: **do not rewrite E3-3's hypothesis or criteria** (it stays NEGATIVE). Add two
+  experiments instead
+  - **E3-8** tests (a): learn the regression probability supervised from change × test features and
+    select in descending order of `p̂_fail / c`. Report 3.4's feature table is implemented as
+    written, supplemented with cross features
+  - **E3-9** tests 3.8's role for ε-exploration: process changes sequentially under partial
+    feedback and measure whether mixing in exploration improves late-round calibration and escape
+- Rationale: rewriting a failed hypothesis is "tweaking until it matches" (CLAUDE.md). The correct
+  move is to **state the decomposed claims as new experiments**. Reading E3-3 / E3-8 / E3-9 together
+  shows which part of 3.4 holds and which does not
+- Consequences:
+  - The experiment count goes 27 → 29. E3-8 / E3-9's criteria were written into
+    `02-experiment-catalog.md` and `registry.yaml` **before implementation**
+  - `H(p̂)` appears in E3-8 as a control (the losing side) and in E3-9 as the exploration slot (the
+    winning side). The two experiments make it explicit that the same quantity is judged differently
+    depending on the role it is asked to play

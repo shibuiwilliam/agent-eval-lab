@@ -104,6 +104,19 @@ def exp(
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
+@app.command("ptscorpus")
+def pts_corpus(
+    repeats: Annotated[int, typer.Option("--repeats")] = 5,
+    workers: Annotated[int, typer.Option("--workers")] = 4,
+    family: Annotated[str, typer.Option("--family", help="この族だけ作り直す")] = "",
+) -> None:
+    """合成変更（原典 3.8 コールドスタート）の PTS 専用コーパスを sim で作る。"""
+    from agenteval.pts.synthetic import build_corpus
+
+    summary = build_corpus(repeats=repeats, workers=workers, only_family=family or None)
+    typer.echo(json.dumps(summary, ensure_ascii=False, indent=2))
+
+
 @app.command()
 def pages() -> None:
     """既存の結果 JSON から結果ページを日英とも描き直す（実験は再実行しない）。"""

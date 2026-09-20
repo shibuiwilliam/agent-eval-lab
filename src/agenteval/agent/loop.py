@@ -266,7 +266,16 @@ def _execute_tool(
     options: RunOptions,
     step: int,
 ) -> tuple[dict[str, Any], bool]:
-    """ツールを実行し、注入器を通す。"""
+    """ツールを実行し、注入器を通す。
+
+    ADR-026: `timeout` / `error` の障害は**実行せずに**エラーを返す。
+    実行してから応答だけ差し替えると、書き込みの副作用が残って受入基準が通ってしまう。
+    """
+    if options.fault is not None and options.fault.blocks(step, name):
+        payload, is_error = options.fault.block(step, name)
+        if options.noise is not None:
+            payload = options.noise.apply(step, name, payload)
+        return payload, is_error
     try:
         payload = tools_mod.execute(env, name, args, version.toolset)
         is_error = bool(payload.get("error"))

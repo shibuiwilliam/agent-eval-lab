@@ -10,13 +10,13 @@ we took the methods proposed in a report on overlooked agent-evaluation techniqu
 them against a small controllable agent, deliberately planted defects, and measured whether each
 method reacted to the planted defect and stayed quiet on the control.
 
-We ran **27 experiments**. Here is how they landed.
+We ran **29 experiments**. Here is how they landed.
 
 | Verdict | Count | Meaning |
 |---|---|---|
 | PASS | 15 | The method worked as claimed |
-| NEGATIVE | 5 | Correctly implemented, but the claim did not hold |
-| FAIL | 7 | Our implementation or experiment design was at fault |
+| NEGATIVE | 6 | Correctly implemented, but the claim did not hold |
+| FAIL | 8 | Our implementation or experiment design was at fault |
 
 The most useful part is not the tally. It is that **we ran the whole suite against a simulated
 agent first, everything looked consistent, and then $3 of real Claude API calls showed that three
@@ -115,7 +115,7 @@ verification rate to **0.00**. Efficiency alone always looks like an improvement
 On boundary tasks the gap between "succeeds at least once in 3 tries" and "succeeds all 3 times"
 reached **0.749**. On trivial tasks it was **0.000**.
 
-### Five negative results
+### Six negative results
 
 | Experiment | Claim that did not hold |
 |---|---|

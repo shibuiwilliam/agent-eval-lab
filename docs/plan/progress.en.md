@@ -112,6 +112,23 @@ The prompts for driving a session (P0 kickoff / corpus build / experiment templa
 - [x] Recorded in `docs/REVIEW.md` / `REVIEW.en.md`. Result pages and the summary rewritten in both languages
 - [x] **DoD**: `make check` passes. Provenance labels preserved. No new live calls (still 3.09 USD)
 
+## P10 Rebuilding chapter 3 (PTS) (2026-09-20)
+- [x] Root cause: 5 of the 8 change events produced no regressions at all, so neither training nor
+      evaluation was possible. Report 3.8's "cold start" (create flip data from synthetic changes)
+      had never been done
+- [x] `pts/synthetic.py` generates 37 synthetic changes → an 8,740-run PTS corpus (ADR-024)
+- [x] `pts/dataset.py` (report 3.4's feature table + cross features), `pts/model.py` (supervised
+      failure prediction, family-level leave-one-group-out, nested model selection),
+      `selector.select_by_risk`
+- [x] The rebuild surfaced 4 more evaluator defects
+      (fault injection leaving writes behind, ADR-026 / config changes indistinguishable in feature
+      space / a hard-coded model / evaluation and training on different units, ADR-027)
+- [x] Added E3-8 (learned failure prediction) and E3-9 (exploration and calibration) **with criteria
+      fixed first** (ADR-025)
+- [x] Added 19 regression tests (`tests/pts/test_learned_pts.py`, `tests/env/test_injectors.py`)
+- [x] **DoD**: PASS 15 / NEGATIVE 6 / FAIL 8 / PENDING 0 (29 experiments). `make check` passes
+      (125 tests). No new live calls (still 3.09 USD). Recorded in `docs/PTS.en.md`
+
 ## Next
 - R6–R9 from "11. Not yet fixed" in `IMPROVEMENT.md`.
   Highest priority is R6 (re-take E4-2 / E4-6 with a live judge, estimated 0.3 USD)

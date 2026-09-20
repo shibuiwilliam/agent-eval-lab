@@ -19,6 +19,7 @@
 | [results/LIVE.md](results/LIVE.md) | live 検証 第 1 次。sim では観測できなかった欠陥 5 件と、それが壊していたもの |
 | [results/LIVE2.md](results/LIVE2.md) | live 検証 第 2 次。評価器側の欠陥と、live で否定されて取り下げた診断 1 件 |
 | [REVIEW.md](REVIEW.md) | **2026-09-19 のコード・実験レビュー**: 評価器側の欠陥 8 件、判定が変わった 3 件、再実行で分かったこと |
+| [PTS.md](PTS.md) | **2026-09-20 の 3章（PTS）作り直し**: コールドスタートの合成変更、教師あり故障予測、評価器の欠陥 4 件、3章全体の読み方 |
 | [IMPROVEMENT.md](IMPROVEMENT.md) | live で見つかった欠陥、修正計画、実施結果、まだ直していないこと（R6〜R9） |
 
 ## 計画と設計

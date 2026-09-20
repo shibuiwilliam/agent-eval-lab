@@ -449,3 +449,33 @@
     - {metric: original_mean_score_live, op: ">=", value: 3.5}
   provenance: live
   budget_usd: 1.5
+
+- id: E3-8
+  chapter: 3
+  title: 学習済み故障予測によるテスト選択
+  script: experiments/e3_8_learned_pts.py
+  hypothesis: "変更 × テストの特徴量から回帰確率を学習すると、同じ予算でランダムより高い再現率で回帰を捕まえる"
+  planted_text: "原典 3.8 のコールドスタートに従う合成変更 37 件（プロンプト/設定/ツール/モデル/障害/2要因）"
+  control_text: "ランダム選択、ベースライン故障率のみ、カバレッジ重なりのみ、不確実性 H(p̂)"
+  criteria:
+    - {metric: roc_auc, op: ">=", value: 0.75}
+    - {metric: recall_at_budget_30, op: ">=", value: 0.80}
+    - {metric: recall_ratio_vs_random, op: ">=", value: 2.0}
+    - {metric: escape_ratio_vs_random, op: "<=", value: 0.5}
+    - {metric: control_random_recall, op: "<=", value: 0.6}
+  provenance: simulated
+  budget_usd: 0
+
+- id: E3-9
+  chapter: 3
+  title: 不確実性の役割は探索である（校正の維持）
+  script: experiments/e3_9_exploration.py
+  hypothesis: "H(p̂) は当該ラウンドの逃走欠陥ではなく、選択器の校正を保つために効く"
+  planted_text: "合成変更 37 件を逐次処理し、選んだテストの結果だけでモデルを更新する（部分観測）。探索比 ε を 0/0.05/0.2 で比較"
+  control_text: "ε = 0（純粋な活用）。全件観測を上限として併記"
+  criteria:
+    - {metric: calibration_gain, op: ">", value: 0.0}
+    - {metric: escape_gain, op: ">=", value: 0.0}
+    - {metric: exploration_cost, op: "<=", value: 0.10}
+  provenance: simulated
+  budget_usd: 0

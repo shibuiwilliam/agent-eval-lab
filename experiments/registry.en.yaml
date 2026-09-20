@@ -1210,3 +1210,450 @@
     implementation until it matches the criteria, so it was not done (CLAUDE.md). The right path is to
     use live in experiments that need a judge, and to state explicitly that the surrogate is only for
     reading the direction.
+- id: E3-8
+  title: Test selection from a learned failure model
+  hypothesis: Learning the regression probability from change x test features catches regressions at a
+    higher recall than random selection at the same budget
+  planted: 37 synthetic changes built per report 3.8's cold start (prompt / config / tool / model / fault
+    / two-factor)
+  control: Random selection, baseline failure rate only, coverage overlap only, uncertainty H(p-hat)
+  verdict_reason: 'Unmet criteria: recall_at_budget_30, recall_ratio_vs_random, escape_ratio_vs_random.'
+  figures:
+  - Recall curve
+  - Escape-defect rate
+  method: 'Following report 3.8''s "cold start", **37 synthetic changes** were built by perturbing v01_baseline
+    (13 prompt-section additions/removals / 7 config / 1 tool schema / 1 model swap / 12 tool faults /
+    3 two-factor). Each change x 46 tasks x 5 repeats ran in sim into `data/pts_corpus/`, kept separate
+    from the existing corpus.
+
+
+    Each training row is a (change, test) pair, labelled **regressed** (the baseline passed at a repeat
+    and the target failed at the same repeat). Features are report 3.4''s table (recent pass rate, flip
+    count, score margin, coverage overlap, flake rate) plus the cross features industrial PTS uses (how
+    the change''s units and the test''s units overlap, the change kind, the task kind), plus **within-change
+    percentile ranks** (ADR-027).
+
+
+    **Discipline against leakage**: features come only from the baseline history and the change metadata;
+    the target version''s runs are used for labels only. Features derived from other changes'' labels
+    are computed inside the training fold. Cross-validation is **leave-one-group-out over change families**,
+    and the model is chosen by an **inner** cross-validation on the training folds only (never by looking
+    at the held-out score).
+
+
+    Selection is greedy by predicted risk `p_fail / cost` up to the budget.'
+  notes:
+  - 'Model comparison (family-level leave-one-group-out): [{''model'': ''auto'', ''label'': ''regressed'',
+    ''roc_auc'': 0.8263, ''within_change_auc'': 0.761, ''average_precision'': 0.3199, ''brier'': 0.1267,
+    ''base_rate'': 0.0635, ''lift_over_base'': 5.0419, ''n_rows'': 1702, ''n_positive'': 108, ''n_groups'':
+    6, ''chosen_per_fold'': {''combo'': ''logistic'', ''config'': ''logistic'', ''fault'': ''logistic'',
+    ''model'': ''logistic'', ''prompt'': ''logistic'', ''tool'': ''logistic''}}, {''model'': ''logistic'',
+    ''label'': ''regressed'', ''roc_auc'': 0.8263, ''within_change_auc'': 0.761, ''average_precision'':
+    0.3199, ''brier'': 0.1267, ''base_rate'': 0.0635, ''lift_over_base'': 5.0419, ''n_rows'': 1702, ''n_positive'':
+    108, ''n_groups'': 6, ''chosen_per_fold'': {}}, {''model'': ''gbdt'', ''label'': ''regressed'', ''roc_auc'':
+    0.6509, ''within_change_auc'': 0.6777, ''average_precision'': 0.3378, ''brier'': 0.0937, ''base_rate'':
+    0.0635, ''lift_over_base'': 5.323, ''n_rows'': 1702, ''n_positive'': 108, ''n_groups'': 6, ''chosen_per_fold'':
+    {}}, {''model'': ''prior'', ''label'': ''regressed'', ''roc_auc'': 0.5531, ''within_change_auc'':
+    0.4973, ''average_precision'': 0.0715, ''brier'': 0.1796, ''base_rate'': 0.0635, ''lift_over_base'':
+    1.1271, ''n_rows'': 1702, ''n_positive'': 108, ''n_groups'': 6, ''chosen_per_fold'': {}}, {''model'':
+    ''coverage'', ''label'': ''regressed'', ''roc_auc'': 0.7934, ''within_change_auc'': 0.8577, ''average_precision'':
+    0.1904, ''brier'': 0.0584, ''base_rate'': 0.0635, ''lift_over_base'': 3.0005, ''n_rows'': 1702, ''n_positive'':
+    108, ''n_groups'': 6, ''chosen_per_fold'': {}}]'
+  - 'Model chosen by the inner CV / inner scores: {''combo'': ''logistic'', ''config'': ''logistic'',
+    ''fault'': ''logistic'', ''model'': ''logistic'', ''prompt'': ''logistic'', ''tool'': ''logistic''}
+    / 内側スコア: {''combo'': {''logistic'': 0.7989, ''gbdt_small'': 0.78, ''gbdt'': 0.7625}, ''config'': {''logistic'':
+    0.8621, ''gbdt_small'': 0.7629, ''gbdt'': 0.8007}, ''fault'': {''logistic'': 0.7712, ''gbdt_small'':
+    0.5087, ''gbdt'': 0.5237}, ''model'': {''logistic'': 0.8208, ''gbdt_small'': 0.8166, ''gbdt'': 0.6565},
+    ''prompt'': {''logistic'': 0.7648, ''gbdt_small'': 0.7423, ''gbdt'': 0.5485}, ''tool'': {''logistic'':
+    0.8584, ''gbdt_small'': 0.8116, ''gbdt'': 0.5864}}'
+  - 'Diagnostic (outside the criteria): under the realistic protocol that holds out a single change, logistic
+    AUC is 0.8419、and coverage alone is 0.7934。 Family-level hold-out is the harsher setting: it asks
+    the model to predict a kind of change it has never seen.'
+  - 'Feature importance (top 12): [(''hist_regress_rate_same_kind'', 0.0957), (''plan_first'', 0.0619),
+    (''coverage_overlap_rank_in_change'', 0.0586), (''overlap_of_change_rank_in_change'', 0.0586), (''max_steps'',
+    0.0573), (''max_steps_headroom'', 0.0573), (''summarize_headroom_rank_in_change'', 0.0509), (''max_steps_tight'',
+    0.0472), (''coverage_overlap'', 0.0302), (''overlap_of_change'', 0.0302), (''touches_change'', 0.0302),
+    (''n_tools_rank_in_change'', 0.0238)]'
+  - 'Breakdown by change family: {''combo'': {''n_changes'': 2, ''mean_regressed_tasks'': 2.5, ''recall_learned_30'':
+    0.6666, ''recall_coverage_30'': 0.5, ''recall_ensemble_30'': 1.0, ''recall_random_30'': 0.6834, ''recall_ceiling_30'':
+    1.0}, ''config'': {''n_changes'': 2, ''mean_regressed_tasks'': 8.5, ''recall_learned_30'': 0.1071,
+    ''recall_coverage_30'': 0.1429, ''recall_ensemble_30'': 0.6071, ''recall_random_30'': 0.3031, ''recall_ceiling_30'':
+    0.8215}, ''fault'': {''n_changes'': 10, ''mean_regressed_tasks'': 6.1, ''recall_learned_30'': 0.4476,
+    ''recall_coverage_30'': 0.9264, ''recall_ensemble_30'': 0.7294, ''recall_random_30'': 0.4445, ''recall_ceiling_30'':
+    0.9445}, ''prompt'': {''n_changes'': 3, ''mean_regressed_tasks'': 5.0, ''recall_learned_30'': 0.8667,
+    ''recall_coverage_30'': 0.9, ''recall_ensemble_30'': 0.7667, ''recall_random_30'': 0.5337, ''recall_ceiling_30'':
+    0.9667}, ''tool'': {''n_changes'': 1, ''mean_regressed_tasks'': 10.0, ''recall_learned_30'': 1.0,
+    ''recall_coverage_30'': 0.8, ''recall_ensemble_30'': 0.5, ''recall_random_30'': 0.312, ''recall_ceiling_30'':
+    1.0}}'
+  - 'Per-change results: [{''change'': ''syn_drop_safety'', ''family'': ''prompt'', ''n_regressed_tasks'':
+    2, ''recall_ceiling_30'': 1.0, ''mean_regressions_per_run'': 1.6, ''recall_learned_10'': 1.0, ''recall_learned_20'':
+    1.0, ''recall_learned_30'': 1.0, ''escape_learned'': 0.0, ''n_selected_learned'': 18, ''recall_learned_50'':
+    1.0, ''recall_ensemble_10'': 1.0, ''recall_ensemble_20'': 1.0, ''recall_ensemble_30'': 1.0, ''escape_ensemble'':
+    0.0, ''n_selected_ensemble'': 18, ''recall_ensemble_50'': 1.0, ''recall_logistic_10'': 1.0, ''recall_logistic_20'':
+    1.0, ''recall_logistic_30'': 1.0, ''escape_logistic'': 0.0, ''n_selected_logistic'': 18, ''recall_logistic_50'':
+    1.0, ''recall_prior_only_10'': 1.0, ''recall_prior_only_20'': 1.0, ''recall_prior_only_30'': 1.0,
+    ''escape_prior_only'': 0.0, ''n_selected_prior_only'': 13, ''recall_prior_only_50'': 1.0, ''recall_coverage_only_10'':
+    1.0, ''recall_coverage_only_20'': 1.0, ''recall_coverage_only_30'': 1.0, ''escape_coverage_only'':
+    0.0, ''n_selected_coverage_only'': 12, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'':
+    1.0, ''recall_uncertainty_20'': 1.0, ''recall_uncertainty_30'': 1.0, ''escape_uncertainty'': 0.0,
+    ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'': 1.0, ''recall_random_10'': 1.0, ''recall_random_20'':
+    1.0, ''recall_random_30'': 1.0, ''escape_random'': 0.0, ''recall_random_50'': 1.0}, {''change'': ''syn_drop_clarify'',
+    ''family'': ''prompt'', ''n_regressed_tasks'': 3, ''recall_ceiling_30'': 1.0, ''mean_regressions_per_run'':
+    2.4, ''recall_learned_10'': 0.6667, ''recall_learned_20'': 1.0, ''recall_learned_30'': 1.0, ''escape_learned'':
+    0.0, ''n_selected_learned'': 18, ''recall_learned_50'': 1.0, ''recall_ensemble_10'': 0.6667, ''recall_ensemble_20'':
+    1.0, ''recall_ensemble_30'': 1.0, ''escape_ensemble'': 0.0, ''n_selected_ensemble'': 18, ''recall_ensemble_50'':
+    1.0, ''recall_logistic_10'': 0.6667, ''recall_logistic_20'': 1.0, ''recall_logistic_30'': 1.0, ''escape_logistic'':
+    0.0, ''n_selected_logistic'': 18, ''recall_logistic_50'': 1.0, ''recall_prior_only_10'': 0.6667, ''recall_prior_only_20'':
+    1.0, ''recall_prior_only_30'': 0.6667, ''escape_prior_only'': 0.4333, ''n_selected_prior_only'': 13,
+    ''recall_prior_only_50'': 0.6667, ''recall_coverage_only_10'': 0.6667, ''recall_coverage_only_20'':
+    1.0, ''recall_coverage_only_30'': 1.0, ''escape_coverage_only'': 0.0, ''n_selected_coverage_only'':
+    18, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'': 0.6667, ''recall_uncertainty_20'':
+    1.0, ''recall_uncertainty_30'': 0.6667, ''escape_uncertainty'': 0.4333, ''n_selected_uncertainty'':
+    13, ''recall_uncertainty_50'': 0.6667, ''recall_random_10'': 0.1133, ''recall_random_20'': 0.2817,
+    ''recall_random_30'': 0.365, ''escape_random'': 0.631, ''recall_random_50'': 0.55}, {''change'': ''syn_date_slash'',
+    ''family'': ''prompt'', ''n_regressed_tasks'': 10, ''recall_ceiling_30'': 0.9, ''mean_regressions_per_run'':
+    7.0, ''recall_learned_10'': 0.0, ''recall_learned_20'': 0.2, ''recall_learned_30'': 0.6, ''escape_learned'':
+    0.4571, ''n_selected_learned'': 16, ''recall_learned_50'': 1.0, ''recall_ensemble_10'': 0.0, ''recall_ensemble_20'':
+    0.0, ''recall_ensemble_30'': 0.3, ''escape_ensemble'': 0.8595, ''n_selected_ensemble'': 18, ''recall_ensemble_50'':
+    1.0, ''recall_logistic_10'': 0.0, ''recall_logistic_20'': 0.2, ''recall_logistic_30'': 0.6, ''escape_logistic'':
+    0.4571, ''n_selected_logistic'': 16, ''recall_logistic_50'': 1.0, ''recall_prior_only_10'': 0.0, ''recall_prior_only_20'':
+    0.3, ''recall_prior_only_30'': 0.3, ''escape_prior_only'': 0.8595, ''n_selected_prior_only'': 13,
+    ''recall_prior_only_50'': 0.3, ''recall_coverage_only_10'': 0.0, ''recall_coverage_only_20'': 0.2,
+    ''recall_coverage_only_30'': 0.7, ''escape_coverage_only'': 0.2905, ''n_selected_coverage_only'':
+    15, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'': 0.0, ''recall_uncertainty_20'': 0.2,
+    ''recall_uncertainty_30'': 0.2, ''escape_uncertainty'': 0.8929, ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'':
+    0.3, ''recall_random_10'': 0.0255, ''recall_random_20'': 0.126, ''recall_random_30'': 0.236, ''escape_random'':
+    0.7625, ''recall_random_50'': 0.4475}, {''change'': ''syn_maxsteps_3'', ''family'': ''config'', ''n_regressed_tasks'':
+    14, ''recall_ceiling_30'': 0.6429, ''mean_regressions_per_run'': 8.8, ''recall_learned_10'': 0.1429,
+    ''recall_learned_20'': 0.2143, ''recall_learned_30'': 0.2143, ''escape_learned'': 0.7298, ''n_selected_learned'':
+    15, ''recall_learned_50'': 0.5714, ''recall_ensemble_10'': 0.1429, ''recall_ensemble_20'': 0.1429,
+    ''recall_ensemble_30'': 0.2143, ''escape_ensemble'': 0.7298, ''n_selected_ensemble'': 17, ''recall_ensemble_50'':
+    0.3571, ''recall_logistic_10'': 0.1429, ''recall_logistic_20'': 0.2143, ''recall_logistic_30'': 0.2143,
+    ''escape_logistic'': 0.7298, ''n_selected_logistic'': 15, ''recall_logistic_50'': 0.5714, ''recall_prior_only_10'':
+    0.1429, ''recall_prior_only_20'': 0.2143, ''recall_prior_only_30'': 0.4286, ''escape_prior_only'':
+    0.6456, ''n_selected_prior_only'': 13, ''recall_prior_only_50'': 0.7857, ''recall_coverage_only_10'':
+    0.1429, ''recall_coverage_only_20'': 0.2857, ''recall_coverage_only_30'': 0.2857, ''escape_coverage_only'':
+    0.6254, ''n_selected_coverage_only'': 12, ''recall_coverage_only_50'': 0.5714, ''recall_uncertainty_10'':
+    0.1429, ''recall_uncertainty_20'': 0.1429, ''recall_uncertainty_30'': 0.4286, ''escape_uncertainty'':
+    0.5671, ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'': 0.6429, ''recall_random_10'': 0.1429,
+    ''recall_random_20'': 0.2382, ''recall_random_30'': 0.3311, ''escape_random'': 0.6431, ''recall_random_50'':
+    0.5268}, {''change'': ''syn_plan_first'', ''family'': ''config'', ''n_regressed_tasks'': 3, ''recall_ceiling_30'':
+    1.0, ''mean_regressions_per_run'': 2.6, ''recall_learned_10'': 0.0, ''recall_learned_20'': 0.0, ''recall_learned_30'':
+    0.0, ''escape_learned'': 1.0, ''n_selected_learned'': 17, ''recall_learned_50'': 1.0, ''recall_ensemble_10'':
+    0.0, ''recall_ensemble_20'': 0.3333, ''recall_ensemble_30'': 1.0, ''escape_ensemble'': 0.0, ''n_selected_ensemble'':
+    18, ''recall_ensemble_50'': 1.0, ''recall_logistic_10'': 0.0, ''recall_logistic_20'': 0.0, ''recall_logistic_30'':
+    0.0, ''escape_logistic'': 1.0, ''n_selected_logistic'': 17, ''recall_logistic_50'': 1.0, ''recall_prior_only_10'':
+    0.0, ''recall_prior_only_20'': 0.0, ''recall_prior_only_30'': 0.3333, ''escape_prior_only'': 0.7,
+    ''n_selected_prior_only'': 13, ''recall_prior_only_50'': 0.0, ''recall_coverage_only_10'': 0.0, ''recall_coverage_only_20'':
+    0.3333, ''recall_coverage_only_30'': 0.0, ''escape_coverage_only'': 1.0, ''n_selected_coverage_only'':
+    12, ''recall_coverage_only_50'': 0.3333, ''recall_uncertainty_10'': 0.0, ''recall_uncertainty_20'':
+    0.0, ''recall_uncertainty_30'': 0.0, ''escape_uncertainty'': 1.0, ''n_selected_uncertainty'': 13,
+    ''recall_uncertainty_50'': 0.0, ''recall_random_10'': 0.0433, ''recall_random_20'': 0.1867, ''recall_random_30'':
+    0.275, ''escape_random'': 0.73, ''recall_random_50'': 0.5133}, {''change'': ''syn_toolset_v2'', ''family'':
+    ''tool'', ''n_regressed_tasks'': 10, ''recall_ceiling_30'': 1.0, ''mean_regressions_per_run'': 3.8,
+    ''recall_learned_10'': 0.2, ''recall_learned_20'': 0.6, ''recall_learned_30'': 1.0, ''escape_learned'':
+    0.0, ''n_selected_learned'': 13, ''recall_learned_50'': 1.0, ''recall_ensemble_10'': 0.1, ''recall_ensemble_20'':
+    0.1, ''recall_ensemble_30'': 0.5, ''escape_ensemble'': 0.5524, ''n_selected_ensemble'': 18, ''recall_ensemble_50'':
+    1.0, ''recall_logistic_10'': 0.2, ''recall_logistic_20'': 0.6, ''recall_logistic_30'': 1.0, ''escape_logistic'':
+    0.0, ''n_selected_logistic'': 13, ''recall_logistic_50'': 1.0, ''recall_prior_only_10'': 0.1, ''recall_prior_only_20'':
+    0.3, ''recall_prior_only_30'': 0.3, ''escape_prior_only'': 0.7476, ''n_selected_prior_only'': 13,
+    ''recall_prior_only_50'': 0.3, ''recall_coverage_only_10'': 0.1, ''recall_coverage_only_20'': 0.3,
+    ''recall_coverage_only_30'': 0.8, ''escape_coverage_only'': 0.1571, ''n_selected_coverage_only'':
+    15, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'': 0.1, ''recall_uncertainty_20'': 0.3,
+    ''recall_uncertainty_30'': 0.3, ''escape_uncertainty'': 0.7476, ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'':
+    0.4, ''recall_random_10'': 0.1265, ''recall_random_20'': 0.208, ''recall_random_30'': 0.312, ''escape_random'':
+    0.6115, ''recall_random_50'': 0.495}, {''change'': ''syn_fault_calendar_search'', ''family'': ''fault'',
+    ''n_regressed_tasks'': 11, ''recall_ceiling_30'': 0.9091, ''mean_regressions_per_run'': 8.0, ''recall_learned_10'':
+    0.1818, ''recall_learned_20'': 0.5455, ''recall_learned_30'': 0.9091, ''escape_learned'': 0.0286,
+    ''n_selected_learned'': 13, ''recall_learned_50'': 1.0, ''recall_ensemble_10'': 0.0909, ''recall_ensemble_20'':
+    0.1818, ''recall_ensemble_30'': 0.5455, ''escape_ensemble'': 0.4813, ''n_selected_ensemble'': 17,
+    ''recall_ensemble_50'': 1.0, ''recall_logistic_10'': 0.1818, ''recall_logistic_20'': 0.5455, ''recall_logistic_30'':
+    0.9091, ''escape_logistic'': 0.0286, ''n_selected_logistic'': 13, ''recall_logistic_50'': 1.0, ''recall_prior_only_10'':
+    0.0909, ''recall_prior_only_20'': 0.3636, ''recall_prior_only_30'': 0.3636, ''escape_prior_only'':
+    0.7504, ''n_selected_prior_only'': 13, ''recall_prior_only_50'': 0.3636, ''recall_coverage_only_10'':
+    0.0909, ''recall_coverage_only_20'': 0.2727, ''recall_coverage_only_30'': 0.7273, ''escape_coverage_only'':
+    0.2532, ''n_selected_coverage_only'': 15, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'':
+    0.0909, ''recall_uncertainty_20'': 0.2727, ''recall_uncertainty_30'': 0.2727, ''escape_uncertainty'':
+    0.779, ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'': 0.3636, ''recall_random_10'': 0.1114,
+    ''recall_random_20'': 0.2068, ''recall_random_30'': 0.295, ''escape_random'': 0.6767, ''recall_random_50'':
+    0.5036}, {''change'': ''syn_fault_calendar_create'', ''family'': ''fault'', ''n_regressed_tasks'':
+    10, ''recall_ceiling_30'': 0.9, ''mean_regressions_per_run'': 7.0, ''recall_learned_10'': 0.1, ''recall_learned_20'':
+    0.5, ''recall_learned_30'': 0.9, ''escape_learned'': 0.0333, ''n_selected_learned'': 13, ''recall_learned_50'':
+    1.0, ''recall_ensemble_10'': 0.0, ''recall_ensemble_20'': 0.2, ''recall_ensemble_30'': 0.5, ''escape_ensemble'':
+    0.5524, ''n_selected_ensemble'': 17, ''recall_ensemble_50'': 1.0, ''recall_logistic_10'': 0.1, ''recall_logistic_20'':
+    0.5, ''recall_logistic_30'': 0.9, ''escape_logistic'': 0.0333, ''n_selected_logistic'': 13, ''recall_logistic_50'':
+    1.0, ''recall_prior_only_10'': 0.0, ''recall_prior_only_20'': 0.3, ''recall_prior_only_30'': 0.3,
+    ''escape_prior_only'': 0.8595, ''n_selected_prior_only'': 13, ''recall_prior_only_50'': 0.3, ''recall_coverage_only_10'':
+    0.1, ''recall_coverage_only_20'': 0.5, ''recall_coverage_only_30'': 0.9, ''escape_coverage_only'':
+    0.1452, ''n_selected_coverage_only'': 13, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'':
+    0.0, ''recall_uncertainty_20'': 0.2, ''recall_uncertainty_30'': 0.2, ''escape_uncertainty'': 0.8929,
+    ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'': 0.3, ''recall_random_10'': 0.03, ''recall_random_20'':
+    0.128, ''recall_random_30'': 0.2245, ''escape_random'': 0.7712, ''recall_random_50'': 0.438}, {''change'':
+    ''syn_fault_calendar_delete'', ''family'': ''fault'', ''n_regressed_tasks'': 1, ''recall_ceiling_30'':
+    1.0, ''mean_regressions_per_run'': 1.0, ''recall_learned_10'': 1.0, ''recall_learned_20'': 1.0, ''recall_learned_30'':
+    1.0, ''escape_learned'': 0.0, ''n_selected_learned'': 13, ''recall_learned_50'': 1.0, ''recall_ensemble_10'':
+    1.0, ''recall_ensemble_20'': 1.0, ''recall_ensemble_30'': 1.0, ''escape_ensemble'': 0.0, ''n_selected_ensemble'':
+    18, ''recall_ensemble_50'': 1.0, ''recall_logistic_10'': 1.0, ''recall_logistic_20'': 1.0, ''recall_logistic_30'':
+    1.0, ''escape_logistic'': 0.0, ''n_selected_logistic'': 13, ''recall_logistic_50'': 1.0, ''recall_prior_only_10'':
+    1.0, ''recall_prior_only_20'': 1.0, ''recall_prior_only_30'': 1.0, ''escape_prior_only'': 0.0, ''n_selected_prior_only'':
+    13, ''recall_prior_only_50'': 1.0, ''recall_coverage_only_10'': 1.0, ''recall_coverage_only_20'':
+    1.0, ''recall_coverage_only_30'': 1.0, ''escape_coverage_only'': 0.0, ''n_selected_coverage_only'':
+    12, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'': 1.0, ''recall_uncertainty_20'': 1.0,
+    ''recall_uncertainty_30'': 1.0, ''escape_uncertainty'': 0.0, ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'':
+    1.0, ''recall_random_10'': 1.0, ''recall_random_20'': 1.0, ''recall_random_30'': 1.0, ''escape_random'':
+    0.0, ''recall_random_50'': 1.0}, {''change'': ''syn_fault_mail_search'', ''family'': ''fault'', ''n_regressed_tasks'':
+    4, ''recall_ceiling_30'': 1.0, ''mean_regressions_per_run'': 4.0, ''recall_learned_10'': 0.0, ''recall_learned_20'':
+    0.0, ''recall_learned_30'': 0.0, ''escape_learned'': 1.0, ''n_selected_learned'': 13, ''recall_learned_50'':
+    0.25, ''recall_ensemble_10'': 0.0, ''recall_ensemble_20'': 1.0, ''recall_ensemble_30'': 1.0, ''escape_ensemble'':
+    0.0, ''n_selected_ensemble'': 18, ''recall_ensemble_50'': 1.0, ''recall_logistic_10'': 0.0, ''recall_logistic_20'':
+    0.0, ''recall_logistic_30'': 0.0, ''escape_logistic'': 1.0, ''n_selected_logistic'': 13, ''recall_logistic_50'':
+    0.25, ''recall_prior_only_10'': 0.0, ''recall_prior_only_20'': 0.0, ''recall_prior_only_30'': 0.0,
+    ''escape_prior_only'': 1.0, ''n_selected_prior_only'': 13, ''recall_prior_only_50'': 0.0, ''recall_coverage_only_10'':
+    0.0, ''recall_coverage_only_20'': 1.0, ''recall_coverage_only_30'': 1.0, ''escape_coverage_only'':
+    0.0, ''n_selected_coverage_only'': 15, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'':
+    0.0, ''recall_uncertainty_20'': 0.0, ''recall_uncertainty_30'': 0.0, ''escape_uncertainty'': 1.0,
+    ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'': 0.0, ''recall_random_10'': 0.0475, ''recall_random_20'':
+    0.1475, ''recall_random_30'': 0.2913, ''escape_random'': 0.7087, ''recall_random_50'': 0.4913}, {''change'':
+    ''syn_fault_mail_send'', ''family'': ''fault'', ''n_regressed_tasks'': 11, ''recall_ceiling_30'':
+    0.6364, ''mean_regressions_per_run'': 6.6, ''recall_learned_10'': 0.0, ''recall_learned_20'': 0.0,
+    ''recall_learned_30'': 0.0, ''escape_learned'': 1.0, ''n_selected_learned'': 13, ''recall_learned_50'':
+    0.6364, ''recall_ensemble_10'': 0.0, ''recall_ensemble_20'': 0.0, ''recall_ensemble_30'': 0.1818,
+    ''escape_ensemble'': 0.7803, ''n_selected_ensemble'': 18, ''recall_ensemble_50'': 0.6364, ''recall_logistic_10'':
+    0.0, ''recall_logistic_20'': 0.0, ''recall_logistic_30'': 0.0, ''escape_logistic'': 1.0, ''n_selected_logistic'':
+    13, ''recall_logistic_50'': 0.6364, ''recall_prior_only_10'': 0.0, ''recall_prior_only_20'': 0.0909,
+    ''recall_prior_only_30'': 0.3636, ''escape_prior_only'': 0.7648, ''n_selected_prior_only'': 13, ''recall_prior_only_50'':
+    0.7273, ''recall_coverage_only_10'': 0.0, ''recall_coverage_only_20'': 0.3636, ''recall_coverage_only_30'':
+    0.6364, ''escape_coverage_only'': 0.2971, ''n_selected_coverage_only'': 12, ''recall_coverage_only_50'':
+    1.0, ''recall_uncertainty_10'': 0.0, ''recall_uncertainty_20'': 0.0, ''recall_uncertainty_30'': 0.2727,
+    ''escape_uncertainty'': 0.747, ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'': 0.5455,
+    ''recall_random_10'': 0.0, ''recall_random_20'': 0.1209, ''recall_random_30'': 0.22, ''escape_random'':
+    0.7806, ''recall_random_50'': 0.4377}, {''change'': ''syn_fault_file_read'', ''family'': ''fault'',
+    ''n_regressed_tasks'': 5, ''recall_ceiling_30'': 1.0, ''mean_regressions_per_run'': 4.4, ''recall_learned_10'':
+    0.0, ''recall_learned_20'': 0.0, ''recall_learned_30'': 0.0, ''escape_learned'': 1.0, ''n_selected_learned'':
+    13, ''recall_learned_50'': 1.0, ''recall_ensemble_10'': 0.0, ''recall_ensemble_20'': 0.0, ''recall_ensemble_30'':
+    0.8, ''escape_ensemble'': 0.23, ''n_selected_ensemble'': 17, ''recall_ensemble_50'': 1.0, ''recall_logistic_10'':
+    0.0, ''recall_logistic_20'': 0.0, ''recall_logistic_30'': 0.0, ''escape_logistic'': 1.0, ''n_selected_logistic'':
+    13, ''recall_logistic_50'': 1.0, ''recall_prior_only_10'': 0.0, ''recall_prior_only_20'': 0.0, ''recall_prior_only_30'':
+    0.0, ''escape_prior_only'': 1.0, ''n_selected_prior_only'': 13, ''recall_prior_only_50'': 0.0, ''recall_coverage_only_10'':
+    0.0, ''recall_coverage_only_20'': 0.8, ''recall_coverage_only_30'': 1.0, ''escape_coverage_only'':
+    0.0, ''n_selected_coverage_only'': 13, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'':
+    0.0, ''recall_uncertainty_20'': 0.0, ''recall_uncertainty_30'': 0.0, ''escape_uncertainty'': 1.0,
+    ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'': 0.6, ''recall_random_10'': 0.043, ''recall_random_20'':
+    0.147, ''recall_random_30'': 0.207, ''escape_random'': 0.794, ''recall_random_50'': 0.467}, {''change'':
+    ''syn_fault_file_write'', ''family'': ''fault'', ''n_regressed_tasks'': 9, ''recall_ceiling_30'':
+    1.0, ''mean_regressions_per_run'': 7.0, ''recall_learned_10'': 0.0, ''recall_learned_20'': 0.0, ''recall_learned_30'':
+    0.0, ''escape_learned'': 1.0, ''n_selected_learned'': 13, ''recall_learned_50'': 1.0, ''recall_ensemble_10'':
+    0.0, ''recall_ensemble_20'': 0.1111, ''recall_ensemble_30'': 0.6667, ''escape_ensemble'': 0.2495,
+    ''n_selected_ensemble'': 16, ''recall_ensemble_50'': 1.0, ''recall_logistic_10'': 0.0, ''recall_logistic_20'':
+    0.0, ''recall_logistic_30'': 0.0, ''escape_logistic'': 1.0, ''n_selected_logistic'': 13, ''recall_logistic_50'':
+    1.0, ''recall_prior_only_10'': 0.0, ''recall_prior_only_20'': 0.0, ''recall_prior_only_30'': 0.0,
+    ''escape_prior_only'': 1.0, ''n_selected_prior_only'': 13, ''recall_prior_only_50'': 0.4444, ''recall_coverage_only_10'':
+    0.1111, ''recall_coverage_only_20'': 0.5556, ''recall_coverage_only_30'': 1.0, ''escape_coverage_only'':
+    0.0, ''n_selected_coverage_only'': 13, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'':
+    0.0, ''recall_uncertainty_20'': 0.2222, ''recall_uncertainty_30'': 0.3333, ''escape_uncertainty'':
+    0.7505, ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'': 0.7778, ''recall_random_10'': 0.035,
+    ''recall_random_20'': 0.1244, ''recall_random_30'': 0.2411, ''escape_random'': 0.7563, ''recall_random_50'':
+    0.445}, {''change'': ''syn_fault_file_delete'', ''family'': ''fault'', ''n_regressed_tasks'': 2, ''recall_ceiling_30'':
+    1.0, ''mean_regressions_per_run'': 1.6, ''recall_learned_10'': 1.0, ''recall_learned_20'': 1.0, ''recall_learned_30'':
+    1.0, ''escape_learned'': 0.0, ''n_selected_learned'': 13, ''recall_learned_50'': 1.0, ''recall_ensemble_10'':
+    1.0, ''recall_ensemble_20'': 1.0, ''recall_ensemble_30'': 1.0, ''escape_ensemble'': 0.0, ''n_selected_ensemble'':
+    18, ''recall_ensemble_50'': 1.0, ''recall_logistic_10'': 1.0, ''recall_logistic_20'': 1.0, ''recall_logistic_30'':
+    1.0, ''escape_logistic'': 0.0, ''n_selected_logistic'': 13, ''recall_logistic_50'': 1.0, ''recall_prior_only_10'':
+    1.0, ''recall_prior_only_20'': 1.0, ''recall_prior_only_30'': 1.0, ''escape_prior_only'': 0.0, ''n_selected_prior_only'':
+    13, ''recall_prior_only_50'': 1.0, ''recall_coverage_only_10'': 1.0, ''recall_coverage_only_20'':
+    1.0, ''recall_coverage_only_30'': 1.0, ''escape_coverage_only'': 0.0, ''n_selected_coverage_only'':
+    12, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'': 1.0, ''recall_uncertainty_20'': 1.0,
+    ''recall_uncertainty_30'': 1.0, ''escape_uncertainty'': 0.0, ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'':
+    1.0, ''recall_random_10'': 1.0, ''recall_random_20'': 1.0, ''recall_random_30'': 1.0, ''escape_random'':
+    0.0, ''recall_random_50'': 1.0}, {''change'': ''syn_fault_file_backup'', ''family'': ''fault'', ''n_regressed_tasks'':
+    3, ''recall_ceiling_30'': 1.0, ''mean_regressions_per_run'': 2.6, ''recall_learned_10'': 0.6667, ''recall_learned_20'':
+    0.6667, ''recall_learned_30'': 0.6667, ''escape_learned'': 0.4, ''n_selected_learned'': 13, ''recall_learned_50'':
+    1.0, ''recall_ensemble_10'': 0.6667, ''recall_ensemble_20'': 0.6667, ''recall_ensemble_30'': 1.0,
+    ''escape_ensemble'': 0.0, ''n_selected_ensemble'': 18, ''recall_ensemble_50'': 1.0, ''recall_logistic_10'':
+    0.6667, ''recall_logistic_20'': 0.6667, ''recall_logistic_30'': 0.6667, ''escape_logistic'': 0.4,
+    ''n_selected_logistic'': 13, ''recall_logistic_50'': 1.0, ''recall_prior_only_10'': 0.6667, ''recall_prior_only_20'':
+    0.6667, ''recall_prior_only_30'': 0.6667, ''escape_prior_only'': 0.4, ''n_selected_prior_only'': 13,
+    ''recall_prior_only_50'': 0.6667, ''recall_coverage_only_10'': 1.0, ''recall_coverage_only_20'': 1.0,
+    ''recall_coverage_only_30'': 1.0, ''escape_coverage_only'': 0.0, ''n_selected_coverage_only'': 12,
+    ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'': 0.6667, ''recall_uncertainty_20'': 0.6667,
+    ''recall_uncertainty_30'': 0.6667, ''escape_uncertainty'': 0.4, ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'':
+    0.6667, ''recall_random_10'': 0.6783, ''recall_random_20'': 0.7067, ''recall_random_30'': 0.7517,
+    ''escape_random'': 0.298, ''recall_random_50'': 0.8333}, {''change'': ''syn_fault_external_lookup'',
+    ''family'': ''fault'', ''n_regressed_tasks'': 5, ''recall_ceiling_30'': 1.0, ''mean_regressions_per_run'':
+    3.0, ''recall_learned_10'': 0.0, ''recall_learned_20'': 0.0, ''recall_learned_30'': 0.0, ''escape_learned'':
+    1.0, ''n_selected_learned'': 13, ''recall_learned_50'': 1.0, ''recall_ensemble_10'': 0.0, ''recall_ensemble_20'':
+    0.0, ''recall_ensemble_30'': 0.6, ''escape_ensemble'': 0.4167, ''n_selected_ensemble'': 18, ''recall_ensemble_50'':
+    1.0, ''recall_logistic_10'': 0.0, ''recall_logistic_20'': 0.0, ''recall_logistic_30'': 0.0, ''escape_logistic'':
+    1.0, ''n_selected_logistic'': 13, ''recall_logistic_50'': 1.0, ''recall_prior_only_10'': 0.0, ''recall_prior_only_20'':
+    0.0, ''recall_prior_only_30'': 0.2, ''escape_prior_only'': 0.9, ''n_selected_prior_only'': 13, ''recall_prior_only_50'':
+    1.0, ''recall_coverage_only_10'': 0.2, ''recall_coverage_only_20'': 0.8, ''recall_coverage_only_30'':
+    1.0, ''escape_coverage_only'': 0.0, ''n_selected_coverage_only'': 12, ''recall_coverage_only_50'':
+    1.0, ''recall_uncertainty_10'': 0.0, ''recall_uncertainty_20'': 0.4, ''recall_uncertainty_30'': 0.6,
+    ''escape_uncertainty'': 0.3333, ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'': 1.0, ''recall_random_10'':
+    0.021, ''recall_random_20'': 0.117, ''recall_random_30'': 0.214, ''escape_random'': 0.7837, ''recall_random_50'':
+    0.427}, {''change'': ''syn_combo_nosafety_maxsteps'', ''family'': ''combo'', ''n_regressed_tasks'':
+    2, ''recall_ceiling_30'': 1.0, ''mean_regressions_per_run'': 1.6, ''recall_learned_10'': 1.0, ''recall_learned_20'':
+    1.0, ''recall_learned_30'': 1.0, ''escape_learned'': 0.0, ''n_selected_learned'': 12, ''recall_learned_50'':
+    1.0, ''recall_ensemble_10'': 1.0, ''recall_ensemble_20'': 1.0, ''recall_ensemble_30'': 1.0, ''escape_ensemble'':
+    0.0, ''n_selected_ensemble'': 18, ''recall_ensemble_50'': 1.0, ''recall_logistic_10'': 1.0, ''recall_logistic_20'':
+    1.0, ''recall_logistic_30'': 1.0, ''escape_logistic'': 0.0, ''n_selected_logistic'': 12, ''recall_logistic_50'':
+    1.0, ''recall_prior_only_10'': 1.0, ''recall_prior_only_20'': 1.0, ''recall_prior_only_30'': 1.0,
+    ''escape_prior_only'': 0.0, ''n_selected_prior_only'': 13, ''recall_prior_only_50'': 1.0, ''recall_coverage_only_10'':
+    1.0, ''recall_coverage_only_20'': 1.0, ''recall_coverage_only_30'': 1.0, ''escape_coverage_only'':
+    0.0, ''n_selected_coverage_only'': 12, ''recall_coverage_only_50'': 1.0, ''recall_uncertainty_10'':
+    1.0, ''recall_uncertainty_20'': 1.0, ''recall_uncertainty_30'': 1.0, ''escape_uncertainty'': 0.0,
+    ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'': 1.0, ''recall_random_10'': 1.0, ''recall_random_20'':
+    1.0, ''recall_random_30'': 1.0, ''escape_random'': 0.0, ''recall_random_50'': 1.0}, {''change'': ''syn_combo_noclarify_maxsteps'',
+    ''family'': ''combo'', ''n_regressed_tasks'': 3, ''recall_ceiling_30'': 1.0, ''mean_regressions_per_run'':
+    2.4, ''recall_learned_10'': 0.0, ''recall_learned_20'': 0.3333, ''recall_learned_30'': 0.3333, ''escape_learned'':
+    0.6667, ''n_selected_learned'': 12, ''recall_learned_50'': 0.0, ''recall_ensemble_10'': 0.3333, ''recall_ensemble_20'':
+    1.0, ''recall_ensemble_30'': 1.0, ''escape_ensemble'': 0.0, ''n_selected_ensemble'': 18, ''recall_ensemble_50'':
+    1.0, ''recall_logistic_10'': 0.0, ''recall_logistic_20'': 0.3333, ''recall_logistic_30'': 0.3333,
+    ''escape_logistic'': 0.6667, ''n_selected_logistic'': 12, ''recall_logistic_50'': 0.0, ''recall_prior_only_10'':
+    0.6667, ''recall_prior_only_20'': 1.0, ''recall_prior_only_30'': 0.6667, ''escape_prior_only'': 0.4333,
+    ''n_selected_prior_only'': 13, ''recall_prior_only_50'': 0.6667, ''recall_coverage_only_10'': 0.0,
+    ''recall_coverage_only_20'': 0.0, ''recall_coverage_only_30'': 0.0, ''escape_coverage_only'': 1.0,
+    ''n_selected_coverage_only'': 12, ''recall_coverage_only_50'': 0.0, ''recall_uncertainty_10'': 0.6667,
+    ''recall_uncertainty_20'': 1.0, ''recall_uncertainty_30'': 0.6667, ''escape_uncertainty'': 0.4333,
+    ''n_selected_uncertainty'': 13, ''recall_uncertainty_50'': 0.6667, ''recall_random_10'': 0.1433, ''recall_random_20'':
+    0.275, ''recall_random_30'': 0.3667, ''escape_random'': 0.6343, ''recall_random_50'': 0.57}]'
+  - '**Learning does work.** ROC AUC under family-level leave-one-group-out is 0.826 (criterion 0.75),
+    and under the realistic single-change hold-out it is 0.842, above coverage alone at 0.793. The change-blind
+    control (historical failure rate only) sits at 0.553, near chance, confirming that **the change information
+    is what makes prediction possible**.'
+  - '**What did not hold is selection recall.** At a 30% budget, recall of regressions is 0.535 for the
+    learned model, 0.781 for coverage alone, 0.463 for random, against an in-budget ceiling of 0.944.
+    The family breakdown explains it: **the learned model matches or beats coverage on every family except
+    `fault`, where it loses badly**. Under family-level hold-out the model has never seen a tool-fault
+    change, so it learns how much to trust coverage from kinds of change where coverage is weak. Ten of
+    the 18 evaluable changes are faults, so the average follows them.'
+  - '**Checking whether the criteria were attainable (the same audit as B5 in the previous review)**:
+    `recall_ratio_vs_random >= 2.0` demands an absolute recall of 0.926 while the in-budget ceiling is
+    only 0.944. That criterion therefore asks for near-oracle performance. The criteria were fixed before
+    implementation so they are not changed, but **the criterion design was too demanding** and that is
+    recorded here. Random already catches 46% of regressions at a 30% budget because that budget buys
+    19 of 46 tasks.'
+  - '**Diagnostic (outside the criteria, added after seeing the family breakdown)**: fusing the learned
+    score and the coverage score by their within-change percentile ranks with equal, untuned weights gives
+    recall 0.739 and an escape-defect rate of 0.270 — against random''s 0.532, a ratio of 0.507, far below
+    the learned model''s 0.868 on its own. The practical implication is to **keep the dependency graph
+    (report 3.2) as a separate signal and fuse it, rather than dissolving it into the model**: it is the
+    insurance policy for a kind of change the model has never seen. Because this policy was added after
+    seeing results, it is not used for the verdict.'
+  - The verdict is FAIL (a flaw in the experiment design). Prediction works (AUC 0.826) and the controls
+    are sound, but the criteria were missed because (1) the recall bar sits too close to the in-budget
+    ceiling, and (2) family-level hold-out is the harshest possible setting. The method is not broken;
+    the conclusion is that **at this scale (37 changes, 108 positives) learning cannot beat a simple dependency-graph
+    rule in a cold start**. Industrial PTS trains on hundreds of thousands of commits, and that gap is
+    what shows here.
+- id: E3-9
+  title: Uncertainty's role is exploration (keeping the selector calibrated)
+  hypothesis: H(p-hat) exists to keep the selector calibrated, not to reduce this round's escape-defect
+    rate
+  planted: The 37 synthetic changes processed sequentially under partial feedback; exploration ratios
+    0 / 0.05 / 0.2
+  control: epsilon = 0 (pure exploitation). Full observation reported as the ceiling
+  verdict_reason: 'Unmet criterion: calibration_gain.'
+  figures:
+  - Calibration over rounds
+  - Late-round comparison
+  method: 'E3-3 showed that selecting by `H(p-hat)` does not reduce this round''s escape-defect rate.
+    This experiment tests the *other* role report 3.8 gives ε-exploration: "keeping the selector calibrated".
+
+
+    The 37 synthetic changes are processed sequentially in a family-interleaved order under **partial
+    feedback**. Each round (1) trains only on the rows observed so far, (2) selects greedily by `p_fail
+    / cost` up to a 30% budget, and (3) **observes only the results of the selected tests**. Exploration
+    ratios ε ∈ {0.0, 0.05, 0.2}, with the exploration slot filled either by top-`H(p-hat)` or at random.
+
+
+    Each round records the recall of that round''s regressions, the escape-defect rate, and the Brier
+    score **over all of that round''s tests** (including unobserved ones; used for evaluation only, never
+    for training). Calibration is compared on the late rounds.
+
+
+    **Robustness**: to keep the conclusion from depending on a single ordering, five orderings are run
+    and every metric is averaged. Because the orderings are shared across policies, the comparison is
+    **paired**.'
+  notes:
+  - 'Summary per policy (mean over 5 orderings): {''eps0.0_none'': {''epsilon'': 0.0, ''strategy'': ''random'',
+    ''full_observation'': False, ''late_brier'': 0.0682, ''late_brier_sd'': 0.0148, ''late_escape'': 0.2548,
+    ''late_escape_sd'': 0.0927, ''late_recall'': 0.7355, ''mean_recall'': 0.6155, ''n_observed_final'':
+    549}, ''eps0.05_uncertainty'': {''epsilon'': 0.05, ''strategy'': ''uncertainty'', ''full_observation'':
+    False, ''late_brier'': 0.0705, ''late_brier_sd'': 0.0145, ''late_escape'': 0.2452, ''late_escape_sd'':
+    0.0734, ''late_recall'': 0.757, ''mean_recall'': 0.6244, ''n_observed_final'': 487}, ''eps0.05_random'':
+    {''epsilon'': 0.05, ''strategy'': ''random'', ''full_observation'': False, ''late_brier'': 0.0712,
+    ''late_brier_sd'': 0.0157, ''late_escape'': 0.2465, ''late_escape_sd'': 0.0475, ''late_recall'': 0.7504,
+    ''mean_recall'': 0.6373, ''n_observed_final'': 506}, ''eps0.2_uncertainty'': {''epsilon'': 0.2, ''strategy'':
+    ''uncertainty'', ''full_observation'': False, ''late_brier'': 0.0672, ''late_brier_sd'': 0.016, ''late_escape'':
+    0.2546, ''late_escape_sd'': 0.0346, ''late_recall'': 0.7355, ''mean_recall'': 0.6306, ''n_observed_final'':
+    516}, ''eps0.2_random'': {''epsilon'': 0.2, ''strategy'': ''random'', ''full_observation'': False,
+    ''late_brier'': 0.0701, ''late_brier_sd'': 0.0163, ''late_escape'': 0.2916, ''late_escape_sd'': 0.0637,
+    ''late_recall'': 0.7122, ''mean_recall'': 0.5967, ''n_observed_final'': 537}, ''full_observation'':
+    {''epsilon'': 0.0, ''strategy'': ''random'', ''full_observation'': True, ''late_brier'': 0.088, ''late_brier_sd'':
+    0.0184, ''late_escape'': 0.1646, ''late_escape_sd'': 0.0648, ''late_recall'': 0.8273, ''mean_recall'':
+    0.6782, ''n_observed_final'': 1656}}'
+  - 'Round-by-round trace (epsilon = 0, first ordering): [{''round'': 0.0, ''recall'': 1.0, ''escape'':
+    0.0, ''brier'': 0.127, ''n_observed'': 0.0, ''has_positive'': 1.0}, {''round'': 1.0, ''recall'': 0.333,
+    ''escape'': 0.7, ''brier'': 0.166, ''n_observed'': 13.0, ''has_positive'': 1.0}, {''round'': 2.0,
+    ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.09, ''n_observed'': 26.0, ''has_positive'': 1.0}, {''round'':
+    3.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.058, ''n_observed'': 44.0, ''has_positive'': 0.0},
+    {''round'': 4.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.097, ''n_observed'': 62.0, ''has_positive'':
+    1.0}, {''round'': 5.0, ''recall'': 0.4, ''escape'': 0.536, ''brier'': 0.289, ''n_observed'': 80.0,
+    ''has_positive'': 1.0}, {''round'': 6.0, ''recall'': 0.0, ''escape'': 1.0, ''brier'': 0.165, ''n_observed'':
+    98.0, ''has_positive'': 1.0}, {''round'': 7.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.028,
+    ''n_observed'': 111.0, ''has_positive'': 0.0}, {''round'': 8.0, ''recall'': 0.455, ''escape'': 0.475,
+    ''brier'': 0.157, ''n_observed'': 128.0, ''has_positive'': 1.0}, {''round'': 9.0, ''recall'': 1.0,
+    ''escape'': 0.0, ''brier'': 0.075, ''n_observed'': 146.0, ''has_positive'': 0.0}, {''round'': 10.0,
+    ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.03, ''n_observed'': 164.0, ''has_positive'': 0.0},
+    {''round'': 11.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.004, ''n_observed'': 181.0, ''has_positive'':
+    0.0}, {''round'': 12.0, ''recall'': 0.2, ''escape'': 0.683, ''brier'': 0.165, ''n_observed'': 197.0,
+    ''has_positive'': 1.0}, {''round'': 13.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.0, ''n_observed'':
+    214.0, ''has_positive'': 0.0}, {''round'': 14.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.004,
+    ''n_observed'': 231.0, ''has_positive'': 0.0}, {''round'': 15.0, ''recall'': 1.0, ''escape'': 0.0,
+    ''brier'': 0.025, ''n_observed'': 249.0, ''has_positive'': 0.0}, {''round'': 16.0, ''recall'': 1.0,
+    ''escape'': 0.0, ''brier'': 0.021, ''n_observed'': 264.0, ''has_positive'': 0.0}, {''round'': 17.0,
+    ''recall'': 0.143, ''escape'': 0.819, ''brier'': 0.289, ''n_observed'': 282.0, ''has_positive'': 1.0},
+    {''round'': 18.0, ''recall'': 0.7, ''escape'': 0.204, ''brier'': 0.129, ''n_observed'': 299.0, ''has_positive'':
+    1.0}, {''round'': 19.0, ''recall'': 0.5, ''escape'': 0.427, ''brier'': 0.217, ''n_observed'': 314.0,
+    ''has_positive'': 1.0}, {''round'': 20.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.0, ''n_observed'':
+    331.0, ''has_positive'': 0.0}, {''round'': 21.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.165,
+    ''n_observed'': 349.0, ''has_positive'': 0.0}, {''round'': 22.0, ''recall'': 1.0, ''escape'': 0.0,
+    ''brier'': 0.036, ''n_observed'': 362.0, ''has_positive'': 0.0}, {''round'': 23.0, ''recall'': 1.0,
+    ''escape'': 0.0, ''brier'': 0.0, ''n_observed'': 379.0, ''has_positive'': 0.0}, {''round'': 24.0,
+    ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.02, ''n_observed'': 396.0, ''has_positive'': 1.0},
+    {''round'': 25.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.0, ''n_observed'': 412.0, ''has_positive'':
+    0.0}, {''round'': 26.0, ''recall'': 0.6, ''escape'': 0.41, ''brier'': 0.138, ''n_observed'': 430.0,
+    ''has_positive'': 1.0}, {''round'': 27.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.0, ''n_observed'':
+    445.0, ''has_positive'': 0.0}, {''round'': 28.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.044,
+    ''n_observed'': 462.0, ''has_positive'': 1.0}, {''round'': 29.0, ''recall'': 1.0, ''escape'': 0.0,
+    ''brier'': 0.009, ''n_observed'': 477.0, ''has_positive'': 0.0}, {''round'': 30.0, ''recall'': 1.0,
+    ''escape'': 0.0, ''brier'': 0.023, ''n_observed'': 493.0, ''has_positive'': 1.0}, {''round'': 31.0,
+    ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.001, ''n_observed'': 508.0, ''has_positive'': 0.0},
+    {''round'': 32.0, ''recall'': 0.091, ''escape'': 0.893, ''brier'': 0.218, ''n_observed'': 522.0, ''has_positive'':
+    1.0}, {''round'': 33.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.086, ''n_observed'': 535.0,
+    ''has_positive'': 0.0}, {''round'': 34.0, ''recall'': 0.333, ''escape'': 0.613, ''brier'': 0.13, ''n_observed'':
+    549.0, ''has_positive'': 1.0}, {''round'': 35.0, ''recall'': 1.0, ''escape'': 0.0, ''brier'': 0.024,
+    ''n_observed'': 564.0, ''has_positive'': 1.0}, {''round'': 36.0, ''recall'': 1.0, ''escape'': 0.0,
+    ''brier'': 0.084, ''n_observed'': 581.0, ''has_positive'': 0.0}]'
+  - '**A single ordering did not settle it.** The first implementation tried only one ordering of the
+    changes, and on that ordering the calibration gain read +0.006. With five orderings and a **paired**
+    comparison (the same ordering for ε=0 and ε=0.05) the gain becomes -0.0023 (paired SD 0.0088): **the
+    effect disappeared**. The single-ordering result was picking up ordering-to-ordering variance.'
+  - '**Power**: detecting an effect of this size at 80% power would need 113 orderings (407 for the escape-defect
+    rate). Five is nowhere near enough. So this experiment did not show that exploration fails to improve
+    calibration — it showed that **any such effect is smaller than five orderings can resolve**. The result
+    is inconclusive in both directions.'
+  - '**The cost of exploring stayed within the criterion.** The recall given up in the current round averages
+    0.0487 (criterion 0.10), while the rounds where exploration won gained 0.0576. **On balance exploration
+    is slightly ahead.** At minimum, the worry that "exploration sacrifices a lot of current-round performance"
+    is refuted.'
+  - 'Full observation (complete information) has a late-round Brier of 0.088, **worse** than partial observation
+    at ε=0 (0.068). More data does not always calibrate better: full observation feeds in a large number
+    of easy negatives, which in this low-positive setting shrinks the predicted probabilities. The control
+    intended as a ceiling did not act as one.'
+  - 'The verdict is NEGATIVE. The hypothesis (exploration keeps the selector calibrated) could be **neither
+    confirmed nor refuted**. This is not an implementation flaw: at this scale (37 changes, 108 positives)
+    the effect size is buried in ordering variance. The criterion `calibration_gain > 0` implicitly assumes
+    the effect is larger than the measurement error, and that assumption did not hold. The next step would
+    be 100 orderings, or several hundred synthetic changes.'
