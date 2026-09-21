@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "hypothesis", "ruff", "mypy", "types-PyYAML"]
+dev = ["pytest", "hypothesis", "ruff", "isort", "mypy", "types-PyYAML"]
 
 [project.scripts]
 agenteval = "agenteval.cli:app"
@@ -31,6 +31,11 @@ line-length = 100
 target-version = "py313"
 # docs/ の markdown 内のコードブロックは計画文書の抜粋なので整形対象から外す
 extend-exclude = ["docs", "data"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+extend_skip = ["docs", "data"]
 
 [tool.mypy]
 python_version = "3.13"

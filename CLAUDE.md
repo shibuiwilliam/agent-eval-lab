@@ -42,7 +42,8 @@
 - `.claude/rules/` — 章ごとの詳細規則。該当ファイルを開くと自動で読み込まれる（`llm-cost.md`, `env-agent.md`, `pts.md`, `process.md`, `drift.md`, `experiments.md`）
 
 ## コマンド
-- `make check` — `ruff check . && ruff format --check . && mypy src && pytest -q`。コミット前に必ず通す
+- `make check` — `ruff check . && isort --check-only . && ruff format --check . && mypy src && pytest -q`。コミット前に必ず通す
+- `make fmt` — `ruff check --fix . && isort . && ruff format .`。整形と自動修正をまとめてかける
 - `uv run agenteval run --version v01_baseline --task T-001 --mode replay|auto|live`
 - `uv run agenteval corpus build --plan corpus.yaml --dry-run` → 見積りを確認してから `--live`
 - `uv run agenteval exp e3_1 [--live]` — 実験を1つ実行して結果ページと JSON を更新

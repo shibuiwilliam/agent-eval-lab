@@ -19,7 +19,7 @@
 | [results/LIVE.md](results/LIVE.md) | live 検証 第 1 次。sim では観測できなかった欠陥 5 件と、それが壊していたもの |
 | [results/LIVE2.md](results/LIVE2.md) | live 検証 第 2 次。評価器側の欠陥と、live で否定されて取り下げた診断 1 件 |
 | [REVIEW.md](REVIEW.md) | **2026-09-19 のコード・実験レビュー**: 評価器側の欠陥 8 件、判定が変わった 3 件、再実行で分かったこと |
-| [PTS.md](PTS.md) | **2026-09-20 の 3章（PTS）作り直し**: コールドスタートの合成変更、教師あり故障予測、評価器の欠陥 4 件、3章全体の読み方 |
+| [PTS.md](PTS.md) | **2026-09-20〜21 の 3章（PTS）作り直し**: コールドスタートの合成変更、教師あり故障予測、ラグと変更量を特徴量にする変更履歴・テスト履歴の台帳、評価器の欠陥 5 件、3章全体の読み方 |
 | [IMPROVEMENT.md](IMPROVEMENT.md) | live で見つかった欠陥、修正計画、実施結果、まだ直していないこと（R6〜R9） |
 
 ## 計画と設計
@@ -28,9 +28,9 @@
 |---|---|
 | [plan/00-plan.md](plan/00-plan.md) | 目的と非目的、検証対象の整理、コーパス計画、フェーズと完了条件、リスク |
 | [plan/01-architecture.md](plan/01-architecture.md) | データモデル、実行の流れ、分岐再実行、アブレーション、CLI、ディレクトリ |
-| [plan/02-experiment-catalog.md](plan/02-experiment-catalog.md) | 全 27 実験の5項目。`experiments/registry.yaml` はこれを機械可読に写したもの |
-| [plan/03-decisions.md](plan/03-decisions.md) | ADR-001〜ADR-015。「なぜこうなっているのか」を疑う前に読む |
-| [plan/progress.md](plan/progress.md) | 進捗チェックリスト（P0〜P7） |
+| [plan/02-experiment-catalog.md](plan/02-experiment-catalog.md) | 全 30 実験の5項目。`experiments/registry.yaml` はこれを機械可読に写したもの |
+| [plan/03-decisions.md](plan/03-decisions.md) | ADR-001〜ADR-028。「なぜこうなっているのか」を疑う前に読む |
+| [plan/progress.md](plan/progress.md) | 進捗チェックリスト（P0〜P11） |
 | [plan/open-questions.md](plan/open-questions.md) | 未解決の疑問とその場で置いた仮定。解決したものも消さずに残す |
 | [plan/04-prompts.md](plan/04-prompts.md) | 開発セッションを回すために使ったプロンプト集 |
 

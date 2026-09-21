@@ -81,7 +81,7 @@ That discipline is what turned four disappointments into results worth publishin
 | Agent versions | 13 — one baseline plus 12 with planted defects |
 | Agent under test | Claude Haiku 4.5 |
 | Judge / reference policy | Claude Sonnet 5 |
-| Corpus | 5,520 simulated runs |
+| Corpus | 5,520 simulated runs, plus a 15,180-run PTS corpus built from 65 synthetic changes |
 | Live verification | 1,308 API calls, **$3.09** total |
 
 Every evaluation method takes only a `Run` (a trajectory) as input. Nothing calls the API to
@@ -139,6 +139,8 @@ drops it to 0.747. Full write-up: [docs/PTS.en.md](docs/PTS.en.md).
 |---|---|
 | Prefix cache & branch re-execution | Outcomes matched perfectly (1.00), but there were **no savings** (ratio 1.000): every prefix step still needs a billed confirmation call |
 | Uncertainty-driven selection | Calibration held (error 0.080), but the selection is **no better than random** at catching failures (ratio 1.056). An ablation shows the signal lives in coverage, not uncertainty |
+| Escape-defect rate at a 40% budget | The skeleton (inviolable set, ε-exploration, zero escapes at full budget) held, but the selection reached only 0.479 against a criterion of 0.1 — while an oracle shows 0.031 is attainable |
+| ε-exploration keeps the selector calibrated | **Undecidable at this scale**: the paired effect is −0.0023 (SD 0.0088), and a power calculation says 113 change orderings would be needed to resolve it |
 | Discriminative power | Outcome-only discriminative power **cannot** separate versions that degrade the process but not the result |
 | Surrogate judge | A deterministic stand-in judge agreed with the real Sonnet 5 judge only 0.683 of the time, and was consistently too lenient |
 
@@ -212,9 +214,9 @@ uv run agenteval corpus build --plan corpus.yaml --dry-run   # estimate first
 | `docs/results/` | One page per experiment, plus `summary.md`, the overall write-up, and the two live-verification reports |
 | `docs/IMPROVEMENT.md` | Defects found in live verification, the fix plan, and what is still open |
 | `src/agenteval/` | Implementation: `core` `llm` `env` `agent` `judge` `pts` `process` `drift` `reports` |
-| `experiments/` | 27 experiment scripts and `registry.yaml` (the fixed pass criteria) |
+| `experiments/` | 30 experiment scripts and `registry.yaml` (the fixed pass criteria) |
 | `tasks/` `versions/` `prompts/` | Task definitions, agent versions with planted defects, system prompts |
-| `tests/` | 92 unit tests. `conftest.py` blocks the network so they can never call the API |
+| `tests/` | 131 unit tests. `conftest.py` blocks the network so they can never call the API |
 | `data/` | Generated artefacts. Everything except `data/fixtures/` is git-ignored |
 
 Only conventional root files stay at the top level: `README*`, `LICENSE`, build config, and the two
@@ -230,7 +232,7 @@ YAML files (`corpus.yaml`, `pricing.yaml`) that the code reads relative to the r
 
 ## Honest limitations
 
-1. Only the evaluation *harness* was validated against the live API. The 25 method experiments
+1. Only the evaluation *harness* was validated against the live API. The 28 method experiments
    still run on simulated trajectories.
 2. This is a teaching environment: SQLite, 14 tools, 46 tasks. It does not reproduce the messiness
    of a real coding agent or long-running deployment.

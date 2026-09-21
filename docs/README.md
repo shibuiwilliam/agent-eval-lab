@@ -19,7 +19,7 @@ If you are new here, start with the repository [README](../README.md), then read
 | [results/LIVE.en.md](results/LIVE.en.md) | Live verification, round 1. Five defects that sim could not observe, and what they broke |
 | [results/LIVE2.en.md](results/LIVE2.en.md) | Live verification, round 2. Defects on the evaluator side, and one diagnosis that live refuted |
 | [REVIEW.en.md](REVIEW.en.md) | **The 2026-09-19 code and experiment review**: 8 defects found in the evaluator, the three verdicts that changed, and what the re-run showed |
-| [PTS.en.md](PTS.en.md) | **The 2026-09-20 chapter-3 rebuild**: synthetic changes for cold start, a supervised failure model, 4 more evaluator defects, and what chapter 3 adds up to |
+| [PTS.en.md](PTS.en.md) | **The 2026-09-20/21 chapter-3 rebuild**: synthetic changes for cold start, a supervised failure model, the change/test-history ledger that makes recency and churn features, 5 more evaluator defects, and what chapter 3 adds up to |
 | [IMPROVEMENT.en.md](IMPROVEMENT.en.md) | Every defect found under live, the fix plan, the results, and what is still open (R6–R9) |
 
 ## Plan and design
@@ -28,9 +28,9 @@ If you are new here, start with the repository [README](../README.md), then read
 |---|---|
 | [plan/00-plan.en.md](plan/00-plan.en.md) | Goals and non-goals, what is being verified, the corpus plan, the phases and their definitions of done, the risks |
 | [plan/01-architecture.en.md](plan/01-architecture.en.md) | The data model, the execution flow, branch re-execution, ablation, the CLI, the directory layout |
-| [plan/02-experiment-catalog.en.md](plan/02-experiment-catalog.en.md) | The five items for all 27 experiments. `experiments/registry.yaml` is the machine-readable transcription of this |
-| [plan/03-decisions.en.md](plan/03-decisions.en.md) | ADR-001 through ADR-015. Read this before questioning why something is the way it is |
-| [plan/progress.en.md](plan/progress.en.md) | The progress checklist, P0 through P7 |
+| [plan/02-experiment-catalog.en.md](plan/02-experiment-catalog.en.md) | The five items for all 30 experiments. `experiments/registry.yaml` is the machine-readable transcription of this |
+| [plan/03-decisions.en.md](plan/03-decisions.en.md) | ADR-001 through ADR-028. Read this before questioning why something is the way it is |
+| [plan/progress.en.md](plan/progress.en.md) | The progress checklist, P0 through P11 |
 | [plan/open-questions.en.md](plan/open-questions.en.md) | Open questions and the assumptions made on the spot. Resolved ones are kept, not deleted |
 | [plan/04-prompts.en.md](plan/04-prompts.en.md) | The prompts used to drive the development sessions |
 

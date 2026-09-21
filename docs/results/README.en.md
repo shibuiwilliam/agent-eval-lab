@@ -23,7 +23,7 @@ That moved the escape-defect rate from 0.868× random to **0.319×**, and regres
 
 ## Read this first (provenance)
 
-**The numbers in 25 of the experiments have provenance `simulated` (E8-8 alone is `unit`); only E0-1 and E0-2 carry `live`.**
+**The numbers in 28 of the experiments have provenance `simulated` (E8-8 alone is `unit`); only E0-1 and E0-2 carry `live`.**
 Trajectories are produced by a deterministic simulated agent (`src/agenteval/llm/simulator.py`, ADR-008).
 
 However, **the validity of sim itself was verified twice against live (the real API)**
@@ -210,7 +210,7 @@ against the criterion was fixed, not the criterion** (see [`REVIEW.en.md`](../RE
 ## Limitations of this project
 
 1. **The individual experiments were not re-taken under live.** Live verification went as far as
-   sim's validity (E0-1) and the judge (E0-2); the other 25 experiments remain sim. The parts that
+   sim's validity (E0-1) and the judge (E0-2); the other 28 experiments remain sim. The parts that
    depend on an LLM's semantic understanding are replaced by deterministic stand-ins, and what they
    demonstrated is that the plumbing connects.
 2. **This is an illustrative environment**: SQLite, 14 tools, 46 tasks (ADR-003).
@@ -238,6 +238,7 @@ against the criterion was fixed, not the criterion** (see [`REVIEW.en.md`](../RE
 | Sim calls | 198,288 |
 | Prompt-cache-equivalent hit rate | 0.684 (a value sim imitates, not a measurement) |
 | Corpus | 46 tasks × 12 versions × 10 repeats = 5,520 runs |
+| PTS corpus | (baseline + 65 synthetic changes) × 46 tasks × 5 repeats = 15,180 runs ([PTS.en.md](../PTS.en.md)) |
 | Estimate if the same corpus were built live | about 63 USD (`agenteval corpus build --dry-run`, conservatively scaled by 1.5) |
 
 ## If there were a next step
