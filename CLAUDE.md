@@ -51,7 +51,7 @@
 - `uv run agenteval cost` — 累積コストと残予算
 
 ## 絶対に守ること
-- `pytest` から live API を呼ばない。`tests/` は `data/fixtures/cassettes/` の replay のみ。`conftest.py` が `AGENTEVAL_LLM_MODE=replay` を強制する
+- `pytest` から live API を呼ばない。`conftest.py` が `AGENTEVAL_LLM_MODE=replay` を強制し、さらに `socket.socket` を差し替えて外部接続そのものを失敗させる。run を作るテストは `LLMClient(mode="sim", ...)` を明示的に組み立てる（現状カセットには依存していない。`data/fixtures/cassettes/` は空）
 - live 実行は `ANTHROPIC_API_KEY` と `AGENTEVAL_BUDGET_USD` が両方ある時だけ動く。予算超過は呼び出し前に停止する
 - 50 呼び出しを超える live 実行は、先に `--dry-run` の見積りを出してユーザーに確認する
 - 単価は `pricing.yaml` にのみ書く。値には確認日と公式 Pricing ページの URL を併記する
