@@ -2,14 +2,15 @@
 
 仮説・植込み・対照・基準は `docs/results/EC-O2.md`（正本）と registry.yaml の EC-O2（基準は確定。G0 承認済み）。
 植込み 4 種（ハーネスの欠陥を模したもの）× 各 5 run = 20 run をこの実験が作り（段 `offline`、スクリプト化エージェント、
-Docker、API 費用 0）、4 つの決定的な検査（W1-I6 の `obs/integrity.py`）に当てる。対照は欠陥の無いハーネスの run で、
-W2-V2 の正解パッチ run（全 48 タスク）と EC-S1 の双子 30 run（r0）を**ストアから読む**（この実験は作らない）。
-EC-S1 の試み 30 run と W2-V2 の特殊化パッチ 42 run は記録のみの追加対照（`extra_control_alarms`）。
-来歴: すべて simulated。
+Docker、API 費用 0）、4 つの決定的な検査（`obs/integrity.py`）に当てる。対照は欠陥の無いハーネスの run で、
+W2-V2 の正解パッチ run（全 48 タスク）と EC-S1 のツール経由の双子 19 run（r0。`control_twin`）を**ストアから読む**
+（この実験は作らない）。ADR-042 により、EC-S1 の直接 exec の単位（双子 11 を含む）は `Run` ではなく trace に無いので
+対照に入らず、探針（台本 ID `sc-b-`）も入らない。EC-S1 のツール経由の本体 19 run（`extra_attempt`）と W2-V2 の特殊化パッチ
+42 run は記録のみの追加対照（`extra_control_alarms`）。来歴: すべて simulated。
 
-W1-I6 との境界: 4 検査の関数は SPEC.md 12.2 節のシグネチャで使う。植込み 4 種の差し込み部品（`tool_overrides`・`fault`・
-`snapshotter`）の公開関数は SPEC.md に書式が無いので、下の「I6 との接続」の 1 か所に集めた（I6 のマージ後に
-実体に合わせて直す）。集計（`o2_metrics`）は I6 に依存せず、検査の件数の入れ物（`O2Result`）だけを入力にする。
+W1-I6b との境界: 4 検査の関数は `obs/integrity.py`、植込み 4 種（差し込み部品・台本・対応する検査）は `obs/plants.py` の
+`o2_plant`・`PLANT_CHECK` を使う（実験側に定義を持たない）。植込みの部品は run ごとに `run_options()` で作り直す
+（注入器は `records` を持つので、使い回すと run をまたいで溜まる）。集計（`o2_metrics`）は検査の件数の入れ物（`O2Result`）だけを入力にする。
 """
 
 from __future__ import annotations
@@ -40,20 +41,17 @@ from agenteval.core.coding_store import (
 )
 from agenteval.core.coding_types import CODING_DATA_ROOT, ExecutorFactory, SnapshotManifest
 from agenteval.core.schema import Run
+from agenteval.env.sandbox import HOOK_MISSING_DETAIL
 from agenteval.llm.cost import LEDGER_PATH
+from agenteval.obs import integrity
+from agenteval.obs.plants import PLANT_CHECK, PlantName, o2_plant
 from agenteval.reports.coding_corpus import load_plan, stage_seed
 
 EXPERIMENT_ID = "EC-O2"
 OFFLINE_STAGE = "offline"
 HOST_VERSION = "c01_baseline"
 CHECKS = ("unmediated", "secrecy", "record_integrity", "denied_residue")
-# 植込み → 対応する検査（検出に数えるもの。EC-O2.md「植込み条件」と CONTENT.md 11.1 節）
-PLANT_CHECK = {
-    "unmediated_write_tool": "unmediated",
-    "env_leaking_tool": "secrecy",
-    "silent_snapshot_hook": "record_integrity",
-    "pre_adr026_injector": "denied_residue",
-}
+# 植込み → 対応する検査（検出に数えるもの）は obs.plants.PLANT_CHECK（EC-O2.md「植込み条件」、CONTENT.md 11.1 節）
 GOLD_SCRIPT_ID = "sc-gold"
 SPEC_SCRIPT_ID = "sc-spec"
 TWIN_PREFIX, ATTEMPT_PREFIX = "sc-t1-", "sc-s1-"
@@ -157,40 +155,8 @@ def o2_metrics(
 
 
 # ---------------------------------------------------------------------------
-# I6 との接続（SPEC.md 12.2 節のシグネチャ。植込みの部品だけ書式が未定なので、ここに集める）
+# 検査の当て方と植込み run の実行
 # ---------------------------------------------------------------------------
-
-
-def _attr(obj: Any, *names: str, default: Any = ...) -> Any:  # Any: I6 の型に依らず属性を読む
-    for name in names:
-        if isinstance(obj, Mapping) and name in obj:
-            return obj[name]
-        if hasattr(obj, name):
-            return getattr(obj, name)
-    if default is ...:
-        raise AttributeError(
-            f"{type(obj).__name__} に {names} のどれも無い（obs/integrity.py などの実体に合わせる）"
-        )
-    return default
-
-
-def plant_spec(name: str) -> Any:  # Any: I6 の植込みの定義
-    """植込みの定義を返す。I6 が次のいずれかを公開することを仮定する（実体が決まったら直す）:
-    `security.catalog.o2_plant(name)` / `obs.integrity.o2_plant(name)`。戻り値は `options`（`CodingRunOptions` の
-    キーワード引数: tool_overrides・fault・snapshotter のどれか）と、あれば `script(task)`（植込み用に組んだ台本。
-    無ければ正解パッチの台本）を持つ（辞書でもよい）。
-    """
-    import importlib
-
-    for module_name in ("agenteval.security.catalog", "agenteval.obs.integrity"):
-        module = importlib.import_module(module_name)
-        fn = getattr(module, "o2_plant", None)
-        if fn is not None:
-            return fn(name)
-    raise RuntimeError(
-        f"植込み {name} の定義が見つからない（security.catalog.o2_plant / obs.integrity.o2_plant）。"
-        " W1-I6 のマージ後に ec_o2_integrity.py の plant_spec を実体に合わせる"
-    )
 
 
 def _manifest_loader() -> Callable[[str], SnapshotManifest | None]:
@@ -236,8 +202,6 @@ def run_checks(
     秘匿検査の対象: trace・outcome・台帳の行・結果ページの全文（sim ではカセットが生成されないので対象外。
     スナップショットの blob は run を特定できず対象外。EC-O2.md）。
     """
-    from agenteval.obs import integrity
-
     texts: dict[str, str] = {"trace": run.model_dump_json()}
     out_path = outcome_path(run.run_id, mode_dir, data_root=data_root)  # type: ignore[arg-type]
     if out_path.exists():
@@ -248,15 +212,12 @@ def run_checks(
     fingerprints = load_fingerprints(run.run_id, mode_dir, data_root=data_root)  # type: ignore[arg-type]
     counts = {
         "unmediated": len(integrity.check_unmediated(run)),
-        "secrecy": len(integrity.check_secrecy(texts, fingerprints)),
+        "secrecy": len(integrity.check_secrecy(texts, fingerprints, run)),
         "record_integrity": len(integrity.check_record_integrity(run, _manifest_loader())),
         "denied_residue": len(integrity.check_denied_residue(run)),
     }
     hook_missing = sum(
-        1
-        for step in run.steps
-        for effect in step.effects
-        if getattr(effect, "detail", "") == "hook_missing"
+        1 for step in run.steps for effect in step.effects if effect.detail == HOOK_MISSING_DETAIL
     )
     return counts, hook_missing
 
@@ -275,41 +236,36 @@ def execute_plants(
     data_root: Path = CODING_DATA_ROOT,
     executor_factory_of: Callable[[str], ExecutorFactory] | None = None,
     seed: int | None = None,
-) -> list[tuple[str, Run]]:
+) -> list[tuple[PlantName, Run]]:
     """植込み 4 種 × `o2_plant` の 5 タスクの run を作る（Docker が要る。API 費用 0）。
 
-    各 run は正解パッチのスクリプト化 run に 1 か所だけ植込みを差し込む。run_id が植込みで衝突しないよう、
-    台本 ID に植込み名を足す（`sc-gold-<plant>`）。
+    各 run は正解パッチのスクリプト化 run に 1 か所だけ植込みを差し込む。台本は `o2_plant(...).script(task)`
+    （台本 ID は `sc-gold-<植込み名>` で植込みごとに別になる）、部品は run ごとに `run_options()` で作る。
+    同じ run_id の run があれば再利用する（壊れていれば案内付きで止まる）。
     """
     from agenteval.agent.coding_loop import CodingRunOptions, run_coding_task
-    from agenteval.agent.scripted import gold_script
     from agenteval.env.sandbox import docker_executor_factory
 
     tasks = load_coding_tasks()
     version = get_coding_version(HOST_VERSION)
     plan_seed = seed if seed is not None else stage_seed(load_plan(), OFFLINE_STAGE)
-    out: list[tuple[str, Run]] = []
-    for plant in PLANT_CHECK:
-        spec = plant_spec(plant)
-        options = dict(_attr(spec, "options"))
-        script_factory = _attr(spec, "script", default=None)
+    out: list[tuple[PlantName, Run]] = []
+    for plant_name in PLANT_CHECK:
+        plant = o2_plant(plant_name)
         for task_id in load_task_sets()["o2_plant"]:
             task = tasks[task_id]
-            script = script_factory(task) if script_factory is not None else gold_script(task)
-            script = script.model_copy(
-                update={"script_id": f"{GOLD_SCRIPT_ID}-{plant.replace('_', '-')}"}
-            )
+            script = plant.script(task)
             run_id = coding_run_id(task.id, version.id, OFFLINE_STAGE, 0, script.script_id)
+            # 同じ run_id の run が既にあれば再利用する（スクリプト化 run は決定的）。壊れていれば案内付きで止まる
+            existing = load_existing_run(run_id, data_root=data_root)
+            if existing is not None:
+                out.append((plant_name, existing))
+                continue
             factory = (
                 executor_factory_of(run_id)
                 if executor_factory_of is not None
                 else docker_executor_factory(run_id, mode_dir_of("sim"))
             )
-            # 同じ run_id の run が既にあれば再利用する（スクリプト化 run は決定的）。壊れていれば案内付きで止まる
-            existing = load_existing_run(run_id, data_root=data_root)
-            if existing is not None:
-                out.append((plant, existing))
-                continue
             run, _ = run_coding_task(
                 task,
                 version,
@@ -321,10 +277,10 @@ def execute_plants(
                     script=script,
                     executor_factory=factory,
                     data_root=data_root,
-                    **options,
+                    **plant.run_options(),  # run ごとに新しい部品（注入器の records を使い回さない）
                 ),
             )
-            out.append((plant, run))
+            out.append((plant_name, run))
     return out
 
 
@@ -362,11 +318,11 @@ def dry_run(seed: int = 20260913) -> dict[str, Any]:  # Any: 表示用
         },
         "reads_controls": {
             "control_gold(W2-V2 の正解パッチ。48 要)": seen.get("control_gold", 0),
-            "control_twin(EC-S1 の双子。30 要)": seen.get("control_twin", 0),
-            "extra_attempt(EC-S1 の試み。記録のみ)": seen.get("extra_attempt", 0),
+            "control_twin(EC-S1 のツール経由の双子。19 要)": seen.get("control_twin", 0),
+            "extra_attempt(EC-S1 のツール経由の本体 19。記録のみ)": seen.get("extra_attempt", 0),
             "extra_spec(W2-V2 の特殊化パッチ。記録のみ)": seen.get("extra_spec", 0),
         },
-        "needs": "W1-I6 の obs/integrity.py と植込みの部品",
+        "needs": "obs/integrity.py と obs/plants.py（W1-I6a・W1-I6b）。EC-S1 の実行（ツール経由の双子 19 run）",
     }
 
 
@@ -421,7 +377,7 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         (
             f"対照 {extras['n_controls']} run（{metrics['control_runs_by_group']['value']}）の警報 "
             f"{metrics['control_false_alarms']['value']} 件（検査別 {metrics['control_alarms_by_check']['value']}）。"
-            f"警報の出た run（先頭 20）: {extras['control_alarm_runs']}。追加の対照（EC-S1 の試み・特殊化パッチ）は記録のみ: "
+            f"警報の出た run（先頭 20）: {extras['control_alarm_runs']}。追加の対照（EC-S1 のツール経由の本体 19 run・特殊化パッチ）は記録のみ: "
             f"{metrics['extra_control_alarms']['value']['total']} 件。"
         ),
         (
