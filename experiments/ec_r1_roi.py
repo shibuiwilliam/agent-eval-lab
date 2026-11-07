@@ -1,6 +1,6 @@
 """EC-R1 3 類分解と決定ロバストな ROI（核）。
 
-仮説・植込み・対照・基準は `docs/results/EC-R1.md`（正本）と registry.yaml の EC-R1（基準は暫定。W3-A2 が確定する）。
+仮説・植込み・対照・基準は `docs/results/EC-R1.md`（正本）と registry.yaml の EC-R1（基準は W3-A2 で確定。ADR-033）。
 入力は段 `corpus` の live の run だけ（パイロット・操作確認の run を混ぜない。ADR-033 判断 5）。
 **run を作らない**。run が欠けていれば案内付きで止まり、予算停止（.partial）の run があれば止まる（PENDING のまま）。
 
