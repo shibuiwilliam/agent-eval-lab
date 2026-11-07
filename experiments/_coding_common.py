@@ -26,7 +26,6 @@ from numpy.typing import NDArray
 from agenteval.core.coding_store import trace_path
 from agenteval.core.schema import Run
 from agenteval.econ.roi import ThetaSample, VersionEconomics
-from agenteval.llm.cost import REPO_ROOT
 from agenteval.reports import pages
 
 __all__ = [
@@ -34,6 +33,7 @@ __all__ = [
     "carry_over_designer_page",
     "conditional_rob",
     "design_method",
+    "designer_verdict_text",
     "failing_metrics",
     "failure_caution",
     "failure_override",
@@ -44,7 +44,8 @@ __all__ = [
     "nv_array",
 ]
 
-_METHOD_RE = re.compile(r"^## 方法\n(.*?)\n## 結果", re.DOTALL | re.MULTILINE)
+# 見出しは前方一致（「## 方法（改訂、ADR-042。…）」のような付記付きの見出しも拾う）
+_METHOD_RE = re.compile(r"^## 方法[^\n]*\n(.*?)\n## 結果", re.DOTALL | re.MULTILINE)
 
 
 def design_method(experiment_id: str) -> str:
@@ -53,7 +54,7 @@ def design_method(experiment_id: str) -> str:
     `finalize` が書く結果ページは `## 方法\\n{method}\\n\\n## 結果` の形なので、再生成しても同じ文字列に戻る
     （冪等）。
     """
-    path = REPO_ROOT / "docs" / "results" / f"{experiment_id}.md"
+    path = pages.RESULTS_DIR / f"{experiment_id}.md"
     if not path.exists():
         return ""
     match = _METHOD_RE.search(path.read_text(encoding="utf-8"))
@@ -82,25 +83,79 @@ def failing_metrics(experiment_id: str, metrics: Mapping[str, Any]) -> list[str]
 
 
 AUTO_NOTES_MARK = "<!-- agenteval:auto-notes -->"
+AUTO_VERDICT_MARK = "<!-- agenteval:auto-verdict -->"
+AUTO_VERDICT_HEADING = "### 自動判定"
 _UNFILLED = ("", "（未実施）")
 _FOOTER = "\n---\n生成:"
+_VERDICT_WORDS = ("PASS", "FAIL", "NEGATIVE", "PENDING")
+# `experiments/_common.verdict_from` が書く判定理由の書き出し。自動生成の段落の見分けに使う
+_AUTO_REASON_PREFIXES = ("全基準を満たした。", "未達の基準:")
 
 
 def _section_span(text: str, heading: str) -> tuple[int, int] | None:
-    """`## heading` の見出しの行の先頭から、次の `\n## `・フッター・末尾の手前までの範囲。"""
-    start = text.find(f"## {heading}\n")
-    if start < 0:
+    """`## heading…` の見出しの行の先頭から、次の `\n## `・フッター・末尾の手前までの範囲。
+
+    見出しは前方一致（`## 5項目（改訂、…）` のような付記付きの見出しも同じ節として扱う）。
+    """
+    match = re.search(rf"^## {re.escape(heading)}[^\n]*\n", text, re.MULTILINE)
+    if match is None:
         return None
+    start = match.start()
     ends = [e for e in (text.find("\n## ", start + 1), text.find(_FOOTER, start)) if e >= 0]
     return start, (min(ends) if ends else len(text))
+
+
+def _heading_line(text: str, span: tuple[int, int]) -> str:
+    """節の見出しの行（付記を含む。改行なし）。"""
+    return text[span[0] : span[1]].split("\n", 1)[0]
+
+
+def _section_body(text: str, span: tuple[int, int]) -> str:
+    """節の本文（見出しの行を除く。前後の空行を落とす）。"""
+    parts = text[span[0] : span[1]].split("\n", 1)
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
+def _is_auto_paragraph(paragraph: str) -> bool:
+    """スクリプトが書く判定の段落か（判定語だけの行、判定理由の定型の書き出し、未記入の印）。"""
+    text = paragraph.strip()
+    return (
+        text in _UNFILLED
+        or text in _VERDICT_WORDS
+        or text.startswith(_AUTO_REASON_PREFIXES)
+        or AUTO_VERDICT_MARK in text
+    )
+
+
+def designer_verdict_text(old_text: str) -> str:
+    """既存ページの「## 判定」にある設計者の記述。無ければ空文字列。
+
+    - 「### 自動判定」の小見出しがあれば（このスクリプトが書いた形）、その前が設計者の記述
+    - 無ければ（設計者が書いた、または旧形式で生成されたページ）、本文のうち自動生成の段落
+      （判定語だけの行・「全基準を満たした。」「未達の基準:」の書き出し・未記入）しか無ければ空、
+      そうでなければ本文をそのまま設計者の記述とする（段落を選り分けて壊さない）
+    """
+    span = _section_span(old_text, "判定")
+    if span is None:
+        return ""
+    body = _section_body(old_text, span)
+    auto = re.search(rf"^{re.escape(AUTO_VERDICT_HEADING)}[^\n]*$", body, re.MULTILINE)
+    if auto is not None:
+        return body[: auto.start()].strip()
+    paragraphs = [p for p in re.split(r"\n\s*\n", body) if p.strip()]
+    return "" if all(_is_auto_paragraph(p) for p in paragraphs) else body
 
 
 def carry_over_designer_page(
     experiment_id: str, old_text: str | None, notes: Sequence[str]
 ) -> None:
-    """`finalize` が書いた結果ページに、設計者が書いた既存ページの記述を引き継ぐ（方法は finalize の引数で別に引き継ぐ）。
+    """`finalize` が書いた結果ページに、設計者が書いた既存ページの記述を引き継ぐ。
 
+    見出しは前方一致で照合する（`## 5項目（改訂、…）` のような付記付きの見出しを取りこぼさない）。
     - 先頭ブロック（タイトル行と「## 5項目」の間の状態・原典の段落）と「## 5項目」を既存ページのものに戻す
+    - 「## 方法」を既存ページのものに戻す（本文が空でなければ。見出しの付記も残る）
+    - 「## 判定」は、既存ページに設計者の記述（自動生成の印が無い段落）があれば保持し、スクリプトの判定は
+      「### 自動判定」の小見出しの下（自動判定の印付き）に出す。再実行で重複しない
     - 既存ページの「## 気づき・限界」が未記入（空・「（未実施）」・自動注記だけ）なら、スクリプトの notes をそこに出す
       （自動注記の印付き。再実行で重複しない）。記入済みなら上書きせず、notes は別の見出し「## 自動注記」に出す
     既存ページが無い・形が違うときは何もしない。
@@ -119,6 +174,20 @@ def carry_over_designer_page(
         block = old_text[old_five[0] : old_five[1]].rstrip("\n")
         rebuilt_head = f"\n\n{head}\n\n" if head else "\n\n"
         new = new[:new_title_end] + rebuilt_head + block + "\n" + new[new_five[1] :]
+
+    old_method, new_method = _section_span(old_text, "方法"), _section_span(new, "方法")
+    if old_method and new_method and _section_body(old_text, old_method):
+        block = old_text[old_method[0] : old_method[1]].rstrip("\n")
+        new = new[: new_method[0]] + block + "\n" + new[new_method[1] :]
+
+    new_judge = _section_span(new, "判定")
+    if new_judge:
+        auto_body = _section_body(new, new_judge)
+        designer = designer_verdict_text(old_text)
+        lead = f"{designer}\n\n" if designer else ""
+        section = f"## 判定\n{lead}{AUTO_VERDICT_HEADING}\n{AUTO_VERDICT_MARK}\n{auto_body}\n"
+        new = new[: new_judge[0]] + section + new[new_judge[1] :]
+
     old_notes, new_notes = (
         _section_span(old_text, "気づき・限界"),
         _section_span(new, "気づき・限界"),
@@ -128,19 +197,17 @@ def carry_over_designer_page(
         return
     # 既存ページの「気づき・限界」の本文（見出し行と、直後の「## 自動注記」・フッターを除く）
     filled = ""
+    heading = "## 気づき・限界"
     if old_notes:
-        body = (
-            old_text[old_notes[0] : old_notes[1]].split("\n", 1)[1]
-            if "\n" in old_text[old_notes[0] : old_notes[1]]
-            else ""
-        )
+        heading = _heading_line(old_text, old_notes)  # 付記付きの見出しを残す
+        body = _section_body(old_text, old_notes)
         auto = body.find("\n## 自動注記")
         filled = (body if auto < 0 else body[:auto]).strip()
     if filled in _UNFILLED or AUTO_NOTES_MARK in filled:
-        section = f"## 気づき・限界\n{AUTO_NOTES_MARK}\n{bullets}\n"
+        section = f"{heading}\n{AUTO_NOTES_MARK}\n{bullets}\n"
         new = new[: new_notes[0]] + section + new[new_notes[1] :]
     else:
-        section = f"## 気づき・限界\n{filled}\n\n## 自動注記\n{bullets}\n"
+        section = f"{heading}\n{filled}\n\n## 自動注記\n{bullets}\n"
         new = new[: new_notes[0]] + section + new[new_notes[1] :]
     path.write_text(new, encoding="utf-8")
 
