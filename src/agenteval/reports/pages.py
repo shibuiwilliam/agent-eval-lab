@@ -91,6 +91,13 @@ def format_value(value: Any) -> str:
     return str(value)
 
 
+def provisional_mark(criterion: dict[str, Any], lang: str = "ja") -> str:
+    """registry の `provisional: true` の基準に付ける印（パイロットで確定する前の基準。ADR-033）。"""
+    if not criterion.get("provisional"):
+        return ""
+    return " (provisional)" if lang == "en" else "（暫定）"
+
+
 def metrics_table(metrics: dict[str, Any], criteria: list[dict[str, Any]], lang: str = "ja") -> str:
     """指標の表。合格基準に対応する行には基準と可否を書く。"""
     by_metric = {c["metric"]: c for c in criteria}
@@ -108,7 +115,8 @@ def metrics_table(metrics: dict[str, Any], criteria: list[dict[str, Any]], lang:
             continue
         ok = check_criterion(value, criterion)
         lines.append(
-            f"| {key} | {format_value(value)} | {criterion['op']} {criterion['value']} | {'○' if ok else '×'} |"
+            f"| {key} | {format_value(value)} | {criterion['op']} {criterion['value']}"
+            f"{provisional_mark(criterion, lang)} | {'○' if ok else '×'} |"
         )
     return "\n".join(lines)
 
@@ -174,9 +182,13 @@ def render(
         hypothesis=pick("hypothesis", meta.get("hypothesis", "")),
         planted=pick("planted", meta.get("planted_text", meta.get("planted", ""))),
         control=pick("control", meta.get("control_text", meta.get("control", ""))),
-        criteria="、".join(f"{c['metric']} {c['op']} {c['value']}" for c in criteria)
+        criteria="、".join(
+            f"{c['metric']} {c['op']} {c['value']}{provisional_mark(c)}" for c in criteria
+        )
         if lang != "en"
-        else ", ".join(f"{c['metric']} {c['op']} {c['value']}" for c in criteria),
+        else ", ".join(
+            f"{c['metric']} {c['op']} {c['value']}{provisional_mark(c, 'en')}" for c in criteria
+        ),
         provenance=meta.get("provenance", ""),
         method=pick("method", result.get("method", "")),
         table=metrics_table(result.get("metrics", {}), criteria, lang),
