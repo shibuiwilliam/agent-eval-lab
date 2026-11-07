@@ -5,11 +5,28 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
+from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from agenteval.core.schema import Effect, PolicyDecision, Run
 from agenteval.core.store import trace_hash
+
+
+def _load_script() -> ModuleType:
+    """scripts/ は package ではないので、パスから直接読み込む。"""
+    path = Path(__file__).resolve().parents[2] / "scripts" / "check_schema_migration.py"
+    spec = importlib.util.spec_from_file_location("check_schema_migration", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_script = _load_script()
+is_subset = _script.is_subset
 
 
 def _legacy_run_dict() -> dict[str, Any]:
@@ -67,26 +84,11 @@ def test_legacy_trace_loads_with_defaults() -> None:
     assert run.steps[0].policy_decisions == []
 
 
-def _is_subset(raw: Any, dumped: Any) -> bool:
-    """raw の項目がすべて dumped に同じ値で残っているか（dumped の追加項目は許す）。"""
-    if isinstance(raw, dict):
-        return isinstance(dumped, dict) and all(
-            k in dumped and _is_subset(v, dumped[k]) for k, v in raw.items()
-        )
-    if isinstance(raw, list):
-        return (
-            isinstance(dumped, list)
-            and len(raw) == len(dumped)
-            and all(_is_subset(a, b) for a, b in zip(raw, dumped, strict=True))
-        )
-    return bool(raw == dumped)
-
-
 def test_legacy_roundtrip_keeps_existing_fields() -> None:
     raw = _legacy_run_dict()
     run = _load_legacy()
     dumped = json.loads(run.model_dump_json())
-    assert _is_subset(raw, dumped)
+    assert is_subset(raw, dumped)
     assert Run.model_validate_json(run.model_dump_json()) == run
 
 
@@ -119,3 +121,37 @@ def test_new_fields_roundtrip() -> None:
     assert again == run
     assert again.env_kind == "repo"
     assert again.steps[0].effects[0].canary_hits == ["CANARY"]
+
+
+def _write(directory: Path, name: str, data: dict[str, Any] | str) -> None:
+    text = data if isinstance(data, str) else json.dumps(data)
+    (directory / name).write_text(text, encoding="utf-8")
+
+
+def test_check_dir_detects_planted_problems(tmp_path: Path) -> None:
+    """検査スクリプトの検出能力。壊れた trace を数え、正常な trace を誤検出しない。"""
+    _write(tmp_path, "ok.json", _legacy_run_dict())
+    _write(tmp_path, "broken.json", "{not json")
+    _write(tmp_path, "unknown_field.json", {**_legacy_run_dict(), "surprise": 1})
+    _write(tmp_path, "coerced.json", {**_legacy_run_dict(), "seed": "7"})
+    _write(tmp_path, "new_field.json", {**_legacy_run_dict(), "env_kind": "repo"})
+    # 検査対象外
+    _write(tmp_path, "x.partial.json", "{not json")
+
+    report = _script.check_dir(tmp_path)
+
+    assert report.n_files == 5
+    assert report.load_failures == ["broken.json"]
+    assert report.roundtrip_changed == ["coerced.json", "unknown_field.json"]
+    assert report.nondefault_new_fields == ["new_field.json"]
+
+
+def test_check_dir_clean_and_empty(tmp_path: Path) -> None:
+    _write(tmp_path, "ok.json", _legacy_run_dict())
+    assert _script.main([str(tmp_path)]) == 0
+    # 0 本のときは成功にしない
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert _script.check_dir(empty).n_files == 0
+    assert _script.main([str(empty)]) == 1
+    assert _script.main([str(tmp_path / "missing")]) == 1

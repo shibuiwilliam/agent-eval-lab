@@ -18,7 +18,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from agenteval.core.schema import Run
-from agenteval.core.store import TRACE_DIR, trace_hash
+from agenteval.core.store import TRACE_DIR
 
 
 class MigrationReport(BaseModel):
@@ -39,17 +39,17 @@ class MigrationReport(BaseModel):
         )
 
 
-def _is_subset(raw: Any, dumped: Any) -> bool:
+def is_subset(raw: Any, dumped: Any) -> bool:
     """raw の持つ項目がすべて dumped に同じ値で残っているか（dumped の追加項目は許す）。"""
     if isinstance(raw, dict):
         return isinstance(dumped, dict) and all(
-            k in dumped and _is_subset(v, dumped[k]) for k, v in raw.items()
+            k in dumped and is_subset(v, dumped[k]) for k, v in raw.items()
         )
     if isinstance(raw, list):
         return (
             isinstance(dumped, list)
             and len(raw) == len(dumped)
-            and all(_is_subset(a, b) for a, b in zip(raw, dumped, strict=True))
+            and all(is_subset(a, b) for a, b in zip(raw, dumped, strict=True))
         )
     return bool(raw == dumped)
 
@@ -66,18 +66,20 @@ def check_file(path: Path) -> tuple[bool, bool, bool]:
         run = Run.model_validate_json(text)
     except Exception:  # noqa: BLE001 どんな失敗も「読めなかった」として数える
         return True, False, False
-    again = Run.model_validate_json(run.model_dump_json())
-    changed = (
-        again != run
-        or trace_hash(again) != trace_hash(run)
-        or not _is_subset(raw, json.loads(run.model_dump_json()))
-    )
+    # 旧スキーマとの一致は「元の JSON の項目が書き出し後に同じ値で残っているか」で見る。
+    # 新スキーマのモデル同士の往復比較は健全性チェックにすぎず何も検出しないので置かない。
+    # trace_hash の不変は tests/core/test_schema_v2.py のハッシュ不変テストが担保する
+    changed = not is_subset(raw, json.loads(run.model_dump_json()))
     return False, changed, _has_nondefault_new_fields(run)
 
 
 def check_dir(directory: Path) -> MigrationReport:
-    """ディレクトリ直下の *.json を全部検査する。"""
-    files = sorted(directory.glob("*.json")) if directory.exists() else []
+    """ディレクトリ直下の *.json を全部検査する。`*.partial.json` は対象外（ADR-040）。"""
+    files = (
+        sorted(p for p in directory.glob("*.json") if not p.name.endswith(".partial.json"))
+        if directory.exists()
+        else []
+    )
     load_failures: list[str] = []
     roundtrip_changed: list[str] = []
     nondefault: list[str] = []
@@ -103,6 +105,10 @@ def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     directory = Path(args[0]) if args else TRACE_DIR
     report = check_dir(directory)
+    if report.n_files == 0:
+        # 階層付きの data/coding/traces/ の親を渡すなどで「0 本で成功」になる事故を防ぐ
+        print(f"WARNING: 検査対象が 0 本: {report.directory}", file=sys.stderr)
+        return 1
     print(f"directory: {report.directory}")
     print(f"n_files: {report.n_files}")
     print(f"load_failures: {len(report.load_failures)}")
