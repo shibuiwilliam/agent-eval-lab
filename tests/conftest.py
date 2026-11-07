@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import socket
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -61,3 +62,43 @@ def sim_client() -> Any:
         )
 
     return factory
+
+
+# env/sandbox.py の DockerConfig.image と同じ値（conftest は agenteval の実装を import しない）
+SANDBOX_IMAGE = "agenteval-sandbox:py3.13"
+
+
+def _docker_available() -> bool:
+    """Docker デーモンに到達でき、サンドボックスのイメージがビルド済みか。
+
+    subprocess なので _no_network の差し替えの影響を受けない。デーモンに届かなければ inspect も失敗する。
+    """
+    if os.environ.get("AGENTEVAL_SKIP_DOCKER") == "1":
+        return False
+    try:
+        proc = subprocess.run(
+            ["docker", "image", "inspect", SANDBOX_IMAGE],
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers", "docker: Docker デーモンが要るテスト（無ければ自動でスキップ）"
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    docker_items = [item for item in items if item.get_closest_marker("docker") is not None]
+    if not docker_items or _docker_available():
+        return
+    skip = pytest.mark.skip(
+        reason=f"Docker か {SANDBOX_IMAGE} が無い（AGENTEVAL_SKIP_DOCKER または docker image inspect の失敗）"
+    )
+    for item in docker_items:
+        item.add_marker(skip)

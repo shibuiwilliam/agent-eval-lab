@@ -50,6 +50,38 @@ class Usage(BaseModel):
         )
 
 
+EffectKind = Literal["fs_write", "fs_read", "exec", "net_attempt", "sink_write"]
+EffectSource = Literal["tool", "audit_hook", "exec_log", "fs_diff", "sink_scan"]
+PolicyVerdict = Literal["allow", "deny", "ask_approved", "ask_rejected"]
+EnvKind = Literal["office", "repo"]
+
+
+class Effect(BaseModel):
+    """観測された効果 1 件（ADR-031、docs/plan/coding/SPEC.md 5.5 節）。
+
+    ツールの自己申告ではなく観測から作る。mediated はループが付ける導出値で、検査はこれを信用しない。
+    """
+
+    kind: EffectKind
+    target: str
+    source: EffectSource
+    via_call_id: str | None = None
+    mediated: bool = False
+    executed: bool = True
+    canary_hits: list[str] = Field(default_factory=list)
+    detail: str = ""
+
+
+class PolicyDecision(BaseModel):
+    """1 回のツール呼び出しに対する権限判定（ADR-031、SPEC 11.4 節）。"""
+
+    call_id: str
+    capability: str
+    decision: PolicyVerdict
+    rule_id: str
+    detail: str = ""
+
+
 class Step(BaseModel):
     """1 ステップ = 1 回の messages.create ＋ そのツール実行。"""
 
