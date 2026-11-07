@@ -193,44 +193,68 @@ def _hook_effect(event: str, args: Mapping[str, Any]) -> tuple[str, str, bool, s
     return None
 
 
+def parse_hook_effects(
+    line: str, *, current_call_id: str | None, step_call_ids: Collection[str]
+) -> list[Effect]:
+    """監査フックの 1 行を Effect の列にする。壊れた行・対象外のイベントは空。
+
+    多くのイベントは 1 件。os.link は新しい名前 dst への書き込み（detail に src を残す）と、元のファイル src の
+    読み出し相当（detail=linked_from。ハニーポットを別の名前にする試みを拾う）の 2 件。
+    via_call_id の付け替えは parse_hook_record を参照。
+    """
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return []
+    if not isinstance(record, dict):
+        return []
+    event = record.get("event")
+    args = record.get("args")
+    if not isinstance(event, str) or not isinstance(args, dict):
+        return []
+    mapped = _hook_effect(event, args)
+    if mapped is None:
+        return []
+    kind, target, executed, detail = mapped
+    extra: list[tuple[str, str, bool, str]] = []
+    if event == "os.link":
+        src = _str(args.get("src"))
+        if src is not None:
+            src_target = container_path_to_target(src)
+            detail = f"{detail}; src={src_target}"
+            extra.append(("fs_read", src_target, True, "linked_from"))
+    origin = record.get("call_id")
+    via = current_call_id
+    suffix = ""
+    if isinstance(origin, str) and origin:
+        if origin in step_call_ids:
+            via = origin
+        elif origin != current_call_id:
+            suffix = f"; origin_call={origin}"
+    return [
+        Effect(
+            kind=k,
+            target=t,
+            source="audit_hook",
+            via_call_id=via,
+            executed=ex,
+            detail=d + suffix,
+        )
+        for k, t, ex, d in [(kind, target, executed, detail), *extra]
+    ]
+
+
 def parse_hook_record(
     line: str, *, current_call_id: str | None, step_call_ids: Collection[str]
 ) -> Effect | None:
-    """監査フックの 1 行を Effect にする。壊れた行・対象外のイベントは None。
+    """監査フックの 1 行を Effect にする（複数になるイベントは先頭の 1 件）。壊れた行・対象外のイベントは None。
 
     via_call_id: 記録の call_id が同じステップの呼び出し（step_call_ids）ならそれ。
     そうでなければ（別のステップの呼び出しが残したプロセス、call_id なし）現在の呼び出し current_call_id に付け替え、
     元があれば detail に origin_call=<id> を足す。EC-O2 の参照整合性（同じステップの呼び出しを指す）を保つため。
     """
-    try:
-        record = json.loads(line)
-    except ValueError:
-        return None
-    if not isinstance(record, dict):
-        return None
-    event = record.get("event")
-    args = record.get("args")
-    if not isinstance(event, str) or not isinstance(args, dict):
-        return None
-    mapped = _hook_effect(event, args)
-    if mapped is None:
-        return None
-    kind, target, executed, detail = mapped
-    origin = record.get("call_id")
-    via = current_call_id
-    if isinstance(origin, str) and origin:
-        if origin in step_call_ids:
-            via = origin
-        elif origin != current_call_id:
-            detail = f"{detail}; origin_call={origin}"
-    return Effect(
-        kind=kind,
-        target=target,
-        source="audit_hook",
-        via_call_id=via,
-        executed=executed,
-        detail=detail,
-    )
+    found = parse_hook_effects(line, current_call_id=current_call_id, step_call_ids=step_call_ids)
+    return found[0] if found else None
 
 
 # --- ファイル差分 ------------------------------------------------------------

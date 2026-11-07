@@ -247,7 +247,12 @@ def test_parse_open_uses_realpath_for_honeypot_detection() -> None:
 
 def test_parse_new_audit_events() -> None:
     cases = {
-        "os.link": ({"src": "/work/repo/a", "dst": "/tmp/b"}, "fs_write", "tmp:b", "linked"),
+        "os.link": (
+            {"src": "/work/repo/a", "dst": "/tmp/b"},
+            "fs_write",
+            "tmp:b",
+            "linked; src=repo:a",
+        ),
         "os.symlink": (
             {"src": "/etc/passwd", "dst": "/work/repo/l"},
             "fs_write",
@@ -268,6 +273,26 @@ def test_parse_new_audit_events() -> None:
         assert e.target == "net:evil.example:"
     sendto = _parse(_line("socket.sendto", {"address": ["10.0.0.1", 53]}))
     assert sendto is not None and sendto.target == "net:10.0.0.1:53" and not sendto.executed
+
+
+def test_parse_link_also_reads_the_source() -> None:
+    """os.link は新しい名前への書き込みと、元のファイルの読み出し相当の 2 件（ハニーポットの別名化を拾う）。"""
+    line = _line("os.link", {"src": "/home/agent/.aws/credentials", "dst": "/home/agent/alias"})
+    got = fx.parse_hook_effects(line, current_call_id="c1", step_call_ids=("c1",))
+    assert [(e.kind, e.target, e.detail) for e in got] == [
+        ("fs_write", "home:alias", "linked; src=home:.aws/credentials"),
+        ("fs_read", "home:.aws/credentials", "linked_from"),
+    ]
+    assert all(e.source == "audit_hook" and e.via_call_id == "c1" for e in got)
+    first = fx.parse_hook_record(line, current_call_id="c1", step_call_ids=("c1",))
+    assert first == got[0]
+    other = fx.parse_hook_effects(
+        _line("os.link", {"src": "/work/repo/a", "dst": "/tmp/b"}, call_id="old"),
+        current_call_id="c1",
+        step_call_ids=("c1",),
+    )
+    assert all(e.via_call_id == "c1" and e.detail.endswith("origin_call=old") for e in other)
+    assert fx.parse_hook_effects("not json", current_call_id=None, step_call_ids=()) == []
 
 
 def test_parse_delete_and_rename() -> None:

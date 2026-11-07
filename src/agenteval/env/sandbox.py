@@ -14,12 +14,14 @@ import hashlib
 import os
 import posixpath
 import re
+import secrets
 import stat
 import subprocess
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from itertools import islice
 from pathlib import Path
 from types import TracebackType
 from typing import Final, Self
@@ -42,7 +44,7 @@ from agenteval.core.coding_types import (
     SandboxMounts,
 )
 from agenteval.core.schema import Effect
-from agenteval.env.effects import exec_log_effect, parse_hook_record
+from agenteval.env.effects import exec_log_effect, parse_hook_effects
 
 PAYLOAD_DIR: Final = Path(__file__).parent / "sandbox_payload"
 
@@ -70,12 +72,39 @@ FSIZE_LIMIT_BYTES: Final = (
 OUTPUT_TRUNCATED_NOTE: Final = "\n[… agenteval: {which} が {limit} バイトを超えたため打ち切った …]"
 REPORT_NAME: Final = re.compile(r"^[0-9]+\.xml$")  # reports 領域に作ってよい名前（<n>.xml）
 REPORT_SCAN_LIMIT: Final = 10_000  # reports 領域の走査で数える項目の上限
+REPORT_MAX_DEPTH: Final = (
+    32  # reports 領域の走査で降りる深さの上限（これより深いディレクトリは名前だけ記録する）
+)
+REPORT_SCAN_TRUNCATED_DETAIL: Final = "reports_scan_truncated"
+REPORT_TOO_DEEP_DETAIL: Final = "reports_too_deep"
+EXEC_TOKEN_ENV: Final = "AGENTEVAL_EXEC_TOKEN"
+# PID 1。シグナルを無視して子を回収するだけのループ。名前空間の内側からは SIGKILL もできないので、
+# エージェントが `pkill sleep` や `kill -9 -1` を実行してもコンテナは止まらない（--init の tini は殺せてしまう）
+PID1_SCRIPT: Final = 'trap "" TERM INT HUP; while :; do wait; sleep 1; done'
+# docker exec の中で動く外側のスクリプト。`$1` が秒数、残りが実行するコマンド。コマンドが終わったら、
+# この exec のトークンを環境に持つプロセス（背景に残した子・setsid した子を含む）を殺してから終了する。
+# こうしないと、背景の子が出力パイプを握ったままになり docker exec が 2 秒居座り、子も次の呼び出し以降に生き残る
+EXEC_WRAPPER: Final = (
+    't=$1; shift; timeout -k 2 "$t" "$@"; rc=$?; '
+    f'pids=$(grep -la "{EXEC_TOKEN_ENV}=${EXEC_TOKEN_ENV}" /proc/[0-9]*/environ 2>/dev/null '
+    + r"| sed -n 's#^/proc/\([0-9]*\)/environ$#\1#p'); "
+    + 'for p in $pids; do [ "$p" != "$$" ] && kill -9 "$p" 2>/dev/null; done; exit $rc'
+)
 PYTHON_ARGV0: Final = re.compile(r"^(python[0-9.]*|pytest|py\.test)$")
 HOOK_START_DETAIL: Final = "hook.start"
 HOOK_MISSING_DETAIL: Final = "hook_missing"
 HOOK_LOG_IRREGULAR_DETAIL: Final = "hook_log_not_regular"
 
 DockerRunner = Callable[..., "subprocess.CompletedProcess[str]"]
+
+
+@dataclass
+class _ReportsScan:
+    """reports 領域の走査結果。"""
+
+    seen: dict[str, tuple[int, int, int]] = field(default_factory=dict)
+    too_deep: list[str] = field(default_factory=list)
+    truncated: bool = False
 
 
 class SandboxError(RuntimeError):
@@ -215,6 +244,7 @@ class DockerExecutor:
         self._offsets: dict[Path, int] = {}
         self._irregular_logs: set[Path] = set()
         self._reports_seen: dict[str, tuple[int, int, int]] = {}
+        self._reports_deep_seen: set[str] = set()
         self.container_name = (
             CONTAINER_NAME_PREFIX + hashlib.sha256((mode + run_id).encode()).hexdigest()[:16]
         )
@@ -277,7 +307,6 @@ class DockerExecutor:
             cfg.memory,
             "--memory-swap",
             cfg.memory,
-            "--init",
             "--ulimit",
             f"fsize={cfg.fsize_bytes}:{cfg.fsize_bytes}",
             "--pids-limit",
@@ -304,7 +333,7 @@ class DockerExecutor:
         }
         for key, value in env.items():
             argv += ["-e", f"{key}={value}"]
-        argv += ["-w", CONTAINER_REPO, cfg.image, "sleep", "infinity"]
+        argv += ["-w", CONTAINER_REPO, cfg.image, "sh", "-c", PID1_SCRIPT]
         return argv
 
     def build_exec_argv(
@@ -315,18 +344,24 @@ class DockerExecutor:
         cwd: str = ".",
         call_id: str | None = None,
         env: Mapping[str, str] | None = None,
+        token: str | None = None,
     ) -> list[str]:
-        """`docker exec ...` の引数。cwd が不正なら ValueError。"""
+        """`docker exec ...` の引数。cwd が不正、argv が空なら ValueError。
+
+        コマンドは外側のスクリプト EXEC_WRAPPER（`sh -c`）の中で `timeout -k 2 <s> <argv...>` として動く。
+        token はこの exec のプロセスを見分ける印（省略すると乱数）。
+        """
         _check_argv(argv)
         rel = _check_cwd(cwd)
         workdir = CONTAINER_REPO if rel == "." else f"{CONTAINER_REPO}/{rel}"
         out = [self._config.docker_bin, "exec"]
+        out += ["-e", f"{EXEC_TOKEN_ENV}={token or secrets.token_hex(8)}"]
         if call_id is not None:
             out += ["-e", f"{CALL_ID_ENV}={call_id}"]
         for key, value in (env or {}).items():
             out += ["-e", f"{key}={value}"]
         out += ["-w", workdir, self.container_name]
-        out += ["timeout", "-k", str(KILL_GRACE_S), f"{timeout_s:g}", *argv]
+        out += ["sh", "-c", EXEC_WRAPPER, "agenteval-exec", f"{timeout_s:g}", *argv]
         return out
 
     # --- ライフサイクル --------------------------------------------------------
@@ -353,7 +388,7 @@ class DockerExecutor:
         if proc.returncode != 0:
             raise SandboxError(f"docker run が失敗した: {proc.stderr.strip()}")
         self._state = "running"
-        self._reports_seen = self._scan_reports()
+        self._reports_seen = self._scan_reports().seen
         atexit.register(self.stop)
 
     def stop(self) -> None:
@@ -516,30 +551,34 @@ class DockerExecutor:
                 continue
             self._offsets[path] = self._offsets.get(path, 0) + end + 1
             for raw in data[: end + 1].splitlines():
-                effect = parse_hook_record(
+                effects += parse_hook_effects(
                     raw.decode("utf-8", "replace"),
                     current_call_id=call_id,
                     step_call_ids=step_call_ids,
                 )
-                if effect is not None:
-                    effects.append(effect)
         return effects
 
-    def _scan_reports(self) -> dict[str, tuple[int, int, int]]:
-        """reports 領域の (種別, サイズ, mtime_ns)。想定した名前（<n>.xml の通常ファイル）は含めない。
+    def _scan_reports(self) -> _ReportsScan:
+        """reports 領域を明示スタックで走査する（深い入れ子で再帰が溢れない）。
 
-        シンボリックリンクは辿らない。エージェントが大量に作っても止まるように件数に上限を置く。
+        項目は (種別, サイズ, mtime_ns)。想定した名前（最上位の <n>.xml の通常ファイル）は含めない。
+        シンボリックリンクは辿らない。深さが REPORT_MAX_DEPTH を超えるディレクトリは中に入らず名前だけ記録し、
+        項目数が REPORT_SCAN_LIMIT に達したら打ち切る。どちらも truncated を立てる。
         """
-        seen: dict[str, tuple[int, int, int]] = {}
-
-        def walk(directory: str, prefix: str) -> None:
+        scan = _ReportsScan()
+        stack: list[tuple[str, str, int]] = [(str(self._mounts.reports), "", 0)]
+        while stack:
+            directory, prefix, depth = stack.pop()
             try:
-                entries = list(os.scandir(directory))
+                with os.scandir(directory) as it:
+                    # 巨大なディレクトリでメモリを使い切らないよう、上限を超える分は読まない
+                    entries = sorted(islice(it, REPORT_SCAN_LIMIT + 1), key=lambda e: e.name)
             except OSError:
-                return
+                continue
             for entry in entries:
-                if len(seen) >= REPORT_SCAN_LIMIT:
-                    return
+                if len(scan.seen) >= REPORT_SCAN_LIMIT:
+                    scan.truncated = True
+                    return scan
                 try:
                     st = entry.stat(follow_symlinks=False)
                 except OSError:
@@ -547,36 +586,56 @@ class DockerExecutor:
                 rel = prefix + entry.name
                 kind = stat.S_IFMT(st.st_mode)
                 if not (not prefix and kind == stat.S_IFREG and REPORT_NAME.match(entry.name)):
-                    seen[rel] = (kind, st.st_size, st.st_mtime_ns)
+                    scan.seen[rel] = (kind, st.st_size, st.st_mtime_ns)
                 if stat.S_ISDIR(st.st_mode):
-                    walk(entry.path, rel + "/")
-
-        walk(str(self._mounts.reports), "")
-        return seen
+                    if depth + 1 > REPORT_MAX_DEPTH:
+                        scan.too_deep.append(rel)
+                        scan.truncated = True
+                    else:
+                        stack.append((entry.path, rel + "/", depth + 1))
+        return scan
 
     def _reports_effects(self, call_id: str | None) -> list[Effect]:
         """reports 領域への、想定外の名前の作成・変更・削除を範囲外の効果（fs_diff）にする。
 
         reports（/var/agenteval/reports）は pytest の結果ファイル <n>.xml 用に rw でマウントしている。
         effects ディレクトリは観測の外（監査フックのログの置き場。盲点として SPEC に書く）。
+        走査が上限で打ち切られた回は、一部しか見えていないので added / deleted を出さず（走査順による誤判定を避ける）、
+        reports_scan_truncated を 1 件残す。深すぎるディレクトリは名前だけ reports_too_deep で記録する。
         """
         now = self._scan_reports()
-        before, self._reports_seen = self._reports_seen, now
+        before = self._reports_seen
         out: list[Effect] = []
-        for rel in sorted(before.keys() | now.keys()):
-            old, new = before.get(rel), now.get(rel)
+
+        def effect(rel: str, detail: str) -> Effect:
+            target = f"abs:{CONTAINER_REPORTS}/{rel}" if rel else f"abs:{CONTAINER_REPORTS}"
+            return Effect(
+                kind="fs_write", target=target, source="fs_diff", via_call_id=call_id, detail=detail
+            )
+
+        for rel in now.too_deep:
+            if rel not in self._reports_deep_seen:
+                self._reports_deep_seen.add(rel)
+                out.append(effect(rel, REPORT_TOO_DEEP_DETAIL))
+        for rel in sorted(before.keys() | now.seen.keys()):
+            old, new = before.get(rel), now.seen.get(rel)
             if old == new:
                 continue
-            change = "added" if old is None else "deleted" if new is None else "modified"
-            out.append(
-                Effect(
-                    kind="fs_write",
-                    target=f"abs:{CONTAINER_REPORTS}/{rel}",
-                    source="fs_diff",
-                    via_call_id=call_id,
-                    detail=change,
-                )
-            )
+            if old is None:
+                change = "added"
+            elif new is None:
+                change = "deleted"
+            else:
+                change = "modified"
+            if now.truncated and change != "modified":
+                continue
+            out.append(effect(rel, change))
+        if now.truncated:
+            out.append(effect("", REPORT_SCAN_TRUNCATED_DETAIL))
+            # 部分的な結果で基準を置き換えると、次の完全な走査で誤った added / deleted が出る。見えた分だけ更新する
+            self._reports_seen = {**before, **now.seen}
+        else:
+            self._reports_seen = now.seen
         return out
 
 

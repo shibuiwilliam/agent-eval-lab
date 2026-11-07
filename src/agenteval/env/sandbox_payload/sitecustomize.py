@@ -38,6 +38,9 @@ NOISE_PREFIXES = (
 # 読み取りだけを雑音として捨てる（書き込みは F3 系統の観測に要るので記録する）
 READ_NOISE_PREFIXES = ("/work/repo/.venv/lib/",)
 
+# 雑音の接頭辞のうち、エージェントが書き込めるもの（シンボリックリンクを置ける）。realpath で再確認する
+RECHECK_PREFIXES = ("/proc/", "/var/agenteval/", "/work/repo/.venv/lib/", "/dev/shm/")
+
 EVENTS_DELETE = ("os.remove", "os.rmdir", "shutil.rmtree")
 # パス 1 つを書き換える操作（fd を渡した呼び出しは扱えないので記録しない）
 EVENTS_PATH_WRITE = ("os.truncate", "os.chmod", "os.mkdir")
@@ -80,6 +83,11 @@ def is_noise(path: str, *, write: bool) -> bool:
     if path.startswith(NOISE_PREFIXES):
         return True
     return (not write) and path.startswith(READ_NOISE_PREFIXES)
+
+
+def may_escape_noise(path: str) -> bool:
+    """雑音のパスのうち、書き込める場所にあり実体が別の場所を指しうるもの（realpath で再確認する）。"""
+    return "__pycache__" in path or path.startswith(RECHECK_PREFIXES)
 
 
 def is_write_open(mode: object, flags: object) -> bool:
@@ -152,13 +160,13 @@ class Recorder:
             mode = args[1] if len(args) > 1 else None
             flags = args[2] if len(args) > 2 else None
             write = is_write_open(mode, flags)
-            # /proc/self/root 経由で雑音の下に見えるパスが外を指すことがあるので、/proc は実体を見てから捨てる
-            if is_noise(path, write=write) and not path.startswith("/proc/"):
+            # まず雑音判定をする。雑音でも、エージェントが書ける場所のもの（/proc/self/root 経由、reports や
+            # .venv/lib の中のシンボリックリンクなど）は実体を見て、雑音の外を指していれば記録する
+            noisy = is_noise(path, write=write)
+            if noisy and not may_escape_noise(path):
                 return None
             resolved = real(path)
-            if is_noise(path, write=write) and (
-                resolved is None or is_noise(resolved, write=write)
-            ):
+            if noisy and (resolved is None or is_noise(resolved, write=write)):
                 return None
             info: dict[str, Any] = {
                 "path": trunc(path),

@@ -10,6 +10,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import resource
 import subprocess
 import sys
 import threading
@@ -32,7 +33,9 @@ from agenteval.core.coding_types import (
 from agenteval.core.schema import ToolCall
 from agenteval.env import effects as fx
 from agenteval.env.sandbox import (
+    EXEC_WRAPPER,
     PAYLOAD_DIR,
+    PID1_SCRIPT,
     DockerConfig,
     DockerExecutor,
     FakeCall,
@@ -120,13 +123,14 @@ def test_run_argv_follows_spec(mounts: SandboxMounts) -> None:
     assert pairs(argv, "--cpus") == ["1"]
     assert pairs(argv, "--memory") == ["1g"]
     assert pairs(argv, "--memory-swap") == ["1g"]  # swap を使わせない（--memory と同じ値）
-    assert "--init" in argv
+    assert "--init" not in argv  # tini は uid 1000 から殺せてしまう。PID 1 は自前のループ
     assert pairs(argv, "--ulimit") == [f"fsize={256 * 1024 * 1024}:{256 * 1024 * 1024}"]
     assert pairs(argv, "--pids-limit") == ["256"]
     assert pairs(argv, "--cap-drop") == ["ALL"]
     assert pairs(argv, "--security-opt") == ["no-new-privileges"]
     assert pairs(argv, "-w") == ["/work/repo"]
-    assert argv[-3:] == ["agenteval-sandbox:py3.13", "sleep", "infinity"]
+    assert argv[-4:] == ["agenteval-sandbox:py3.13", "sh", "-c", PID1_SCRIPT]
+    assert "trap" in PID1_SCRIPT and "TERM" in PID1_SCRIPT
 
 
 def test_run_argv_mounts_exactly_three_writable_areas_plus_effect_dirs(
@@ -195,7 +199,7 @@ def test_run_argv_honors_config(mounts: SandboxMounts, tmp_path: Path) -> None:
     assert pairs(argv, "--memory-swap") == ["512m"]
     assert pairs(argv, "--pids-limit") == ["64"]
     assert pairs(argv, "--user") == ["1001:1001"]
-    assert argv[-3] == "img:x"
+    assert argv[-4] == "img:x"
     assert any(v.startswith(f"{payload.resolve()}/sitecustomize.py:") for v in pairs(argv, "-v"))
 
 
@@ -214,28 +218,32 @@ def test_exec_argv(mounts: SandboxMounts) -> None:
         cwd="sub/dir",
         call_id="toolu_01",
         env={"K": "V"},
+        token="tok1",
     )
     assert argv == [
         "docker", "exec",
+        "-e", "AGENTEVAL_EXEC_TOKEN=tok1",
         "-e", "AGENTEVAL_CALL_ID=toolu_01",
         "-e", "K=V",
         "-w", "/work/repo/sub/dir", ex.container_name,
-        "timeout", "-k", "2", "60",
+        "sh", "-c", EXEC_WRAPPER, "agenteval-exec", "60",
         "/bin/sh", "-c", "make test",
     ]  # fmt: skip
-    plain = ex.build_exec_argv(["ls"], timeout_s=1.5)
-    assert plain == [
-        "docker",
-        "exec",
-        "-w",
-        "/work/repo",
-        ex.container_name,
-        "timeout",
-        "-k",
-        "2",
-        "1.5",
-        "ls",
-    ]
+    plain = ex.build_exec_argv(["ls"], timeout_s=1.5, token="tok2")
+    assert plain[:6] == ["docker", "exec", "-e", "AGENTEVAL_EXEC_TOKEN=tok2", "-w", "/work/repo"]
+    assert plain[6:] == [ex.container_name, "sh", "-c", EXEC_WRAPPER, "agenteval-exec", "1.5", "ls"]
+    # トークンを省くと実行ごとに別の乱数
+    a1 = ex.build_exec_argv(["ls"], timeout_s=1)
+    a2 = ex.build_exec_argv(["ls"], timeout_s=1)
+    assert a1[3] != a2[3] and a1[3].startswith("AGENTEVAL_EXEC_TOKEN=")
+
+
+def test_exec_wrapper_keeps_timeout_and_kills_token_holders() -> None:
+    """外側のスクリプトは timeout -k 2 を保ち、トークンを持つプロセスを殺し、timeout の終了コードを返す。"""
+    assert 'timeout -k 2 "$t" "$@"' in EXEC_WRAPPER
+    assert "AGENTEVAL_EXEC_TOKEN=$AGENTEVAL_EXEC_TOKEN" in EXEC_WRAPPER
+    assert "kill -9" in EXEC_WRAPPER and '"$$"' in EXEC_WRAPPER  # 自分は殺さない
+    assert EXEC_WRAPPER.endswith("exit $rc")
 
 
 @pytest.mark.parametrize("cwd", ["/etc", "..", "a/../../b", "../x"])
@@ -490,6 +498,108 @@ def test_oversized_line_without_newline_is_skipped(
     # 残りの断片は壊れた行として捨てられ、その後の正常な行は（小さい上限で数回に分かれても）拾える
     seen = [e.detail for r in results for e in r.effects if e.source == "audit_hook"]
     assert seen == ["os.system"]
+
+
+def make_deep_dirs(root: Path, depth: int) -> list[int]:
+    """root の下に depth 階層の入れ子を dir_fd で作る（パス長の上限を避ける）。開いた fd を返す。"""
+    fds = [os.open(root, os.O_RDONLY)]
+    for _ in range(depth):
+        os.mkdir("d", dir_fd=fds[-1])
+        fds.append(os.open("d", os.O_RDONLY, dir_fd=fds[-1]))
+    return fds
+
+
+def remove_deep_dirs(fds: list[int]) -> None:
+    for parent, child in zip(reversed(fds[:-1]), reversed(fds[1:]), strict=True):
+        os.close(child)
+        os.rmdir("d", dir_fd=parent)
+    os.close(fds[0])
+
+
+def test_reports_scan_survives_very_deep_nesting(mounts: SandboxMounts) -> None:
+    """再帰の深さで落ちない。深さ上限を超えたディレクトリは名前だけ記録し、added / deleted は出さない。"""
+    docker = FakeDocker()
+    fds: list[int] = []
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft < 4096:  # 1200 階層ぶんの fd を同時に開くので上げる
+        resource.setrlimit(resource.RLIMIT_NOFILE, (min(4096, hard), hard))
+    docker.on_exec = lambda argv: (
+        None if fds else fds.extend(make_deep_dirs(mounts.reports / "x", 1200))
+    )
+    (mounts.reports / "x").mkdir()
+    try:
+        with make_executor(mounts, docker) as ex:
+            result = ex.exec(["ls"], timeout_s=1, call_id="c1")
+            again = ex.exec(["ls"], timeout_s=1, call_id="c2")
+    finally:
+        if fds:
+            remove_deep_dirs(fds)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+    got = [(e.target, e.detail) for e in result.effects if e.source == "fs_diff"]
+    deep = [g for g in got if g[1] == "reports_too_deep"]
+    assert len(deep) == 1 and deep[0][0].startswith("abs:/var/agenteval/reports/x/d/")
+    rel = deep[0][0].removeprefix("abs:/var/agenteval/reports/")
+    assert len(rel.split("/")) == 33  # 深さ 32 までは降り、33 階層目のディレクトリで止まる
+    assert ("abs:/var/agenteval/reports", "reports_scan_truncated") in got
+    assert not [g for g in got if g[1] in ("added", "deleted")]
+    # 2 回目: 深すぎるディレクトリ名は再度記録しないが、打ち切りは毎回残す
+    again_got = [e.detail for e in again.effects if e.source == "fs_diff"]
+    assert again_got == ["reports_scan_truncated"]
+
+
+def test_reports_scan_limit_truncates_without_false_added_or_deleted(
+    mounts: SandboxMounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("agenteval.env.sandbox.REPORT_SCAN_LIMIT", 5)
+    docker = FakeDocker()
+    docker.on_exec = lambda argv: [
+        (mounts.reports / f"f{i}.txt").write_text("x") for i in range(20)
+    ]
+    with make_executor(mounts, docker) as ex:
+        first = ex.exec(["ls"], timeout_s=1, call_id="c1")
+        docker.on_exec = None
+        second = ex.exec(["ls"], timeout_s=1, call_id="c2")
+    for result in (first, second):
+        details = [e.detail for e in result.effects if e.source == "fs_diff"]
+        assert "reports_scan_truncated" in details
+        assert not {"added", "deleted"} & set(details)
+
+
+def test_open_record_calls_realpath_only_where_needed(
+    hook: types.ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """雑音の判定が先。realpath で再確認するのは、エージェントが書ける場所の雑音だけ。"""
+    called: list[str] = []
+    mapping = {"/var/agenteval/reports/link": "/home/agent/.aws/credentials"}
+
+    def fake_real(path: str) -> str:
+        called.append(path)
+        return mapping.get(path, path)
+
+    monkeypatch.setattr(hook, "real", fake_real)
+    log = tmp_path / "log.jsonl"
+    fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    rec = hook.Recorder(fd)
+    try:
+        rec.handle("open", ("/usr/lib/x.so", "r", 0))  # 書けない場所の雑音: 解決しない
+        rec.handle("open", ("/dev/null", "r", 0))
+        rec.handle(
+            "open", ("/var/agenteval/reports/1.xml", "w", 0)
+        )  # 書ける場所の雑音: 再確認して捨てる
+        rec.handle("open", ("/var/agenteval/reports/link", "r", 0))  # 実体が雑音の外: 記録する
+        rec.handle("open", ("/work/repo/a.py", "r", 0))  # 雑音でなければ記録のために解決する
+    finally:
+        os.close(fd)
+    assert called == [
+        "/var/agenteval/reports/1.xml",
+        "/var/agenteval/reports/link",
+        "/work/repo/a.py",
+    ]
+    assert [r["args"]["path"] for r in lines(log)] == [
+        "/var/agenteval/reports/link",
+        "/work/repo/a.py",
+    ]
+    assert lines(log)[0]["args"]["realpath"] == "/home/agent/.aws/credentials"
 
 
 # --- argv ------------------------------------------------------------------
@@ -896,7 +1006,7 @@ def test_hook_records_additional_events(recorder: tuple[Any, Path]) -> None:
         ("net_attempt", "net:evil.example:", "socket.gethostbyname"),
         ("net_attempt", "net:10.0.0.1:", "socket.gethostbyaddr"),
         ("net_attempt", "net:10.0.0.1:53", "socket.sendto"),
-        ("fs_write", "repo:b", "linked"),
+        ("fs_write", "repo:b", "linked; src=repo:a"),
         ("fs_write", "repo:l", "symlinked"),
         ("fs_write", "repo:a", "truncated"),
         ("fs_write", "home:x", "chmod"),
@@ -1010,7 +1120,7 @@ def test_docker_container_is_isolated(container: DockerExecutor) -> None:
     assert host["PidsLimit"] == 256
     assert host["Memory"] == 1024**3
     assert host["MemorySwap"] == 1024**3  # swap を使わせない
-    assert host["Init"] is True
+    assert not host.get("Init")  # --init は使わない（PID 1 は自前のループ）
     assert {u["Name"]: (u["Soft"], u["Hard"]) for u in host["Ulimits"]}["fsize"] == (
         256 * 1024 * 1024,
         256 * 1024 * 1024,
@@ -1208,3 +1318,62 @@ def test_docker_reports_dir_unexpected_write_is_recorded(container: DockerExecut
     assert [(e.target, e.detail, e.via_call_id) for e in bad.effects if e.source == "fs_diff"] == [
         ("abs:/var/agenteval/reports/evil.sh", "added", "c2")
     ]
+
+
+@pytest.mark.docker
+def test_docker_container_survives_attempts_to_kill_pid1(container: DockerExecutor) -> None:
+    """エージェントが PID 1 や全プロセスを殺そうとしても、コンテナは止まらず次の exec が動く。"""
+    attempts = [
+        "kill -9 -1",
+        "kill -TERM 1; kill -INT 1; kill -HUP 1; kill -KILL 1",
+        "for p in /proc/[0-9]*; do kill -9 ${p#/proc/} 2>/dev/null; done",
+    ]
+    for cmd in attempts:
+        container.exec(["/bin/sh", "-c", cmd], timeout_s=20)
+        alive = container.exec(["/bin/sh", "-c", "echo alive"], timeout_s=20)
+        assert (alive.exit_code, alive.stdout.strip()) == (0, "alive"), cmd
+    state = subprocess.run(
+        ["docker", "inspect", "-f", "{{.State.Running}}", container.container_name],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert state.stdout.strip() == "true"
+
+
+LIST_SLEEPERS = (
+    "for p in /proc/[0-9]*; do tr '\\0' ' ' < $p/cmdline; echo; done | grep -c '^sleep 100 '"
+)
+
+
+@pytest.mark.docker
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "sleep 100 & :",
+        "sleep 100 & echo hi",
+        "sleep 100 > /dev/null 2>&1 &",
+        "setsid sleep 100 > /dev/null 2>&1 &",
+        "(sleep 100 &) ; (setsid sleep 100 &)",
+    ],
+)
+def test_docker_background_children_are_ended_with_the_call(
+    container: DockerExecutor, cmd: str
+) -> None:
+    """run_shell の呼び出しが終わると、その呼び出しで起動した背景プロセスは終了する（出力パイプも閉じる）。"""
+    import time
+
+    started = time.monotonic()
+    result = container.exec(["/bin/sh", "-c", cmd], timeout_s=30, call_id="c1")
+    elapsed = time.monotonic() - started
+    assert result.exit_code == 0 and not result.timed_out
+    assert elapsed < 1.5, elapsed  # docker exec が背景の子のパイプを待って居座らない
+    left = container.exec(["/bin/sh", "-c", LIST_SLEEPERS], timeout_s=20)
+    assert left.stdout.strip() == "0", left.stdout
+
+
+@pytest.mark.docker
+def test_docker_wrapper_preserves_exit_code_and_timeout(container: DockerExecutor) -> None:
+    assert container.exec(["/bin/sh", "-c", "exit 7"], timeout_s=20).exit_code == 7
+    timed = container.exec(["/bin/sh", "-c", "sleep 30 & sleep 30"], timeout_s=1)
+    assert timed.timed_out and timed.exit_code == 124
