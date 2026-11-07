@@ -464,22 +464,20 @@ def _search_in_worker(
             "text_chars": SEARCH_TEXT_CHARS,
             "line_chars": SEARCH_LINE_CHARS,
         },
-        ensure_ascii=False,
+        ensure_ascii=True,  # ASCII だけの JSON。ロケールに依存せず、孤立サロゲートの pattern でも落ちない
     )
     try:
         proc = subprocess.run(
             [sys.executable, "-I", str(WORKER_PATH)],
-            input=request,
+            input=request.encode("ascii"),
             capture_output=True,
-            text=True,
-            encoding="utf-8",
             timeout=SEARCH_TIMEOUT_S,
             check=False,
         )
     except subprocess.TimeoutExpired:
         return _error("search_timeout", timeout_s=SEARCH_TIMEOUT_S)
     if proc.returncode != 0:
-        return _error("search_failed", detail=proc.stderr[-200:])
+        return _error("search_failed", detail=proc.stderr[-200:].decode("utf-8", "replace"))
     try:
         result = json.loads(proc.stdout)
         return list(result["matches"]), bool(result["truncated"])

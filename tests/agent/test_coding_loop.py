@@ -8,9 +8,11 @@
 from __future__ import annotations
 
 import dataclasses
+import errno
 import json
 import os
 import shutil
+import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -627,6 +629,45 @@ def test_search_code_regex_runs_in_a_killable_worker(
     assert repo_tools.SearchCodeArgs.model_validate({"pattern": "a" * 200})
 
 
+def test_search_code_survives_lone_surrogate_pattern() -> None:
+    """孤立サロゲートの pattern でワーカーとの入出力が UnicodeEncodeError にならない（ASCII の JSON で往復する）。
+
+    引数モデルの検証は孤立サロゲートの文字列そのものを拒否する（ループでは invalid_arguments になる）が、
+    検証を通らない経路（植込みのツールなど）から渡されても、ワーカーの呼び出しで例外を出さない。
+    """
+    assert repo_tools._search_in_worker("\ud800", [("a.py", "hello\n")]) == ([], False)
+    found = repo_tools._search_in_worker("a", [("a.py", "x\ud800a\n")])
+    assert found == ([{"path": "a.py", "line": 1, "text": "x\ud800a"}], False)
+    with pytest.raises(ValidationError):
+        repo_tools.SearchCodeArgs.model_validate({"pattern": "\ud800"})
+
+
+def _available_locales() -> set[str]:
+    try:
+        proc = subprocess.run(["locale", "-a"], capture_output=True, text=True, check=False)
+    except OSError:
+        return set()
+    return set(proc.stdout.split())
+
+
+@pytest.mark.parametrize("locale_name", ["C", "ja_JP.eucJP", "en_US.ISO8859-1", "ja_JP.UTF-8"])
+def test_search_code_japanese_pattern_is_locale_independent(
+    env: RepoEnv,
+    versions: dict[str, CodingVersion],
+    monkeypatch: pytest.MonkeyPatch,
+    locale_name: str,
+) -> None:
+    """python -I は PYTHONUTF8 を無視する。ワーカーとの入出力が ASCII の JSON なので、ロケールが
+    非 UTF-8 でも日本語の検索が壊れない。ロケールが無い環境ではスキップする。"""
+    if locale_name != "C" and locale_name not in _available_locales():
+        pytest.skip(f"ロケール {locale_name} が無い")
+    monkeypatch.setenv("LC_ALL", locale_name)
+    monkeypatch.setenv("LANG", locale_name)
+    (env.layout.mounts.repo / "ja.txt").write_text("こんにちは\n世界\n", encoding="utf-8")
+    out = call_tool(env, versions["c01_baseline"], "search_code", {"pattern": "世界"})
+    assert out.payload["matches"] == [{"path": "ja.txt", "line": 2, "text": "世界"}]
+
+
 def test_edit_file_refuses_files_over_the_read_limit(
     env: RepoEnv, versions: dict[str, CodingVersion]
 ) -> None:
@@ -1140,9 +1181,26 @@ def test_auto_mode_and_client_mode_mismatch_are_rejected(
     )
 
 
+def test_non_sim_client_must_carry_the_expected_cassette_salt(
+    tmp_path: Path, versions: dict[str, CodingVersion]
+) -> None:
+    """sim 以外では、塩なし・違う塩の client を拒否する（反復のカセットが衝突するのを防ぐ）。"""
+    version = versions["c01_baseline"]
+    for salt in (None, "cd:CT-demo-001:c01_baseline:s0:r1", "other"):
+        client = LLMClient(mode="record", run_id="x", cassette_salt=salt)
+        with pytest.raises(ValueError, match="cassette_salt"):
+            run_script(tmp_path, None, version=version, mode="record", client=client)
+    # repeat と seed が塩に入る。一致すれば受け付ける（API キーが無いので予算停止になる）
+    salt = coding_cassette_salt("CT-demo-001", "c01_baseline", 7, 3)
+    client = LLMClient(mode="record", run_id="x", cassette_salt=salt)
+    with pytest.raises(BudgetExceeded):
+        run_script(tmp_path, None, version=version, mode="record", client=client, seed=7, repeat=3)
+
+
 def test_record_mode_is_live_provenance(tmp_path: Path, versions: dict[str, CodingVersion]) -> None:
     """live の実行は record（常に live）。API キーが無ければ予算停止になるが、Run は mode=live・provenance=live。"""
-    client = LLMClient(mode="record", run_id="x")
+    salt = coding_cassette_salt("CT-demo-001", "c01_baseline", 0, 0)
+    client = LLMClient(mode="record", run_id="x", cassette_salt=salt)
     with pytest.raises(BudgetExceeded):
         run_script(tmp_path, None, version=versions["c01_baseline"], mode="record", client=client)
     paths = partial_trace_paths(RUN_ID_BASE, "live", data_root=tmp_path / "data_coding")
@@ -1729,6 +1787,25 @@ def test_budget_exceeded_propagates_and_leaves_partial(
     assert len(Run.model_validate_json(retried[1].read_text(encoding="utf-8")).steps) == 1
 
 
+def test_budget_exceeded_survives_a_failing_partial_save(
+    tmp_path: Path,
+    versions: dict[str, CodingVersion],
+    fixture_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """partial の保存が OSError で失敗しても BudgetExceeded を投げ直す。失敗は例外の注記に残る。"""
+    script = gold_script(bugfix_task(), fixture_root)
+    client = LLMClient(mode="sim", run_id="x", simulator=Exploding(ScriptedAgent(script), 1))
+
+    def disk_full(*args: Any, **kwargs: Any) -> Path:
+        raise OSError(errno.ENOSPC, "ディスクが満杯")
+
+    monkeypatch.setattr(coding_loop, "save_coding_run", disk_full)
+    with pytest.raises(BudgetExceeded) as info:
+        run_script(tmp_path, None, version=versions["c01_baseline"], client=client)
+    assert any("partial の保存に失敗した" in note for note in info.value.__notes__)
+
+
 def test_budget_exceeded_on_first_call(
     tmp_path: Path, versions: dict[str, CodingVersion], fixture_root: Path
 ) -> None:
@@ -1808,6 +1885,27 @@ def test_exclusive_write_publishes_by_link_and_leaves_no_temp(tmp_path: Path) ->
     assert [p.name for p in tmp_path.iterdir()] == ["x.json"]  # 一時ファイルが残らない
     coding_store._atomic_write(target, "third")  # 排他でなければ置き換える
     assert target.read_text() == "third"
+
+
+def test_exclusive_write_falls_back_to_o_excl_without_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agenteval.core import coding_store
+
+    def no_link(src: Any, dst: Any, **kwargs: Any) -> None:
+        raise OSError(errno.ENOTSUP, "link 非対応")
+
+    monkeypatch.setattr(coding_store.os, "link", no_link)
+    target = tmp_path / "x.json"
+    coding_store._atomic_write(target, "first", exclusive=True)
+    assert target.read_text() == "first"
+    with pytest.raises(FileExistsError):
+        coding_store._atomic_write(target, "second", exclusive=True)
+    assert target.read_text() == "first"
+    assert [p.name for p in tmp_path.iterdir()] == ["x.json"]
+    # partial の連番も os.link 無しで動く
+    saved = save_coding_run(_minimal_run("cd__a"), None, partial=True, data_root=tmp_path)
+    assert saved.name == "cd__a.partial.0.json"
 
 
 def test_store_rejects_bad_inputs(tmp_path: Path) -> None:

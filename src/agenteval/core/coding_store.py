@@ -33,6 +33,20 @@ def _check_run_id(run_id: str) -> None:
         raise ValueError(f"run_id がファイル名に使えない形式: {run_id!r}")
 
 
+def _create_exclusive(path: Path, text: str) -> None:
+    """O_EXCL で新規作成して書く（既存なら FileExistsError。os.link が使えない FS 向けの代替）。"""
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        raise FileExistsError(f"既にある（上書きしない）: {path}") from None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    except BaseException:
+        path.unlink(missing_ok=True)  # 書きかけを残さない
+        raise
+
+
 def _atomic_write(path: Path, text: str, *, exclusive: bool = False) -> None:
     """一時ファイルに書いて公開する。
 
@@ -48,6 +62,9 @@ def _atomic_write(path: Path, text: str, *, exclusive: bool = False) -> None:
                 os.link(tmp, path)
             except FileExistsError:
                 raise FileExistsError(f"既にある（上書きしない）: {path}") from None
+            except OSError:
+                # os.link に対応しない FS。O_EXCL での作成（既存なら FileExistsError）に切り替える
+                _create_exclusive(path, text)
         else:
             os.replace(tmp, path)
     finally:

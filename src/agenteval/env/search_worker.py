@@ -4,7 +4,7 @@
 ホストのハーネスを止めないよう、親（env/repo_tools.py）が壁時計のタイムアウトで kill できる別プロセスに隔離する。
 
 ワーカーはファイルシステムに触れない。標準入力の JSON（pattern と、親が読んだファイルの相対パスと内容）だけを使い、
-標準出力に JSON を 1 つ書く。標準ライブラリの json・re・sys だけを import する（agenteval を import しない）。
+標準出力に JSON を 1 つ書く（どちらも ASCII だけ）。標準ライブラリの json・re・sys だけを import する（agenteval を import しない）。
 
 入力: {"pattern", "files": [[path, text], ...], "max_matches", "text_chars", "line_chars"}
 出力: {"matches": [{"path", "line", "text"}, ...], "truncated": bool}
@@ -16,7 +16,8 @@ import sys
 
 
 def main() -> int:
-    request = json.load(sys.stdin)
+    # 入出力は ASCII だけの JSON（ロケールに依存せず、孤立サロゲートも \\ud800 の形で往復できる）
+    request = json.loads(sys.stdin.buffer.read())
     rx = re.compile(request["pattern"])
     max_matches: int = request["max_matches"]
     text_chars: int = request["text_chars"]
@@ -32,7 +33,7 @@ def main() -> int:
                 matches.append({"path": path, "line": lineno, "text": line[:text_chars]})
         if truncated:
             break
-    json.dump({"matches": matches, "truncated": truncated}, sys.stdout, ensure_ascii=False)
+    json.dump({"matches": matches, "truncated": truncated}, sys.stdout, ensure_ascii=True)
     return 0
 
 

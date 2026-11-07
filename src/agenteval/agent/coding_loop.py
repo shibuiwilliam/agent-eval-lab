@@ -230,6 +230,13 @@ class _CodingRun:
             raise ValueError(
                 f"client.mode={opts.client.mode!r} と opts.mode={opts.mode!r} が食い違う（来歴の混在を防ぐ）"
             )
+        if opts.client is not None and opts.mode != "sim":
+            expected_salt = coding_cassette_salt(task.id, version.id, opts.seed, opts.repeat)
+            if opts.client.cassette_salt != expected_salt:
+                raise ValueError(
+                    f"client.cassette_salt={opts.client.cassette_salt!r} が"
+                    f" {expected_salt!r} と一致しない（塩なしの client では反復のカセットが衝突する）"
+                )
         if opts.script is not None and opts.mode != "sim":
             raise ValueError("script を渡すときは mode='sim' に限る")
         if opts.script is not None and opts.client is not None:
@@ -400,7 +407,11 @@ class _CodingRun:
             try:
                 result = self.client.create(request, step=i)
             except BudgetExceeded as exc:
-                self._save_partial(started, f"[予算停止] {exc}")
+                try:
+                    self._save_partial(started, f"[予算停止] {exc}")
+                except OSError as save_error:
+                    # 保存の失敗（ディスク満杯など）で BudgetExceeded を隠さない。失敗は例外の注記に残す
+                    exc.add_note(f"partial の保存に失敗した: {save_error!r}")
                 raise
             latency_ms = int((time.monotonic() - t0) * 1000)
             messages.append({"role": "assistant", "content": [dict(b) for b in result.content]})
