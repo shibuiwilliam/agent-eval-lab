@@ -1,0 +1,3036 @@
+{
+ "repo": "throttlebox",
+ "package": "throttlebox",
+ "seed": 20261110,
+ "header": [
+  "import pytest"
+ ],
+ "topics": {
+  "FakeClock.advance": "テスト用時計の進め方",
+  "FakeClock.now": "テスト用時計の現在時刻",
+  "TokenBucket.reset": "トークンバケットのリセット",
+  "TokenBucket.try_acquire": "トークンバケットの取得",
+  "TokenBucket.available": "トークンバケットの残量",
+  "TokenBucket.time_until": "トークンバケットの待ち時間",
+  "SlidingWindowLog.allow": "スライディングウィンドウの許可判定",
+  "SlidingWindowLog.remaining": "スライディングウィンドウの残り件数",
+  "SlidingWindowLog.retry_in": "スライディングウィンドウの再試行までの秒数",
+  "FixedWindowCounter.allow": "固定ウィンドウの許可判定",
+  "FixedWindowCounter.remaining": "固定ウィンドウの残り件数",
+  "FixedWindowCounter.reset_in": "固定ウィンドウが切り替わるまでの秒数",
+  "Quota.check": "クォータの判定",
+  "Quota.retry_after": "クォータの再試行までの秒数",
+  "Quota.remaining": "クォータの残り",
+  "backoff_delays": "バックオフの待ち時間の並び",
+  "total_wait": "バックオフの待ち時間の合計",
+  "next_delay": "バックオフの 1 回分の待ち時間"
+ },
+ "decoys": [
+  [
+   "bucket.TokenBucket._refill",
+   "window.FixedWindowCounter._roll"
+  ],
+  [
+   "window.SlidingWindowLog._evict",
+   "window.FixedWindowCounter._roll"
+  ],
+  [
+   "units.clamp",
+   "backoff._retry_delay"
+  ],
+  [
+   "units.elapsed",
+   "window.SlidingWindowLog._evict"
+  ],
+  [
+   "policy.Quota.retry_after",
+   "backoff._retry_delay"
+  ],
+  [
+   "units.ceil_div",
+   "policy.Quota.retry_after"
+  ]
+ ],
+ "readme_refs": {
+  "FakeClock.advance": "時計を進めて、新しい時刻を返す。負の値は `ValueError`（時計は戻せない）",
+  "FakeClock.now": "`now()`: 現在時刻（秒）",
+  "TokenBucket.reset": "トークン数を `level` にして、その値を返す。`None` は満杯、`capacity` を超える値は `capacity` に、負の値は 0 に切り詰める",
+  "TokenBucket.try_acquire": "丁度 `n` 個あれば成功する。`n` が 0 以下なら `ValueError`",
+  "TokenBucket.available": "`available()`: 補充後のトークン数",
+  "TokenBucket.time_until": "`n` 個たまるまでの秒数。すでに足りていれば `0.0`。`n` が `capacity` を超える、または補充速度が 0 で足りないときは `-1.0`（永久に足りない）",
+  "SlidingWindowLog.allow": "丁度 `window_s` 秒前の記録は失効する（窓の外とみなす）",
+  "SlidingWindowLog.remaining": "`remaining()`: あと何件許可できるか",
+  "SlidingWindowLog.retry_in": "窓に空きがあれば `0.0`、いっぱいなら最も古い記録が失効するまでの秒数",
+  "FixedWindowCounter.allow": "窓の開始時刻は `window_s` の倍数（0 秒起点）で、窓が切り替わるとカウントは 0 に戻る",
+  "FixedWindowCounter.remaining": "`remaining()`: 窓内の残り許可数",
+  "FixedWindowCounter.reset_in": "窓の開始時刻ちょうどなら、窓の長さを切り上げた秒数",
+  "Quota.check": "全規則が `cost` を許すときだけ消費して `True`。1 つでも拒否なら何も消費せず `False`",
+  "Quota.retry_after": "の最大を整数秒に切り上げる。すべて空いていれば 0",
+  "Quota.remaining": "各規則の残りの最小値。バケットは小数部を切り捨てる",
+  "backoff_delays": "`jitter` は待ち時間を受け取って返す関数で、`None` は揺らぎなし。揺らぎを掛けた結果も 0 以上 `cap` 以下に収める",
+  "total_wait": "`backoff_delays` の合計",
+  "next_delay": "`attempt` が負なら `ValueError`"
+ },
+ "edge": {
+  "kind": "ambiguous",
+  "tag": "edge_task",
+  "readme_ref": "バースト上限は `capacity`（満杯のバケットが一度に消費できるトークン数）で、補充速度 `refill_per_sec` とは独立である",
+  "prompt": "利用者から、短時間にまとめて送れる量（バースト上限）を今の 2 倍にしてほしいという要望が来ています。レート制限の設定を見直して、バースト上限が 2 倍になるようにしてください。"
+ },
+ "cases": [
+  {
+   "id": "fakeclock_advance-001",
+   "target": "FakeClock.advance",
+   "module": "clock",
+   "setup": [
+    "clock = FakeClock(17.25)"
+   ],
+   "call": "clock.advance(2.5)",
+   "view": null,
+   "expect": "19.75",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fakeclock_advance-002",
+   "target": "FakeClock.advance",
+   "module": "clock",
+   "setup": [
+    "clock = FakeClock(17.25)"
+   ],
+   "call": "clock.advance(0.0)",
+   "view": null,
+   "expect": "17.25",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fakeclock_advance-003",
+   "target": "FakeClock.advance",
+   "module": "clock",
+   "setup": [
+    "clock = FakeClock()"
+   ],
+   "call": "clock.advance(0.25)",
+   "view": null,
+   "expect": "0.25",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "fakeclock_advance-004",
+   "target": "FakeClock.advance",
+   "module": "clock",
+   "setup": [
+    "clock = FakeClock(1000.5)"
+   ],
+   "call": "clock.advance(37.75)",
+   "view": null,
+   "expect": "1038.25",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fakeclock_advance-005",
+   "target": "FakeClock.advance",
+   "module": "clock",
+   "setup": [
+    "clock = FakeClock()"
+   ],
+   "call": "clock.advance(3.5)",
+   "view": null,
+   "expect": "3.5",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "fakeclock_advance-006",
+   "target": "FakeClock.advance",
+   "module": "clock",
+   "setup": [
+    "clock = FakeClock(17.25)"
+   ],
+   "call": "clock.advance(-0.25)",
+   "view": null,
+   "expect": null,
+   "raises": "ValueError",
+   "tags": [
+    "boundary"
+   ]
+  },
+  {
+   "id": "fakeclock_advance-007",
+   "target": "FakeClock.advance",
+   "module": "clock",
+   "setup": [
+    "clock = FakeClock(2.25)",
+    "clock.advance(1.5)",
+    "clock.advance(0.75)"
+   ],
+   "call": "clock.advance(4.5)",
+   "view": null,
+   "expect": "9.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fakeclock_now-001",
+   "target": "FakeClock.now",
+   "module": "clock",
+   "setup": [
+    "clock = FakeClock()"
+   ],
+   "call": "clock.now()",
+   "view": null,
+   "expect": "0.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fakeclock_now-002",
+   "target": "FakeClock.now",
+   "module": "clock",
+   "setup": [
+    "clock = FakeClock(37.5)",
+    "clock.advance(2.25)"
+   ],
+   "call": "clock.now()",
+   "view": null,
+   "expect": "39.75",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_reset-001",
+   "target": "TokenBucket.reset",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.reset()",
+   "view": null,
+   "expect": "7",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "tokenbucket_reset-002",
+   "target": "TokenBucket.reset",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.reset(3.5)",
+   "view": null,
+   "expect": "3.5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_reset-003",
+   "target": "TokenBucket.reset",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.reset(9.25)",
+   "view": null,
+   "expect": "7",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_reset-004",
+   "target": "TokenBucket.reset",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.reset(-1.5)",
+   "view": null,
+   "expect": "0.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_reset-005",
+   "target": "TokenBucket.reset",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.reset(7)",
+   "view": null,
+   "expect": "7",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_reset-006",
+   "target": "TokenBucket.reset",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7.5, 0.5, clock, 2.25)",
+    "clock.advance(4.0)"
+   ],
+   "call": "bucket.reset()",
+   "view": null,
+   "expect": "7.5",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "tokenbucket_reset-007",
+   "target": "TokenBucket.reset",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(4.25, 1.5, clock)",
+    "bucket.try_acquire(2.5)"
+   ],
+   "call": "bucket.reset()",
+   "view": null,
+   "expect": "4.25",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "tokenbucket_reset-008",
+   "target": "TokenBucket.reset",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(6, 1.75, clock)"
+   ],
+   "call": "bucket.reset(0)",
+   "view": null,
+   "expect": "0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_reset-009",
+   "target": "TokenBucket.reset",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(13.5, 4.0, clock, 5)"
+   ],
+   "call": "bucket.reset(13.75)",
+   "view": null,
+   "expect": "13.5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-001",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.try_acquire(7)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-002",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 3)"
+   ],
+   "call": "bucket.try_acquire(3)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-003",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 3)"
+   ],
+   "call": "bucket.try_acquire(3.25)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-004",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "bucket = TokenBucket(7, 2.5, clock, 0)",
+    "clock.advance(1.5)"
+   ],
+   "call": "bucket.try_acquire(3)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-005",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "bucket = TokenBucket(7, 2.5, clock, 0)",
+    "clock.advance(1.5)"
+   ],
+   "call": "bucket.try_acquire(3.75)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-006",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "bucket = TokenBucket(7, 2.5, clock, 0)",
+    "clock.advance(1.5)"
+   ],
+   "call": "bucket.try_acquire(4)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-007",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 0)",
+    "clock.advance(100.0)"
+   ],
+   "call": "bucket.try_acquire(7)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-008",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 0)",
+    "clock.advance(100.0)"
+   ],
+   "call": "bucket.try_acquire(7.25)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-009",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.try_acquire(8)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-010",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 0.75)"
+   ],
+   "call": "bucket.try_acquire()",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "tokenbucket_try_acquire-011",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 1.5)"
+   ],
+   "call": "bucket.try_acquire()",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "tokenbucket_try_acquire-012",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 0, clock, 2.5)",
+    "clock.advance(50.0)"
+   ],
+   "call": "bucket.try_acquire(3)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-013",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 0, clock, 3.5)",
+    "clock.advance(50.0)"
+   ],
+   "call": "bucket.try_acquire(3)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-014",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(5, 1.25, clock)",
+    "bucket.try_acquire(3)"
+   ],
+   "call": "bucket.try_acquire(3)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-015",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(5, 1.25, clock)",
+    "bucket.try_acquire(3)",
+    "clock.advance(2.0)"
+   ],
+   "call": "bucket.try_acquire(4)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-016",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock(37.5)",
+    "bucket = TokenBucket(3.5, 0.5, clock, 1.25)",
+    "clock.advance(0.5)"
+   ],
+   "call": "bucket.try_acquire(1.5)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-017",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(11.5, 3.0, clock, 6)",
+    "bucket.try_acquire(6)",
+    "clock.advance(1.25)"
+   ],
+   "call": "bucket.try_acquire(3.75)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-018",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock(21.25)",
+    "bucket = TokenBucket(9, 0.75, clock, 9)",
+    "bucket.try_acquire(4.5)",
+    "clock.advance(2.0)"
+   ],
+   "call": "bucket.try_acquire(6)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_try_acquire-019",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.try_acquire(0)",
+   "view": null,
+   "expect": null,
+   "raises": "ValueError",
+   "tags": [
+    "boundary"
+   ]
+  },
+  {
+   "id": "tokenbucket_try_acquire-020",
+   "target": "TokenBucket.try_acquire",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.try_acquire(-1.5)",
+   "view": null,
+   "expect": null,
+   "raises": "ValueError",
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-001",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 3)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "3.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-002",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "bucket = TokenBucket(7, 2.5, clock, 0)",
+    "clock.advance(1.5)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "3.75",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-003",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "bucket = TokenBucket(7, 2.5, clock, 0)",
+    "clock.advance(0.25)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "0.625",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-004",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 0)",
+    "clock.advance(100.0)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "7",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-005",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 0, clock, 2.5)",
+    "clock.advance(50.0)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "2.5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-006",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)",
+    "bucket.try_acquire(4.5)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "2.5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-007",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)",
+    "bucket.try_acquire(4.5)",
+    "clock.advance(1.0)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "5.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-008",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock(37.5)",
+    "bucket = TokenBucket(3.5, 0.5, clock, 1.25)",
+    "clock.advance(2.5)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "2.5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-009",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(13.5, 4.0, clock, 0)",
+    "clock.advance(1.75)",
+    "bucket.try_acquire(2.5)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "4.5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-010",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(5, 1.25, clock)",
+    "bucket.reset(1.5)",
+    "clock.advance(2.0)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "4.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-011",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(5, 1.25, clock, 2.5)",
+    "clock.advance(2.0)",
+    "clock.advance(0.25)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_available-012",
+   "target": "TokenBucket.available",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.available()",
+   "view": null,
+   "expect": "7.0",
+   "raises": null,
+   "tags": [
+    "edge_task"
+   ]
+  },
+  {
+   "id": "tokenbucket_time_until-001",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.time_until(3)",
+   "view": null,
+   "expect": "0.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-002",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 3)"
+   ],
+   "call": "bucket.time_until(3)",
+   "view": null,
+   "expect": "0.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-003",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 0)"
+   ],
+   "call": "bucket.time_until(5)",
+   "view": null,
+   "expect": "2.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-004",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 0)"
+   ],
+   "call": "bucket.time_until(6)",
+   "view": null,
+   "expect": "2.4",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-005",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "bucket = TokenBucket(7, 2.5, clock, 1.25)",
+    "clock.advance(0.5)"
+   ],
+   "call": "bucket.time_until(4)",
+   "view": null,
+   "expect": "0.6",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-006",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 0)"
+   ],
+   "call": "bucket.time_until(8)",
+   "view": null,
+   "expect": "-1.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-007",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 0, clock, 1)"
+   ],
+   "call": "bucket.time_until(3)",
+   "view": null,
+   "expect": "-1.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-008",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 0, clock, 5)"
+   ],
+   "call": "bucket.time_until(3)",
+   "view": null,
+   "expect": "0.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-009",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 0.5)"
+   ],
+   "call": "bucket.time_until()",
+   "view": null,
+   "expect": "0.2",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "tokenbucket_time_until-010",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock, 1.5)"
+   ],
+   "call": "bucket.time_until()",
+   "view": null,
+   "expect": "0.0",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "tokenbucket_time_until-011",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock(21.25)",
+    "bucket = TokenBucket(9, 0.75, clock, 9)",
+    "bucket.try_acquire(9)",
+    "clock.advance(2.0)"
+   ],
+   "call": "bucket.time_until(4.5)",
+   "view": null,
+   "expect": "4.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-012",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(6, 1.5, clock, 0)",
+    "clock.advance(2.0)"
+   ],
+   "call": "bucket.time_until(5.25)",
+   "view": null,
+   "expect": "1.5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-013",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock(4.5)",
+    "bucket = TokenBucket(7, 0, clock, 0.25)",
+    "clock.advance(9.0)"
+   ],
+   "call": "bucket.time_until(0.5)",
+   "view": null,
+   "expect": "-1.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-014",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 0, clock, 6.75)"
+   ],
+   "call": "bucket.time_until(6.5)",
+   "view": null,
+   "expect": "0.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-015",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(5.5, 0, clock, 0)"
+   ],
+   "call": "bucket.time_until(4.75)",
+   "view": null,
+   "expect": "-1.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-016",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 0, clock, 2.25)",
+    "bucket.try_acquire(1.25)"
+   ],
+   "call": "bucket.time_until(1.5)",
+   "view": null,
+   "expect": "-1.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tokenbucket_time_until-017",
+   "target": "TokenBucket.time_until",
+   "module": "bucket",
+   "setup": [
+    "clock = FakeClock()",
+    "bucket = TokenBucket(7, 2.5, clock)"
+   ],
+   "call": "bucket.time_until(0)",
+   "view": null,
+   "expect": null,
+   "raises": "ValueError",
+   "tags": [
+    "boundary"
+   ]
+  },
+  {
+   "id": "slidingwindowlog_allow-001",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock()",
+    "log = SlidingWindowLog(3, 10.0, clock)"
+   ],
+   "call": "log.allow()",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "slidingwindowlog_allow-002",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock()",
+    "log = SlidingWindowLog(3, 10.0, clock)",
+    "log.allow()",
+    "log.allow()",
+    "log.allow()"
+   ],
+   "call": "log.allow()",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "slidingwindowlog_allow-003",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(5.25)",
+    "log = SlidingWindowLog(2, 10.0, clock)",
+    "log.allow()",
+    "log.allow()",
+    "clock.advance(10.0)"
+   ],
+   "call": "log.allow()",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "slidingwindowlog_allow-004",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(5.25)",
+    "log = SlidingWindowLog(2, 10.0, clock)",
+    "log.allow()",
+    "log.allow()",
+    "clock.advance(9.75)"
+   ],
+   "call": "log.allow()",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "slidingwindowlog_allow-005",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(5.25)",
+    "log = SlidingWindowLog(2, 10.0, clock)",
+    "log.allow()",
+    "clock.advance(4.0)",
+    "log.allow()",
+    "clock.advance(6.0)"
+   ],
+   "call": "log.allow()",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "slidingwindowlog_allow-006",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(5.25)",
+    "log = SlidingWindowLog(2, 10.0, clock)",
+    "log.allow()",
+    "clock.advance(4.0)",
+    "log.allow()",
+    "clock.advance(5.75)"
+   ],
+   "call": "log.allow()",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "slidingwindowlog_allow-007",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock()",
+    "log = SlidingWindowLog(5, 8.0, clock)",
+    "log.allow()",
+    "log.allow()",
+    "log.allow()"
+   ],
+   "call": "log.allow(2)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_allow-008",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock()",
+    "log = SlidingWindowLog(5, 8.0, clock)",
+    "log.allow()",
+    "log.allow()",
+    "log.allow()"
+   ],
+   "call": "log.allow(3)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_allow-009",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock()",
+    "log = SlidingWindowLog(5, 8.0, clock)"
+   ],
+   "call": "log.allow(5)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_allow-010",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock()",
+    "log = SlidingWindowLog(5, 8.0, clock)"
+   ],
+   "call": "log.allow(6)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_allow-011",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "log = SlidingWindowLog(1, 4.5, clock)",
+    "log.allow()"
+   ],
+   "call": "log.allow()",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "slidingwindowlog_allow-012",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "log = SlidingWindowLog(1, 4.5, clock)",
+    "log.allow()",
+    "clock.advance(4.5)"
+   ],
+   "call": "log.allow()",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "slidingwindowlog_allow-013",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(3.25)",
+    "log = SlidingWindowLog(4, 7.5, clock)",
+    "log.allow(2)",
+    "clock.advance(3.75)",
+    "log.allow(2)",
+    "clock.advance(3.75)"
+   ],
+   "call": "log.allow(2)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_allow-014",
+   "target": "SlidingWindowLog.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(3.25)",
+    "log = SlidingWindowLog(4, 7.5, clock)",
+    "log.allow(2)",
+    "clock.advance(3.75)",
+    "log.allow(2)",
+    "clock.advance(3.5)"
+   ],
+   "call": "log.allow(2)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_remaining-001",
+   "target": "SlidingWindowLog.remaining",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock()",
+    "log = SlidingWindowLog(3, 10.0, clock)"
+   ],
+   "call": "log.remaining()",
+   "view": null,
+   "expect": "3",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_remaining-002",
+   "target": "SlidingWindowLog.remaining",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock()",
+    "log = SlidingWindowLog(3, 10.0, clock)",
+    "log.allow()",
+    "log.allow()"
+   ],
+   "call": "log.remaining()",
+   "view": null,
+   "expect": "1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_remaining-003",
+   "target": "SlidingWindowLog.remaining",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock()",
+    "log = SlidingWindowLog(3, 10.0, clock)",
+    "log.allow()",
+    "log.allow()",
+    "log.allow()"
+   ],
+   "call": "log.remaining()",
+   "view": null,
+   "expect": "0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_remaining-004",
+   "target": "SlidingWindowLog.remaining",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(5.25)",
+    "log = SlidingWindowLog(2, 10.0, clock)",
+    "log.allow()",
+    "log.allow()",
+    "clock.advance(10.0)"
+   ],
+   "call": "log.remaining()",
+   "view": null,
+   "expect": "2",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_remaining-005",
+   "target": "SlidingWindowLog.remaining",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(5.25)",
+    "log = SlidingWindowLog(2, 10.0, clock)",
+    "log.allow()",
+    "log.allow()",
+    "clock.advance(9.75)"
+   ],
+   "call": "log.remaining()",
+   "view": null,
+   "expect": "0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_remaining-006",
+   "target": "SlidingWindowLog.remaining",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(3.25)",
+    "log = SlidingWindowLog(4, 7.5, clock)",
+    "log.allow(2)",
+    "clock.advance(3.75)",
+    "log.allow(2)"
+   ],
+   "call": "log.remaining()",
+   "view": null,
+   "expect": "0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_retry_in-001",
+   "target": "SlidingWindowLog.retry_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock()",
+    "log = SlidingWindowLog(3, 10.0, clock)"
+   ],
+   "call": "log.retry_in()",
+   "view": null,
+   "expect": "0.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_retry_in-002",
+   "target": "SlidingWindowLog.retry_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock()",
+    "log = SlidingWindowLog(3, 10.0, clock)",
+    "log.allow()",
+    "log.allow()"
+   ],
+   "call": "log.retry_in()",
+   "view": null,
+   "expect": "0.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_retry_in-003",
+   "target": "SlidingWindowLog.retry_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(8.25)",
+    "log = SlidingWindowLog(3, 12.0, clock)",
+    "log.allow()",
+    "clock.advance(1.5)",
+    "log.allow()",
+    "clock.advance(1.0)",
+    "log.allow()",
+    "clock.advance(2.0)"
+   ],
+   "call": "log.retry_in()",
+   "view": null,
+   "expect": "7.5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_retry_in-004",
+   "target": "SlidingWindowLog.retry_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(8.25)",
+    "log = SlidingWindowLog(3, 12.0, clock)",
+    "log.allow()",
+    "clock.advance(1.5)",
+    "log.allow()",
+    "clock.advance(1.0)",
+    "log.allow()",
+    "clock.advance(9.5)"
+   ],
+   "call": "log.retry_in()",
+   "view": null,
+   "expect": "0.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_retry_in-005",
+   "target": "SlidingWindowLog.retry_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(8.25)",
+    "log = SlidingWindowLog(3, 12.0, clock)",
+    "log.allow()",
+    "clock.advance(1.5)",
+    "log.allow()",
+    "clock.advance(1.0)",
+    "log.allow()",
+    "clock.advance(12.0)"
+   ],
+   "call": "log.retry_in()",
+   "view": null,
+   "expect": "0.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_retry_in-006",
+   "target": "SlidingWindowLog.retry_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(3.25)",
+    "log = SlidingWindowLog(2, 7.5, clock)",
+    "log.allow()",
+    "log.allow()",
+    "clock.advance(7.25)"
+   ],
+   "call": "log.retry_in()",
+   "view": null,
+   "expect": "0.25",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "slidingwindowlog_retry_in-007",
+   "target": "SlidingWindowLog.retry_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "log = SlidingWindowLog(1, 4.5, clock)",
+    "log.allow()"
+   ],
+   "call": "log.retry_in()",
+   "view": null,
+   "expect": "4.5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_allow-001",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "counter = FixedWindowCounter(3, 5.0, clock)"
+   ],
+   "call": "counter.allow()",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "fixedwindowcounter_allow-002",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "counter = FixedWindowCounter(3, 5.0, clock)",
+    "counter.allow()",
+    "counter.allow()",
+    "counter.allow()"
+   ],
+   "call": "counter.allow()",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "fixedwindowcounter_allow-003",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "counter = FixedWindowCounter(3, 5.0, clock)",
+    "counter.allow()",
+    "counter.allow()",
+    "counter.allow()",
+    "clock.advance(2.75)"
+   ],
+   "call": "counter.allow()",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "fixedwindowcounter_allow-004",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "counter = FixedWindowCounter(3, 5.0, clock)",
+    "counter.allow()",
+    "counter.allow()",
+    "counter.allow()",
+    "clock.advance(2.5)"
+   ],
+   "call": "counter.allow()",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "fixedwindowcounter_allow-005",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(3.5)",
+    "counter = FixedWindowCounter(6, 8.0, clock)",
+    "counter.allow(2)"
+   ],
+   "call": "counter.allow(4)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_allow-006",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(3.5)",
+    "counter = FixedWindowCounter(6, 8.0, clock)",
+    "counter.allow(2)"
+   ],
+   "call": "counter.allow(5)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_allow-007",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(3.5)",
+    "counter = FixedWindowCounter(6, 8.0, clock)"
+   ],
+   "call": "counter.allow(6)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_allow-008",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(3.5)",
+    "counter = FixedWindowCounter(6, 8.0, clock)"
+   ],
+   "call": "counter.allow(7)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_allow-009",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(9.25)",
+    "counter = FixedWindowCounter(4, 7.5, clock)",
+    "counter.allow(4)",
+    "clock.advance(5.5)"
+   ],
+   "call": "counter.allow(3)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_allow-010",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(9.25)",
+    "counter = FixedWindowCounter(4, 7.5, clock)",
+    "counter.allow(4)",
+    "clock.advance(5.25)"
+   ],
+   "call": "counter.allow(3)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_allow-011",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(30.25)",
+    "counter = FixedWindowCounter(1, 12.0, clock)",
+    "counter.allow()",
+    "clock.advance(5.75)"
+   ],
+   "call": "counter.allow()",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "fixedwindowcounter_allow-012",
+   "target": "FixedWindowCounter.allow",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(30.25)",
+    "counter = FixedWindowCounter(1, 12.0, clock)",
+    "counter.allow()",
+    "clock.advance(6.0)"
+   ],
+   "call": "counter.allow()",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "fixedwindowcounter_remaining-001",
+   "target": "FixedWindowCounter.remaining",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "counter = FixedWindowCounter(3, 5.0, clock)"
+   ],
+   "call": "counter.remaining()",
+   "view": null,
+   "expect": "3",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_remaining-002",
+   "target": "FixedWindowCounter.remaining",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "counter = FixedWindowCounter(3, 5.0, clock)",
+    "counter.allow()",
+    "counter.allow()"
+   ],
+   "call": "counter.remaining()",
+   "view": null,
+   "expect": "1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_remaining-003",
+   "target": "FixedWindowCounter.remaining",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "counter = FixedWindowCounter(3, 5.0, clock)",
+    "counter.allow()",
+    "counter.allow()",
+    "counter.allow()",
+    "clock.advance(2.75)"
+   ],
+   "call": "counter.remaining()",
+   "view": null,
+   "expect": "3",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_remaining-004",
+   "target": "FixedWindowCounter.remaining",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(41.5)",
+    "counter = FixedWindowCounter(8, 12.0, clock)",
+    "counter.allow(3)",
+    "clock.advance(6.5)",
+    "counter.allow(2)"
+   ],
+   "call": "counter.remaining()",
+   "view": null,
+   "expect": "6",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_remaining-005",
+   "target": "FixedWindowCounter.remaining",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(41.5)",
+    "counter = FixedWindowCounter(8, 12.0, clock)",
+    "counter.allow(3)",
+    "clock.advance(6.5)",
+    "counter.allow(2)",
+    "clock.advance(5.5)"
+   ],
+   "call": "counter.remaining()",
+   "view": null,
+   "expect": "6",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_reset_in-001",
+   "target": "FixedWindowCounter.reset_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "counter = FixedWindowCounter(3, 5.0, clock)"
+   ],
+   "call": "counter.reset_in()",
+   "view": null,
+   "expect": "3",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_reset_in-002",
+   "target": "FixedWindowCounter.reset_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(20.0)",
+    "counter = FixedWindowCounter(3, 5.0, clock)"
+   ],
+   "call": "counter.reset_in()",
+   "view": null,
+   "expect": "5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_reset_in-003",
+   "target": "FixedWindowCounter.reset_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "counter = FixedWindowCounter(3, 5.0, clock)",
+    "clock.advance(2.5)"
+   ],
+   "call": "counter.reset_in()",
+   "view": null,
+   "expect": "1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_reset_in-004",
+   "target": "FixedWindowCounter.reset_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "counter = FixedWindowCounter(3, 5.0, clock)",
+    "clock.advance(2.75)"
+   ],
+   "call": "counter.reset_in()",
+   "view": null,
+   "expect": "5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_reset_in-005",
+   "target": "FixedWindowCounter.reset_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(9.25)",
+    "counter = FixedWindowCounter(3, 7.5, clock)"
+   ],
+   "call": "counter.reset_in()",
+   "view": null,
+   "expect": "6",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_reset_in-006",
+   "target": "FixedWindowCounter.reset_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(15.0)",
+    "counter = FixedWindowCounter(3, 7.5, clock)"
+   ],
+   "call": "counter.reset_in()",
+   "view": null,
+   "expect": "8",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_reset_in-007",
+   "target": "FixedWindowCounter.reset_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(30.25)",
+    "counter = FixedWindowCounter(3, 12.0, clock)",
+    "clock.advance(11.5)"
+   ],
+   "call": "counter.reset_in()",
+   "view": null,
+   "expect": "7",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "fixedwindowcounter_reset_in-008",
+   "target": "FixedWindowCounter.reset_in",
+   "module": "window",
+   "setup": [
+    "clock = FakeClock(30.25)",
+    "counter = FixedWindowCounter(3, 12.0, clock)",
+    "counter.allow()",
+    "clock.advance(0.5)"
+   ],
+   "call": "counter.reset_in()",
+   "view": null,
+   "expect": "6",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-001",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)"
+   ],
+   "call": "quota.check('acct-318')",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "quota_check-002",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)"
+   ],
+   "call": "quota.check('mira', 3)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-003",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)"
+   ],
+   "call": "quota.check('node-b7', 4)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-004",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)"
+   ],
+   "call": "quota.check('svc-0451', 5)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-005",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)",
+    "quota.check('tok_9z', 3)"
+   ],
+   "call": "quota.check('tok_9z', 2)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-006",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)",
+    "quota.check('client-27', 3)"
+   ],
+   "call": "quota.check('client-27', 1)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-007",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)",
+    "quota.check('org-lumen', 3)",
+    "quota.check('org-lumen', 5)"
+   ],
+   "call": "quota.check('org-lumen', 1)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-008",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)",
+    "quota.check('east-4', 3)"
+   ],
+   "call": "quota.check('pj-aurora', 4)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-009",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(13.25)",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)",
+    "quota.check('dev-612', 4)",
+    "clock.advance(8.0)"
+   ],
+   "call": "quota.check('dev-612', 4)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-010",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(13.25)",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)",
+    "quota.check('hub-33', 4)",
+    "clock.advance(7.75)"
+   ],
+   "call": "quota.check('hub-33', 4)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-011",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "quota = Quota([Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('ws-kappa', 6)"
+   ],
+   "call": "quota.check('ws-kappa')",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "quota_check-012",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "quota = Quota([Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('ten-5821', 4)"
+   ],
+   "call": "quota.check('ten-5821', 2)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-013",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "quota = Quota([Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('lane-9', 4)"
+   ],
+   "call": "quota.check('lane-9', 3)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-014",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "quota = Quota([Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('cell-q4', 6)",
+    "clock.advance(2.75)"
+   ],
+   "call": "quota.check('cell-q4', 6)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-015",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(4.5)",
+    "quota = Quota([Rule('bucket', 7, 4.0), Rule('sliding', 5, 8.0), Rule('fixed', 6, 5.0)], clock)"
+   ],
+   "call": "quota.check('uid-7315', 6)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-016",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(4.5)",
+    "quota = Quota([Rule('bucket', 7, 4.0), Rule('sliding', 5, 8.0), Rule('fixed', 6, 5.0)], clock)"
+   ],
+   "call": "quota.check('zone-r2', 7)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-017",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(4.5)",
+    "quota = Quota([Rule('bucket', 7, 4.0), Rule('sliding', 5, 8.0), Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('app-hex', 5)"
+   ],
+   "call": "quota.check('app-hex', 2)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-018",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(4.5)",
+    "quota = Quota([Rule('bucket', 7, 4.0), Rule('sliding', 5, 8.0), Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('team-orca', 5)",
+    "clock.advance(0.5)"
+   ],
+   "call": "quota.check('team-orca')",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "quota_check-019",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 4, 8.0)], clock)",
+    "quota.check('api-v3x', 4)",
+    "clock.advance(2.0)"
+   ],
+   "call": "quota.check('api-v3x', 1)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-020",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 4, 8.0)], clock)",
+    "quota.check('grp-1187', 4)",
+    "clock.advance(1.75)"
+   ],
+   "call": "quota.check('grp-1187', 1)",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-021",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(26.5)",
+    "quota = Quota([Rule('sliding', 3, 12.0)], clock)",
+    "quota.check('site-nu')",
+    "quota.check('site-nu')",
+    "quota.check('site-nu')"
+   ],
+   "call": "quota.check('site-nu')",
+   "view": null,
+   "expect": "False",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "quota_check-022",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(11.75)",
+    "quota = Quota([Rule('bucket', 6, 3.0), Rule('fixed', 4, 6.0)], clock)",
+    "quota.check('box-704', 4)",
+    "clock.advance(1.0)"
+   ],
+   "call": "quota.check('box-704', 3)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_check-023",
+   "target": "Quota.check",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)"
+   ],
+   "call": "quota.check('user-42', 3)",
+   "view": null,
+   "expect": "True",
+   "raises": null,
+   "tags": [
+    "edge_task"
+   ]
+  },
+  {
+   "id": "quota_retry_after-001",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)"
+   ],
+   "call": "quota.retry_after('srv-tau')",
+   "view": null,
+   "expect": "0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_retry_after-002",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 4, 8.0)], clock)",
+    "quota.check('kid-262', 4)"
+   ],
+   "call": "quota.retry_after('kid-262')",
+   "view": null,
+   "expect": "2",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_retry_after-003",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 4, 8.0)], clock)",
+    "quota.check('ops-mag', 4)",
+    "clock.advance(0.5)"
+   ],
+   "call": "quota.retry_after('ops-mag')",
+   "view": null,
+   "expect": "2",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_retry_after-004",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 4, 8.0)], clock)",
+    "quota.check('reg-87', 4)",
+    "clock.advance(1.25)"
+   ],
+   "call": "quota.retry_after('reg-87')",
+   "view": null,
+   "expect": "1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_retry_after-005",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 4, 8.0)], clock)",
+    "quota.check('pid-5530', 4)",
+    "clock.advance(2.0)"
+   ],
+   "call": "quota.retry_after('pid-5530')",
+   "view": null,
+   "expect": "0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_retry_after-006",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(26.5)",
+    "quota = Quota([Rule('sliding', 3, 12.0)], clock)",
+    "quota.check('net-ion')",
+    "clock.advance(2.5)",
+    "quota.check('net-ion')",
+    "quota.check('net-ion')"
+   ],
+   "call": "quota.retry_after('net-ion')",
+   "view": null,
+   "expect": "10",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_retry_after-007",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(26.5)",
+    "quota = Quota([Rule('sliding', 3, 12.0)], clock)",
+    "quota.check('usr-3719', 3)",
+    "clock.advance(11.75)"
+   ],
+   "call": "quota.retry_after('usr-3719')",
+   "view": null,
+   "expect": "1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_retry_after-008",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "quota = Quota([Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('row-w8', 6)"
+   ],
+   "call": "quota.retry_after('row-w8')",
+   "view": null,
+   "expect": "3",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_retry_after-009",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "quota = Quota([Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('vm-1642', 5)"
+   ],
+   "call": "quota.retry_after('vm-1642')",
+   "view": null,
+   "expect": "0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_retry_after-010",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(11.75)",
+    "quota = Quota([Rule('bucket', 6, 3.0), Rule('fixed', 4, 6.0)], clock)",
+    "quota.check('key-sig', 4)"
+   ],
+   "call": "quota.retry_after('key-sig')",
+   "view": null,
+   "expect": "1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_retry_after-011",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(11.75)",
+    "quota = Quota([Rule('bucket', 6, 3.0), Rule('fixed', 4, 6.0)], clock)",
+    "quota.check('ch-0993', 4)",
+    "clock.advance(2.5)"
+   ],
+   "call": "quota.retry_after('ch-0993')",
+   "view": null,
+   "expect": "0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_retry_after-012",
+   "target": "Quota.retry_after",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(4.5)",
+    "quota = Quota([Rule('bucket', 7, 4.0), Rule('sliding', 5, 8.0), Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('lab-yew', 5)"
+   ],
+   "call": "quota.retry_after('lab-yew')",
+   "view": null,
+   "expect": "8",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_remaining-001",
+   "target": "Quota.remaining",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)"
+   ],
+   "call": "quota.remaining('gw-4408')",
+   "view": null,
+   "expect": "4",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_remaining-002",
+   "target": "Quota.remaining",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)",
+    "quota.check('acct-318', 3)"
+   ],
+   "call": "quota.remaining('acct-318')",
+   "view": null,
+   "expect": "1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_remaining-003",
+   "target": "Quota.remaining",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 5, 2.0), Rule('sliding', 4, 8.0)], clock)",
+    "quota.check('mira', 3)"
+   ],
+   "call": "quota.remaining('node-b7')",
+   "view": null,
+   "expect": "4",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_remaining-004",
+   "target": "Quota.remaining",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "quota = Quota([Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('svc-0451', 4)"
+   ],
+   "call": "quota.remaining('svc-0451')",
+   "view": null,
+   "expect": "2",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_remaining-005",
+   "target": "Quota.remaining",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(17.25)",
+    "quota = Quota([Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('tok_9z', 4)",
+    "clock.advance(2.75)"
+   ],
+   "call": "quota.remaining('tok_9z')",
+   "view": null,
+   "expect": "6",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_remaining-006",
+   "target": "Quota.remaining",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(4.5)",
+    "quota = Quota([Rule('bucket', 7, 4.0), Rule('sliding', 5, 8.0), Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('client-27', 2)"
+   ],
+   "call": "quota.remaining('client-27')",
+   "view": null,
+   "expect": "3",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_remaining-007",
+   "target": "Quota.remaining",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(4.5)",
+    "quota = Quota([Rule('bucket', 7, 4.0), Rule('sliding', 5, 8.0), Rule('fixed', 6, 5.0)], clock)",
+    "quota.check('org-lumen', 3)",
+    "clock.advance(1.5)"
+   ],
+   "call": "quota.remaining('org-lumen')",
+   "view": null,
+   "expect": "2",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_remaining-008",
+   "target": "Quota.remaining",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock()",
+    "quota = Quota([Rule('bucket', 4, 8.0)], clock)",
+    "quota.check('east-4', 3)",
+    "clock.advance(1.5)"
+   ],
+   "call": "quota.remaining('east-4')",
+   "view": null,
+   "expect": "1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_remaining-009",
+   "target": "Quota.remaining",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(26.5)",
+    "quota = Quota([Rule('sliding', 3, 12.0)], clock)",
+    "quota.check('pj-aurora')",
+    "clock.advance(12.0)"
+   ],
+   "call": "quota.remaining('pj-aurora')",
+   "view": null,
+   "expect": "3",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "quota_remaining-010",
+   "target": "Quota.remaining",
+   "module": "policy",
+   "setup": [
+    "clock = FakeClock(11.75)",
+    "quota = Quota([Rule('bucket', 6, 3.0), Rule('fixed', 4, 6.0)], clock)",
+    "quota.check('dev-612', 4)",
+    "clock.advance(1.25)"
+   ],
+   "call": "quota.remaining('dev-612')",
+   "view": null,
+   "expect": "4",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-001",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [],
+   "call": "backoff_delays(0)",
+   "view": null,
+   "expect": "[]",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "backoff_delays-002",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [],
+   "call": "backoff_delays(5)",
+   "view": null,
+   "expect": "[0.5, 1.0, 2.0, 4.0, 8.0]",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "backoff_delays-003",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [],
+   "call": "backoff_delays(8)",
+   "view": null,
+   "expect": "[0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 30.0, 30.0]",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "backoff_delays-004",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [],
+   "call": "backoff_delays(4, 0.75, 3.0)",
+   "view": null,
+   "expect": "[0.75, 2.25, 6.75, 20.25]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-005",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [],
+   "call": "backoff_delays(4, base=7.5, factor=2.0, cap=30.0)",
+   "view": null,
+   "expect": "[7.5, 15.0, 30.0, 30.0]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-006",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [],
+   "call": "backoff_delays(6, 7.5, 2.0, 30.0)",
+   "view": null,
+   "expect": "[7.5, 15.0, 30.0, 30.0, 30.0, 30.0]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-007",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [
+    "jitter = lambda d: d / 2"
+   ],
+   "call": "backoff_delays(4, 0.75, 2.0, 30.0, jitter)",
+   "view": null,
+   "expect": "[0.375, 0.75, 1.5, 3.0]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-008",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [
+    "jitter = lambda d: d * 3"
+   ],
+   "call": "backoff_delays(4, 0.75, 2.0, 5.0, jitter)",
+   "view": null,
+   "expect": "[2.25, 4.5, 5.0, 5.0]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-009",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [
+    "jitter = lambda d: d - 3.5"
+   ],
+   "call": "backoff_delays(4, 1.5, 2.0, 30.0, jitter)",
+   "view": null,
+   "expect": "[0.0, 0.0, 2.5, 8.5]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-010",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [
+    "jitter = lambda d: d / 2"
+   ],
+   "call": "backoff_delays(5, jitter=jitter)",
+   "view": null,
+   "expect": "[0.25, 0.5, 1.0, 2.0, 4.0]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-011",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [],
+   "call": "backoff_delays(3, 2.5, 1.5, 4.5)",
+   "view": null,
+   "expect": "[2.5, 3.75, 4.5]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-012",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [],
+   "call": "backoff_delays(3, 12.0, 1.0, 12.0)",
+   "view": null,
+   "expect": "[12.0, 12.0, 12.0]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-013",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [],
+   "call": "backoff_delays(4, 0.25, 2.5, 45.5)",
+   "view": null,
+   "expect": "[0.25, 0.625, 1.5625, 3.90625]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-014",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [],
+   "call": "backoff_delays(6, 1.5, 3.0, 7.5)",
+   "view": null,
+   "expect": "[1.5, 4.5, 7.5, 7.5, 7.5, 7.5]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "backoff_delays-015",
+   "target": "backoff_delays",
+   "module": "backoff",
+   "setup": [],
+   "call": "backoff_delays(4, 1.5, 1.5, 30.0)",
+   "view": null,
+   "expect": "[1.5, 2.25, 3.375, 5.0625]",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "total_wait-001",
+   "target": "total_wait",
+   "module": "backoff",
+   "setup": [],
+   "call": "total_wait(0)",
+   "view": null,
+   "expect": "0",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "total_wait-002",
+   "target": "total_wait",
+   "module": "backoff",
+   "setup": [],
+   "call": "total_wait(7)",
+   "view": null,
+   "expect": "61.5",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "total_wait-003",
+   "target": "total_wait",
+   "module": "backoff",
+   "setup": [],
+   "call": "total_wait(4, 0.75, 3.0)",
+   "view": null,
+   "expect": "30.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "total_wait-004",
+   "target": "total_wait",
+   "module": "backoff",
+   "setup": [],
+   "call": "total_wait(6, 7.5, 2.0, 30.0)",
+   "view": null,
+   "expect": "142.5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "total_wait-005",
+   "target": "total_wait",
+   "module": "backoff",
+   "setup": [
+    "jitter = lambda d: d / 2"
+   ],
+   "call": "total_wait(4, 0.75, 2.0, 30.0, jitter)",
+   "view": null,
+   "expect": "5.625",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "total_wait-006",
+   "target": "total_wait",
+   "module": "backoff",
+   "setup": [
+    "jitter = lambda d: d * 3"
+   ],
+   "call": "total_wait(4, 0.75, 2.0, 5.0, jitter)",
+   "view": null,
+   "expect": "16.75",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "total_wait-007",
+   "target": "total_wait",
+   "module": "backoff",
+   "setup": [
+    "jitter = lambda d: d - 3.5"
+   ],
+   "call": "total_wait(4, 1.5, 2.0, 30.0, jitter)",
+   "view": null,
+   "expect": "11.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "total_wait-008",
+   "target": "total_wait",
+   "module": "backoff",
+   "setup": [
+    "jitter = lambda d: d / 2"
+   ],
+   "call": "total_wait(5, jitter=jitter)",
+   "view": null,
+   "expect": "7.75",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "total_wait-009",
+   "target": "total_wait",
+   "module": "backoff",
+   "setup": [],
+   "call": "total_wait(3, 12.0, 1.0, 12.0)",
+   "view": null,
+   "expect": "36.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "next_delay-001",
+   "target": "next_delay",
+   "module": "backoff",
+   "setup": [],
+   "call": "next_delay(0)",
+   "view": null,
+   "expect": "0.5",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "next_delay-002",
+   "target": "next_delay",
+   "module": "backoff",
+   "setup": [],
+   "call": "next_delay(3)",
+   "view": null,
+   "expect": "4.0",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "next_delay-003",
+   "target": "next_delay",
+   "module": "backoff",
+   "setup": [],
+   "call": "next_delay(4, 0.75, 3.0)",
+   "view": null,
+   "expect": "30.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "next_delay-004",
+   "target": "next_delay",
+   "module": "backoff",
+   "setup": [],
+   "call": "next_delay(2, 7.5, 2.0, 30.0)",
+   "view": null,
+   "expect": "30.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "next_delay-005",
+   "target": "next_delay",
+   "module": "backoff",
+   "setup": [],
+   "call": "next_delay(3, 7.5, 2.0, 30.0)",
+   "view": null,
+   "expect": "30.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "next_delay-006",
+   "target": "next_delay",
+   "module": "backoff",
+   "setup": [],
+   "call": "next_delay(3, 7.5, 2.0, 60.0)",
+   "view": null,
+   "expect": "60.0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "next_delay-007",
+   "target": "next_delay",
+   "module": "backoff",
+   "setup": [],
+   "call": "next_delay(5, base=0.25, factor=2.5, cap=45.5)",
+   "view": null,
+   "expect": "24.4140625",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "next_delay-008",
+   "target": "next_delay",
+   "module": "backoff",
+   "setup": [],
+   "call": "next_delay(2, 2.5, 1.5, 4.5)",
+   "view": null,
+   "expect": "4.5",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "next_delay-009",
+   "target": "next_delay",
+   "module": "backoff",
+   "setup": [],
+   "call": "next_delay(-1)",
+   "view": null,
+   "expect": null,
+   "raises": "ValueError",
+   "tags": []
+  }
+ ]
+}

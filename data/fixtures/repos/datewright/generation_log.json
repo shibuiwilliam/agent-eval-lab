@@ -1,0 +1,2110 @@
+{
+ "repo": "datewright",
+ "selection_seed": 20261107,
+ "bank_size": 198,
+ "src_lines": 413,
+ "candidate_count": 205,
+ "exclusion_counts": {
+  "dynamic:not_killed": 23,
+  "keep": 182
+ },
+ "tasks": [
+  {
+   "id": "CT-datewright-001",
+   "kind": "bugfix",
+   "cid": "relative@16:52:default_value:near_days",
+   "level": "L1",
+   "route_a": "describe",
+   "k": 7,
+   "mutation_score": 0.8878
+  },
+  {
+   "id": "CT-datewright-002",
+   "kind": "bugfix",
+   "cid": "isoweek@38:17:bool_op:w0",
+   "level": "L1",
+   "route_a": "weeks_in_year",
+   "k": 5,
+   "mutation_score": 0.8878
+  },
+  {
+   "id": "CT-datewright-003",
+   "kind": "bugfix",
+   "cid": "calendar_math@13:37:off_by_one:cp",
+   "level": "L2",
+   "route_a": "weeks_in_year",
+   "k": 4,
+   "mutation_score": 0.878
+  },
+  {
+   "id": "CT-datewright-004",
+   "kind": "bugfix",
+   "cid": "calendar_math@36:31:arg_swap:02",
+   "level": "L2",
+   "route_a": "DateSpan.split_by_month",
+   "k": 23,
+   "mutation_score": 0.878
+  },
+  {
+   "id": "CT-datewright-005",
+   "kind": "bugfix",
+   "cid": "patterns@62:28:arg_swap:01",
+   "level": "L2",
+   "route_a": "describe",
+   "k": 18,
+   "mutation_score": 0.8878
+  },
+  {
+   "id": "CT-datewright-006",
+   "kind": "bugfix",
+   "cid": "calendar_math@28:32:off_by_one:cm",
+   "level": "L3",
+   "route_a": "DateSpan.split_by_month",
+   "k": 25,
+   "mutation_score": 0.878
+  },
+  {
+   "id": "CT-datewright-007",
+   "kind": "bugfix",
+   "cid": "relative@13:25:arith_op:x",
+   "level": "L3",
+   "route_a": "DateSpan.midpoint",
+   "k": 35,
+   "mutation_score": 0.8439
+  },
+  {
+   "id": "CT-datewright-008",
+   "kind": "ambiguous",
+   "cid": null,
+   "level": null,
+   "route_a": null,
+   "k": null,
+   "mutation_score": null
+  }
+ ],
+ "candidates": [
+  {
+   "cid": "business@11:23:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "business._is_weekend",
+   "lineno": 11,
+   "excluded": null,
+   "k": 19,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "business@11:26:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "business._is_weekend",
+   "lineno": 11,
+   "excluded": null,
+   "k": 17,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "business@11:26:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "business._is_weekend",
+   "lineno": 11,
+   "excluded": null,
+   "k": 19,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "business@16:4:none_guard_drop:if",
+   "operator": "none_guard_drop",
+   "function": "business.is_business_day",
+   "lineno": 16,
+   "excluded": null,
+   "k": 10,
+   "levels": []
+  },
+  {
+   "cid": "business@18:11:bool_op:not",
+   "operator": "bool_op",
+   "function": "business.is_business_day",
+   "lineno": 18,
+   "excluded": null,
+   "k": 29,
+   "levels": [
+    "L2"
+   ]
+  },
+  {
+   "cid": "business@18:30:bool_op:w0",
+   "operator": "bool_op",
+   "function": "business.is_business_day",
+   "lineno": 18,
+   "excluded": null,
+   "k": 23,
+   "levels": [
+    "L2"
+   ]
+  },
+  {
+   "cid": "business@27:14:none_guard_drop:ifexp",
+   "operator": "none_guard_drop",
+   "function": "business.add_business_days",
+   "lineno": 27,
+   "excluded": null,
+   "k": 8,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "business@28:18:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "business.add_business_days",
+   "lineno": 28,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "business@28:21:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "business.add_business_days",
+   "lineno": 28,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "business@28:21:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "business.add_business_days",
+   "lineno": 28,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "business@31:20:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "business.add_business_days",
+   "lineno": 31,
+   "excluded": null,
+   "k": 12,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "business@31:22:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "business.add_business_days",
+   "lineno": 31,
+   "excluded": null,
+   "k": 12,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "business@31:22:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "business.add_business_days",
+   "lineno": 31,
+   "excluded": null,
+   "k": 11,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "business@32:16:arith_op:aug",
+   "operator": "arith_op",
+   "function": "business.add_business_days",
+   "lineno": 32,
+   "excluded": null,
+   "k": 11,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "business@34:22:arith_op:aug",
+   "operator": "arith_op",
+   "function": "business.add_business_days",
+   "lineno": 34,
+   "excluded": null,
+   "k": 11,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "business@42:26:default_value:inclusive_end",
+   "operator": "default_value",
+   "function": "business.business_days_between",
+   "lineno": 42,
+   "excluded": null,
+   "k": 4,
+   "levels": []
+  },
+  {
+   "cid": "business@50:11:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "business.business_days_between",
+   "lineno": 50,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "business@52:41:arith_op:x",
+   "operator": "arith_op",
+   "function": "business.business_days_between",
+   "lineno": 52,
+   "excluded": null,
+   "k": 3,
+   "levels": []
+  },
+  {
+   "cid": "business@55:18:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "business.business_days_between",
+   "lineno": 55,
+   "excluded": null,
+   "k": 8,
+   "levels": []
+  },
+  {
+   "cid": "business@56:16:arith_op:aug",
+   "operator": "arith_op",
+   "function": "business.business_days_between",
+   "lineno": 56,
+   "excluded": null,
+   "k": 6,
+   "levels": []
+  },
+  {
+   "cid": "business@58:18:arith_op:aug",
+   "operator": "arith_op",
+   "function": "business.business_days_between",
+   "lineno": 58,
+   "excluded": null,
+   "k": 6,
+   "levels": []
+  },
+  {
+   "cid": "business@59:16:arith_op:x",
+   "operator": "arith_op",
+   "function": "business.business_days_between",
+   "lineno": 59,
+   "excluded": null,
+   "k": 9,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@13:18:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 13,
+   "levels": [
+    "L1",
+    "L2"
+   ]
+  },
+  {
+   "cid": "calendar_math@13:18:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 6,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "calendar_math@13:23:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 11,
+   "levels": [
+    "L1",
+    "L2"
+   ]
+  },
+  {
+   "cid": "calendar_math@13:23:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 12,
+   "levels": [
+    "L1",
+    "L2"
+   ]
+  },
+  {
+   "cid": "calendar_math@13:25:bool_op:w0",
+   "operator": "bool_op",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 15,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "calendar_math@13:37:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 3,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@13:37:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 4,
+   "levels": [
+    "L2"
+   ]
+  },
+  {
+   "cid": "calendar_math@13:44:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 3,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@13:44:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 3,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@13:46:bool_op:w0",
+   "operator": "bool_op",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 11,
+   "levels": [
+    "L1",
+    "L2"
+   ]
+  },
+  {
+   "cid": "calendar_math@13:56:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@13:56:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@13:63:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@13:63:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math.is_leap",
+   "lineno": 13,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@18:11:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math.days_in_month",
+   "lineno": 18,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@18:11:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math.days_in_month",
+   "lineno": 18,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@18:13:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "calendar_math.days_in_month",
+   "lineno": 18,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@18:22:cmp_boundary:1",
+   "operator": "cmp_boundary",
+   "function": "calendar_math.days_in_month",
+   "lineno": 18,
+   "excluded": null,
+   "k": 8,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@18:25:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math.days_in_month",
+   "lineno": 18,
+   "excluded": null,
+   "k": 8,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@18:25:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math.days_in_month",
+   "lineno": 18,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@18:7:bool_op:not",
+   "operator": "bool_op",
+   "function": "calendar_math.days_in_month",
+   "lineno": 18,
+   "excluded": null,
+   "k": 52,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@20:16:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math.days_in_month",
+   "lineno": 20,
+   "excluded": null,
+   "k": 7,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@20:16:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math.days_in_month",
+   "lineno": 20,
+   "excluded": null,
+   "k": 7,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@20:18:bool_op:w0",
+   "operator": "bool_op",
+   "function": "calendar_math.days_in_month",
+   "lineno": 20,
+   "excluded": null,
+   "k": 12,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@22:23:arith_op:x",
+   "operator": "arith_op",
+   "function": "calendar_math.days_in_month",
+   "lineno": 22,
+   "excluded": null,
+   "k": 25,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@22:25:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math.days_in_month",
+   "lineno": 22,
+   "excluded": null,
+   "k": 29,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@22:25:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math.days_in_month",
+   "lineno": 22,
+   "excluded": null,
+   "k": 24,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@27:17:arith_op:x",
+   "operator": "arith_op",
+   "function": "calendar_math._shift_month",
+   "lineno": 27,
+   "excluded": null,
+   "k": 29,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@27:19:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math._shift_month",
+   "lineno": 27,
+   "excluded": null,
+   "k": 23,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@27:19:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math._shift_month",
+   "lineno": 27,
+   "excluded": null,
+   "k": 26,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@27:22:arith_op:x",
+   "operator": "arith_op",
+   "function": "calendar_math._shift_month",
+   "lineno": 27,
+   "excluded": null,
+   "k": 20,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@27:31:arith_op:x",
+   "operator": "arith_op",
+   "function": "calendar_math._shift_month",
+   "lineno": 27,
+   "excluded": null,
+   "k": 26,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@27:33:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math._shift_month",
+   "lineno": 27,
+   "excluded": null,
+   "k": 25,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@27:33:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math._shift_month",
+   "lineno": 27,
+   "excluded": null,
+   "k": 23,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@27:36:arith_op:x",
+   "operator": "arith_op",
+   "function": "calendar_math._shift_month",
+   "lineno": 27,
+   "excluded": null,
+   "k": 22,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@28:17:arith_op:x",
+   "operator": "arith_op",
+   "function": "calendar_math._shift_month",
+   "lineno": 28,
+   "excluded": null,
+   "k": 29,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@28:20:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math._shift_month",
+   "lineno": 28,
+   "excluded": null,
+   "k": 26,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@28:20:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math._shift_month",
+   "lineno": 28,
+   "excluded": null,
+   "k": 23,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@28:32:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math._shift_month",
+   "lineno": 28,
+   "excluded": null,
+   "k": 25,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@28:32:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math._shift_month",
+   "lineno": 28,
+   "excluded": null,
+   "k": 22,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@28:35:arith_op:x",
+   "operator": "arith_op",
+   "function": "calendar_math._shift_month",
+   "lineno": 28,
+   "excluded": null,
+   "k": 25,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@28:37:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math._shift_month",
+   "lineno": 28,
+   "excluded": null,
+   "k": 23,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@28:37:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math._shift_month",
+   "lineno": 28,
+   "excluded": null,
+   "k": 25,
+   "levels": [
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@36:31:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "calendar_math.add_months",
+   "lineno": 36,
+   "excluded": null,
+   "k": 23,
+   "levels": [
+    "L1",
+    "L2"
+   ]
+  },
+  {
+   "cid": "calendar_math@36:31:arg_swap:02",
+   "operator": "arg_swap",
+   "function": "calendar_math.add_months",
+   "lineno": 36,
+   "excluded": null,
+   "k": 23,
+   "levels": [
+    "L1",
+    "L2"
+   ]
+  },
+  {
+   "cid": "calendar_math@36:39:arg_swap:12",
+   "operator": "arg_swap",
+   "function": "calendar_math.add_months",
+   "lineno": 36,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@37:29:builtin_swap:min",
+   "operator": "builtin_swap",
+   "function": "calendar_math.add_months",
+   "lineno": 37,
+   "excluded": null,
+   "k": 24,
+   "levels": [
+    "L1",
+    "L2"
+   ]
+  },
+  {
+   "cid": "calendar_math@37:54:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "calendar_math.add_months",
+   "lineno": 37,
+   "excluded": null,
+   "k": 29,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "calendar_math@42:47:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "calendar_math.last_day_of_month",
+   "lineno": 42,
+   "excluded": null,
+   "k": 10,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@47:19:arith_op:x",
+   "operator": "arith_op",
+   "function": "calendar_math.month_delta",
+   "lineno": 47,
+   "excluded": null,
+   "k": 14,
+   "levels": [
+    "L2"
+   ]
+  },
+  {
+   "cid": "calendar_math@47:29:arith_op:x",
+   "operator": "arith_op",
+   "function": "calendar_math.month_delta",
+   "lineno": 47,
+   "excluded": null,
+   "k": 10,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@47:31:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "calendar_math.month_delta",
+   "lineno": 47,
+   "excluded": null,
+   "k": 4,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@47:31:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "calendar_math.month_delta",
+   "lineno": 47,
+   "excluded": null,
+   "k": 4,
+   "levels": []
+  },
+  {
+   "cid": "calendar_math@47:34:arith_op:x",
+   "operator": "arith_op",
+   "function": "calendar_math.month_delta",
+   "lineno": 47,
+   "excluded": null,
+   "k": 10,
+   "levels": [
+    "L2",
+    "L3"
+   ]
+  },
+  {
+   "cid": "calendar_math@47:45:arith_op:x",
+   "operator": "arith_op",
+   "function": "calendar_math.month_delta",
+   "lineno": 47,
+   "excluded": null,
+   "k": 14,
+   "levels": [
+    "L2"
+   ]
+  },
+  {
+   "cid": "isoweek@13:16:arith_op:x",
+   "operator": "arith_op",
+   "function": "isoweek._week1_start",
+   "lineno": 13,
+   "excluded": null,
+   "k": 7,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@19:30:arith_op:x",
+   "operator": "arith_op",
+   "function": "isoweek.iso_week",
+   "lineno": 19,
+   "excluded": null,
+   "k": 8,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@19:32:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "isoweek.iso_week",
+   "lineno": 19,
+   "excluded": null,
+   "k": 5,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@19:32:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "isoweek.iso_week",
+   "lineno": 19,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@20:9:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "isoweek.iso_week",
+   "lineno": 20,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@21:13:arith_op:aug",
+   "operator": "arith_op",
+   "function": "isoweek.iso_week",
+   "lineno": 21,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@24:13:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "isoweek.iso_week",
+   "lineno": 24,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@25:17:arith_op:aug",
+   "operator": "arith_op",
+   "function": "isoweek.iso_week",
+   "lineno": 25,
+   "excluded": null,
+   "k": 3,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@27:20:arith_op:x",
+   "operator": "arith_op",
+   "function": "isoweek.iso_week",
+   "lineno": 27,
+   "excluded": null,
+   "k": 8,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "isoweek@27:34:arith_op:x",
+   "operator": "arith_op",
+   "function": "isoweek.iso_week",
+   "lineno": 27,
+   "excluded": null,
+   "k": 4,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@27:37:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "isoweek.iso_week",
+   "lineno": 27,
+   "excluded": null,
+   "k": 6,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@27:37:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "isoweek.iso_week",
+   "lineno": 27,
+   "excluded": null,
+   "k": 6,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@27:39:arith_op:x",
+   "operator": "arith_op",
+   "function": "isoweek.iso_week",
+   "lineno": 27,
+   "excluded": null,
+   "k": 8,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@27:41:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "isoweek.iso_week",
+   "lineno": 27,
+   "excluded": null,
+   "k": 8,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@27:41:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "isoweek.iso_week",
+   "lineno": 27,
+   "excluded": null,
+   "k": 8,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@30:45:default_value:first_weekday",
+   "operator": "default_value",
+   "function": "isoweek.week_start",
+   "lineno": 30,
+   "excluded": null,
+   "k": 7,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "isoweek@32:13:arith_op:x",
+   "operator": "arith_op",
+   "function": "isoweek.week_start",
+   "lineno": 32,
+   "excluded": null,
+   "k": 8,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "isoweek@32:43:arith_op:x",
+   "operator": "arith_op",
+   "function": "isoweek.week_start",
+   "lineno": 32,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@32:62:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "isoweek.week_start",
+   "lineno": 32,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@32:62:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "isoweek.week_start",
+   "lineno": 32,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@38:15:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "isoweek.weeks_in_year",
+   "lineno": 38,
+   "excluded": null,
+   "k": 4,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@38:15:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "isoweek.weeks_in_year",
+   "lineno": 38,
+   "excluded": null,
+   "k": 4,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "isoweek@38:17:bool_op:w0",
+   "operator": "bool_op",
+   "function": "isoweek.weeks_in_year",
+   "lineno": 38,
+   "excluded": null,
+   "k": 5,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "isoweek@38:29:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "isoweek.weeks_in_year",
+   "lineno": 38,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@38:29:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "isoweek.weeks_in_year",
+   "lineno": 38,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "isoweek@38:31:bool_op:w0",
+   "operator": "bool_op",
+   "function": "isoweek.weeks_in_year",
+   "lineno": 38,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "patterns@28:32:bool_op:w0",
+   "operator": "bool_op",
+   "function": "patterns._tokenize",
+   "lineno": 28,
+   "excluded": null,
+   "k": 30,
+   "levels": []
+  },
+  {
+   "cid": "patterns@28:46:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "patterns._tokenize",
+   "lineno": 28,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "patterns@28:49:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "patterns._tokenize",
+   "lineno": 28,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "patterns@28:49:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "patterns._tokenize",
+   "lineno": 28,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "patterns@29:36:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "patterns._tokenize",
+   "lineno": 29,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@29:36:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "patterns._tokenize",
+   "lineno": 29,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@29:38:off_by_one:sup+",
+   "operator": "off_by_one",
+   "function": "patterns._tokenize",
+   "lineno": 29,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@29:38:off_by_one:sup-",
+   "operator": "off_by_one",
+   "function": "patterns._tokenize",
+   "lineno": 29,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@30:31:bool_op:w0",
+   "operator": "bool_op",
+   "function": "patterns._tokenize",
+   "lineno": 30,
+   "excluded": null,
+   "k": 30,
+   "levels": []
+  },
+  {
+   "cid": "patterns@49:4:none_guard_drop:if",
+   "operator": "none_guard_drop",
+   "function": "patterns.format_date",
+   "lineno": 49,
+   "excluded": null,
+   "k": 16,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "patterns@58:28:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "patterns.format_date",
+   "lineno": 58,
+   "excluded": null,
+   "k": 18,
+   "levels": [
+    "L1",
+    "L2"
+   ]
+  },
+  {
+   "cid": "patterns@60:28:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "patterns.format_date",
+   "lineno": 60,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "patterns@60:37:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "patterns.format_date",
+   "lineno": 60,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "patterns@60:37:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "patterns.format_date",
+   "lineno": 60,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "patterns@62:28:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "patterns.format_date",
+   "lineno": 62,
+   "excluded": null,
+   "k": 18,
+   "levels": [
+    "L1",
+    "L2"
+   ]
+  },
+  {
+   "cid": "patterns@66:28:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "patterns.format_date",
+   "lineno": 66,
+   "excluded": null,
+   "k": 18,
+   "levels": [
+    "L1",
+    "L2"
+   ]
+  },
+  {
+   "cid": "patterns@72:28:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "patterns.format_date",
+   "lineno": 72,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "patterns@74:28:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "patterns.format_date",
+   "lineno": 74,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "patterns@85:4:none_guard_drop:if",
+   "operator": "none_guard_drop",
+   "function": "patterns.parse_date",
+   "lineno": 85,
+   "excluded": null,
+   "k": 8,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "patterns@90:18:arith_op:aug",
+   "operator": "arith_op",
+   "function": "patterns.parse_date",
+   "lineno": 90,
+   "excluded": null,
+   "k": 15,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "patterns@94:18:arith_op:aug",
+   "operator": "arith_op",
+   "function": "patterns.parse_date",
+   "lineno": 94,
+   "excluded": null,
+   "k": 15,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "patterns@96:4:none_guard_drop:if",
+   "operator": "none_guard_drop",
+   "function": "patterns.parse_date",
+   "lineno": 96,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@102:34:bool_op:w0",
+   "operator": "bool_op",
+   "function": "patterns.parse_date",
+   "lineno": 102,
+   "excluded": null,
+   "k": 3,
+   "levels": []
+  },
+  {
+   "cid": "patterns@103:15:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 103,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "patterns@103:15:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 103,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "patterns@103:20:arith_op:x",
+   "operator": "arith_op",
+   "function": "patterns.parse_date",
+   "lineno": 103,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "patterns@103:31:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "patterns.parse_date",
+   "lineno": 103,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@103:33:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 103,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@103:33:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 103,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@103:41:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 103,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@103:41:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 103,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@103:46:arith_op:x",
+   "operator": "arith_op",
+   "function": "patterns.parse_date",
+   "lineno": 103,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@104:36:bool_op:w0",
+   "operator": "bool_op",
+   "function": "patterns.parse_date",
+   "lineno": 104,
+   "excluded": null,
+   "k": 13,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "patterns@105:32:bool_op:w0",
+   "operator": "bool_op",
+   "function": "patterns.parse_date",
+   "lineno": 105,
+   "excluded": null,
+   "k": 11,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "patterns@106:11:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 106,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "patterns@106:11:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 106,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "patterns@106:13:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "patterns.parse_date",
+   "lineno": 106,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "patterns@106:22:cmp_boundary:1",
+   "operator": "cmp_boundary",
+   "function": "patterns.parse_date",
+   "lineno": 106,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "patterns@106:25:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 106,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "patterns@106:25:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 106,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "patterns@106:7:bool_op:not",
+   "operator": "bool_op",
+   "function": "patterns.parse_date",
+   "lineno": 106,
+   "excluded": null,
+   "k": 9,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "patterns@108:11:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 108,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "patterns@108:11:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "patterns.parse_date",
+   "lineno": 108,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "patterns@108:13:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "patterns.parse_date",
+   "lineno": 108,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "patterns@108:20:cmp_boundary:1",
+   "operator": "cmp_boundary",
+   "function": "patterns.parse_date",
+   "lineno": 108,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "patterns@108:37:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "patterns.parse_date",
+   "lineno": 108,
+   "excluded": null,
+   "k": 9,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "patterns@108:7:bool_op:not",
+   "operator": "bool_op",
+   "function": "patterns.parse_date",
+   "lineno": 108,
+   "excluded": null,
+   "k": 9,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "patterns@112:27:bool_op:w0",
+   "operator": "bool_op",
+   "function": "patterns.parse_date",
+   "lineno": 112,
+   "excluded": null,
+   "k": 9,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "relative@13:25:arith_op:x",
+   "operator": "arith_op",
+   "function": "relative._days_between",
+   "lineno": 13,
+   "excluded": null,
+   "k": 35,
+   "levels": [
+    "L2",
+    "L3"
+   ]
+  },
+  {
+   "cid": "relative@16:52:default_value:near_days",
+   "operator": "default_value",
+   "function": "relative.describe",
+   "lineno": 16,
+   "excluded": null,
+   "k": 7,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "relative@22:26:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "relative.describe",
+   "lineno": 22,
+   "excluded": null,
+   "k": 7,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "relative@23:16:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "relative.describe",
+   "lineno": 23,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "relative@23:16:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "relative.describe",
+   "lineno": 23,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "relative@25:16:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "relative.describe",
+   "lineno": 25,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "relative@25:16:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "relative.describe",
+   "lineno": 25,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "relative@29:17:cmp_boundary:1",
+   "operator": "cmp_boundary",
+   "function": "relative.describe",
+   "lineno": 29,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "relative@29:7:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "relative.describe",
+   "lineno": 29,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "relative@29:7:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "relative.describe",
+   "lineno": 29,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "relative@29:9:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "relative.describe",
+   "lineno": 29,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "relative@31:18:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "relative.describe",
+   "lineno": 31,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "relative@31:27:cmp_boundary:1",
+   "operator": "cmp_boundary",
+   "function": "relative.describe",
+   "lineno": 31,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "relative@31:29:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "relative.describe",
+   "lineno": 31,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "relative@31:29:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "relative.describe",
+   "lineno": 31,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "relative@41:13:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "relative.age",
+   "lineno": 41,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "relative@43:23:arith_op:x",
+   "operator": "arith_op",
+   "function": "relative.age",
+   "lineno": 43,
+   "excluded": null,
+   "k": 7,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "relative@44:31:arith_op:x",
+   "operator": "arith_op",
+   "function": "relative.age",
+   "lineno": 44,
+   "excluded": null,
+   "k": 7,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "relative@44:33:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "relative.age",
+   "lineno": 44,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "relative@44:33:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "relative.age",
+   "lineno": 44,
+   "excluded": null,
+   "k": 4,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "relative@44:37:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "relative.age",
+   "lineno": 44,
+   "excluded": null,
+   "k": 4,
+   "levels": []
+  },
+  {
+   "cid": "relative@45:14:arith_op:aug",
+   "operator": "arith_op",
+   "function": "relative.age",
+   "lineno": 45,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "spans@23:22:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "spans.DateSpan.__post_init__",
+   "lineno": 23,
+   "excluded": null,
+   "k": 5,
+   "levels": []
+  },
+  {
+   "cid": "spans@28:29:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "spans.DateSpan.days",
+   "lineno": 28,
+   "excluded": null,
+   "k": 23,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@28:51:arith_op:x",
+   "operator": "arith_op",
+   "function": "spans.DateSpan.days",
+   "lineno": 28,
+   "excluded": null,
+   "k": 21,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@28:53:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "spans.DateSpan.days",
+   "lineno": 28,
+   "excluded": null,
+   "k": 17,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@28:53:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "spans.DateSpan.days",
+   "lineno": 28,
+   "excluded": null,
+   "k": 10,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@32:26:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "spans.DateSpan.contains",
+   "lineno": 32,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "spans@32:31:cmp_boundary:1",
+   "operator": "cmp_boundary",
+   "function": "spans.DateSpan.contains",
+   "lineno": 32,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "spans@36:26:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "spans.DateSpan.overlaps",
+   "lineno": 36,
+   "excluded": "dynamic:not_killed",
+   "k": 0,
+   "levels": []
+  },
+  {
+   "cid": "spans@36:39:bool_op:w0",
+   "operator": "bool_op",
+   "function": "spans.DateSpan.overlaps",
+   "lineno": 36,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "spans@36:55:cmp_boundary:0",
+   "operator": "cmp_boundary",
+   "function": "spans.DateSpan.overlaps",
+   "lineno": 36,
+   "excluded": null,
+   "k": 2,
+   "levels": []
+  },
+  {
+   "cid": "spans@40:11:bool_op:not",
+   "operator": "bool_op",
+   "function": "spans.DateSpan.intersection",
+   "lineno": 40,
+   "excluded": null,
+   "k": 7,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@42:24:builtin_swap:max",
+   "operator": "builtin_swap",
+   "function": "spans.DateSpan.intersection",
+   "lineno": 42,
+   "excluded": null,
+   "k": 5,
+   "levels": []
+  },
+  {
+   "cid": "spans@42:54:builtin_swap:min",
+   "operator": "builtin_swap",
+   "function": "spans.DateSpan.intersection",
+   "lineno": 42,
+   "excluded": null,
+   "k": 5,
+   "levels": []
+  },
+  {
+   "cid": "spans@46:27:arg_swap:01",
+   "operator": "arg_swap",
+   "function": "spans.DateSpan.months",
+   "lineno": 46,
+   "excluded": null,
+   "k": 7,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@46:49:arith_op:x",
+   "operator": "arith_op",
+   "function": "spans.DateSpan.months",
+   "lineno": 46,
+   "excluded": null,
+   "k": 9,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@46:51:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "spans.DateSpan.months",
+   "lineno": 46,
+   "excluded": null,
+   "k": 9,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@46:51:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "spans.DateSpan.months",
+   "lineno": 46,
+   "excluded": null,
+   "k": 9,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@50:15:rounding_mode:ceil",
+   "operator": "rounding_mode",
+   "function": "spans.DateSpan.weeks",
+   "lineno": 50,
+   "excluded": null,
+   "k": 7,
+   "levels": []
+  },
+  {
+   "cid": "spans@50:37:arith_op:x",
+   "operator": "arith_op",
+   "function": "spans.DateSpan.weeks",
+   "lineno": 50,
+   "excluded": null,
+   "k": 9,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@50:39:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "spans.DateSpan.weeks",
+   "lineno": 50,
+   "excluded": null,
+   "k": 5,
+   "levels": []
+  },
+  {
+   "cid": "spans@50:39:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "spans.DateSpan.weeks",
+   "lineno": 50,
+   "excluded": null,
+   "k": 3,
+   "levels": []
+  },
+  {
+   "cid": "spans@55:26:arith_op:x",
+   "operator": "arith_op",
+   "function": "spans.DateSpan.midpoint",
+   "lineno": 55,
+   "excluded": null,
+   "k": 9,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@55:43:rounding_mode:round_floor",
+   "operator": "rounding_mode",
+   "function": "spans.DateSpan.midpoint",
+   "lineno": 55,
+   "excluded": null,
+   "k": 7,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@55:62:arith_op:x",
+   "operator": "arith_op",
+   "function": "spans.DateSpan.midpoint",
+   "lineno": 55,
+   "excluded": null,
+   "k": 3,
+   "levels": []
+  },
+  {
+   "cid": "spans@55:64:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "spans.DateSpan.midpoint",
+   "lineno": 55,
+   "excluded": null,
+   "k": 1,
+   "levels": []
+  },
+  {
+   "cid": "spans@55:64:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "spans.DateSpan.midpoint",
+   "lineno": 55,
+   "excluded": null,
+   "k": 7,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@55:67:arith_op:x",
+   "operator": "arith_op",
+   "function": "spans.DateSpan.midpoint",
+   "lineno": 55,
+   "excluded": null,
+   "k": 9,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@55:69:off_by_one:cm",
+   "operator": "off_by_one",
+   "function": "spans.DateSpan.midpoint",
+   "lineno": 55,
+   "excluded": null,
+   "k": 9,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@55:69:off_by_one:cp",
+   "operator": "off_by_one",
+   "function": "spans.DateSpan.midpoint",
+   "lineno": 55,
+   "excluded": null,
+   "k": 8,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@59:18:none_guard_drop:ifexp",
+   "operator": "none_guard_drop",
+   "function": "spans.DateSpan.business_days",
+   "lineno": 59,
+   "excluded": null,
+   "k": 4,
+   "levels": [
+    "L1"
+   ]
+  },
+  {
+   "cid": "spans@63:42:arith_op:x",
+   "operator": "arith_op",
+   "function": "spans.DateSpan.business_days",
+   "lineno": 63,
+   "excluded": null,
+   "k": 3,
+   "levels": []
+  },
+  {
+   "cid": "spans@71:19:builtin_swap:min",
+   "operator": "builtin_swap",
+   "function": "spans.DateSpan.split_by_month",
+   "lineno": 71,
+   "excluded": null,
+   "k": 6,
+   "levels": [
+    "L1"
+   ]
+  }
+ ]
+}
