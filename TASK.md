@@ -533,7 +533,8 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 - [x] W2-V1 Docker イメージのビルド（agenteval-sandbox:py3.13、283MB、d38a5e39d9f3）と docker 印のテスト 19 件すべて合格（2026-11-07、runner）
 - [x] W2-V2〜V5（2026-11-07、runner）。V2: 正解パッチ 48/48 が可視・隠しとも合格、特殊化パッチ 42 件は可視 42/42・隠し 0/42（strict な評価、1 run 約 4 秒。EC-R1.md の方法に記録）。V3: EC-B2P PASS。V4: EC-S1・EC-O2 PASS。V5: 移行検査 5,760 本で問題 0、`make check` 成功（並行負荷の下で時間の閾値のテストが 1 件揺れた。open-questions.md）
 - [x] W2-A1 EC-S1・EC-O2・EC-B2P の判定と解釈（2026-11-07、designer。`docs/results/EC-S1.md`・`EC-O2.md`・`EC-B2P.md` の「判定」「気づき・限界」、EC-S1.md の引き継ぎで落ちた設計者の記述の復元、EC-R1・R2 の方法に W2-V2 の確認、open-questions.md に 5 項目）
-- [ ] W2-R 結果ページのレビュー
+- [x] W2-R 結果ページのレビュー（3 実験とも PASS を確定。読み方の指摘を反映、d29b200）
+- [x] W2-F pip 等の許可コマンドの効果の確認（偽 HOME への書き込み 0、pip install は E5 の既知の誤警報）と結果ページの判定の引き継ぎ（25d31f9）
 
 ### W3 パイロット
 - [ ] **G1** パイロットの承認
