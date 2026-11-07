@@ -69,7 +69,7 @@ from agenteval.core.coding_types import (
     MutationSpec,
     SandboxMounts,
 )
-from agenteval.core.schema import PolicyDecision, Run, ToolCall
+from agenteval.core.schema import Effect, PolicyDecision, Run, ToolCall
 from agenteval.env import repo_tools
 from agenteval.env.injectors import FaultInjector
 from agenteval.env.repo import RepoEnv
@@ -1365,6 +1365,72 @@ def test_sandbox_error_ends_the_run_but_still_evaluates(
     assert {
         s.tool for s in outcome.tool_output_sizes
     } == set()  # 実行されなかった呼び出しは記録しない
+
+
+def test_reports_effects_are_scanned_without_crashing(
+    tmp_path: Path, versions: dict[str, CodingVersion]
+) -> None:
+    """reports 領域の abs: の効果で read_area_file が ValueError を投げない。中身はホスト側から読んで走査する。"""
+    canary = CanaryVault(key=VAULT_KEY).value(f"{RUN_ID_BASE}__sc-x", "repo_env")
+    base = make_responder()
+
+    def leaky(call: FakeCall, mounts: SandboxMounts) -> ExecResult:
+        result = base(call, mounts)
+        if call.argv[:2] == ["/bin/sh", "-c"]:
+            (mounts.reports / "note.txt").write_text(f"token {canary}", encoding="utf-8")
+            os.symlink("/etc/hostname", mounts.reports / "link.txt")
+            extra = [
+                Effect(
+                    kind="fs_write",
+                    target=f"abs:/var/agenteval/reports/{name}",
+                    source="fs_diff",
+                    via_call_id=call.call_id,
+                    detail="added",
+                )
+                for name in ("note.txt", "link.txt", "gone.txt")
+            ]
+            result = result.model_copy(update={"effects": [*result.effects, *extra]})
+        return result
+
+    factory = Factory()
+    factory.responder = leaky
+    script = Script(script_id="sc-x", steps=[single(("run_shell", {"cmd": "go"})), finish_step()])
+    run, _, _ = run_script(tmp_path, script, version=versions["c01_baseline"], factory=factory)
+    sinks = {e.detail: e for e in run.steps[0].effects if e.target == "sink:out_of_scope_file"}
+    note = sinks["abs:/var/agenteval/reports/note.txt"]
+    assert note.canary_hits == ["repo_env"]
+    # シンボリックリンクと存在しないファイルは辿らず、走査しない記録になる
+    assert sinks["abs:/var/agenteval/reports/link.txt; content_not_scanned"].canary_hits == []
+    assert sinks["abs:/var/agenteval/reports/gone.txt; content_not_scanned"].canary_hits == []
+
+
+def test_exec_hook_missing_survives_in_step_effects(
+    tmp_path: Path, versions: dict[str, CodingVersion]
+) -> None:
+    """起動記録と同じキーの hook_missing が、dedupe で消えずに Step.effects に残る。"""
+    base = make_responder()
+
+    def silent(call: FakeCall, mounts: SandboxMounts) -> ExecResult:
+        result = base(call, mounts)
+        if "pytest" in call.argv:
+            missing = Effect(
+                kind="exec",
+                target="exec:python",
+                source="exec_log",
+                via_call_id=call.call_id,
+                detail="hook_missing",
+            )
+            launch = missing.model_copy(update={"detail": ""})
+            result = result.model_copy(update={"effects": [launch, missing]})
+        return result
+
+    factory = Factory()
+    factory.responder = silent
+    script = Script(script_id="sc-x", steps=[single(("run_tests", {})), finish_step()])
+    run, _, _ = run_script(tmp_path, script, version=versions["c01_baseline"], factory=factory)
+    details = [(e.target, e.detail) for e in run.steps[0].effects if e.kind == "exec"]
+    assert ("exec:python", "hook_missing") in details
+    assert any(t == "exec:python" and d == "" for t, d in details)
 
 
 def test_custom_snapshotter_is_used(

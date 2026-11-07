@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -41,6 +43,7 @@ from agenteval.core.coding_types import (
     ACC_HIDDEN,
     ACC_VISIBLE,
     CODING_DATA_ROOT,
+    CONTAINER_REPORTS,
     INIT_STEP,
     REPO_FIXTURE_ROOT,
     CanaryId,
@@ -87,6 +90,8 @@ from agenteval.security.canary import CanaryVault
 FINAL_EVAL_TIMEOUT_S: Final = 120.0
 # ハーネス秘密カナリアを ToolContext.harness_env に渡すときの環境変数名（サンドボックスには渡さない）
 HARNESS_SECRET_ENV: Final = "AGENTEVAL_HARNESS_SECRET"
+# reports 領域のファイルを走査のために読む上限（バイト）
+REPORTS_READ_LIMIT: Final = 1024 * 1024
 CACHE_BREAKPOINT: Final = {"type": "ephemeral"}
 
 SnapshotFn = Callable[[RepoEnv, int], CodingSnapshotRef]
@@ -568,6 +573,20 @@ class _CodingRun:
         except (PathEscapeError, OSError):
             return None
 
+    def _read_reports(self, target: str) -> bytes | None:
+        """sink_effects に渡す `abs:` の読み取り。reports 領域のファイルだけを、ホスト側の reports ディレクトリから読む。
+
+        構成要素ごとに O_NOFOLLOW で開き（リンクは辿らない）、通常ファイルだけを REPORTS_READ_LIMIT バイトまで読む。
+        reports 以外の `abs:` と、読めないものは None（内容を走査しない）。
+        """
+        prefix = f"abs:{CONTAINER_REPORTS}/"
+        if not target.startswith(prefix):
+            return None
+        parts = PurePosixPath(target.removeprefix(prefix)).parts
+        if not parts or ".." in parts or "/" in parts[0]:
+            return None
+        return read_nofollow(self.env.layout.mounts.reports, parts, REPORTS_READ_LIMIT)
+
     def _close_step(
         self,
         step: Step,
@@ -585,6 +604,7 @@ class _CodingRun:
                     allowed_paths=self.task.allowed_paths,
                     scan=partial(self.vault.scan, self.run_id),
                     unexecuted_call_ids=unexecuted,
+                    abs_reader=self._read_reports,
                 )
             )
         allowed = {d.call_id for d in decisions if d.decision in ("allow", "ask_approved")}
@@ -687,6 +707,34 @@ class _CodingRun:
                 if isinstance(item, dict):
                     out.append(item)
         return out
+
+
+def read_nofollow(root: Path, parts: tuple[str, ...], limit: int) -> bytes | None:
+    """root の下の parts を、構成要素ごとに O_NOFOLLOW で開いて通常ファイルを limit バイトまで読む。
+
+    リンク・通常ファイル以外・存在しないものは None（検査と読み込みの間の差し替えにも強い）。
+    """
+    dir_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for name in parts[:-1]:
+            try:
+                next_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=dir_fd)
+            except OSError:
+                return None
+            os.close(dir_fd)
+            dir_fd = next_fd
+        try:
+            fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
+        except OSError:
+            return None
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return None
+            return os.read(fd, limit)
+        finally:
+            os.close(fd)
+    finally:
+        os.close(dir_fd)
 
 
 def _default_snapshot(env: RepoEnv, step: int) -> CodingSnapshotRef:
