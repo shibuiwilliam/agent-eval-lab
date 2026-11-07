@@ -1,6 +1,6 @@
 # TASK.md — NEW_IDEA 第 1 段（推奨 3 件）の実装・検証計画
 
-作成日: 2026-11-07　基準コミット: `b2881e8`（main）　状態: **計画（W0 完了・G0 待ち）**　改訂: 2026-11-07（W0 の突き合わせ。判断事項は `docs/plan/coding/G0.md`）
+作成日: 2026-11-07　基準コミット: `b2881e8`（main）　状態: **G0 承認済み（2026-11-07、全 15 項目を推奨案どおり）・W1 着手**　改訂: 2026-11-07（W0 の突き合わせ。判断事項は `docs/plan/coding/G0.md`）
 対象: `docs/NEW_IDEA.md` 10.4 節の推奨 3 件
 1. EC-S1 効果ベースの権限評価（EC-O2 基盤の完全性検査を含む）
 2. EC-B2 コンテキスト・コスト帰属（既存 live 軌跡での試作 EC-B2P を含む）
@@ -30,14 +30,14 @@
 | ID | 判断 | 既定の扱い（判断までの扱い） |
 |---|---|---|
 | U1 | 統合ブランチ | **決定（2026-11-07）**: `impl/coding-eval` を main から新設し、統合ブランチとタスクブランチ `task/<ID>` にコミットする。旧 `impl/new-idea` は触らない |
-| U2 | G0: ADR と 6 実験の 5 項目の承認。判断事項は `docs/plan/coding/G0.md` に 1 項目ずつまとめた | 未承認の間は実装（W1）に入らない（CLAUDE.md「5 項目を書いてユーザーに見せてから実装する」） |
+| U2 | G0: ADR と 6 実験の 5 項目の承認。判断事項は `docs/plan/coding/G0.md` に 1 項目ずつまとめた | **承認（2026-11-07）**: G0.md の 15 項目すべてを推奨案どおり承認 |
 | U3 | ROI の仮定パラメータの範囲 Θ（ADR-032） | W0 で designer が案を出した（`coding/theta.yaml`、説明は `docs/plan/coding/THETA.md`）。G0 で一緒に承認を取る。**データを見る前に固定する** |
 | U4 | G1: パイロットの live（約 106 run、名目 4.8 USD） | `--dry-run` の見積りを提示して承認を取る |
 | U5 | G2: 第 1 段の基準の確定とコーパスの live（約 356 run、名目 16 USD） | パイロット後に、確定した基準と `--dry-run` の見積りを一緒に提示して承認を取る |
 | U6 | Docker イメージの中身と作成（`python:3.13-slim` ＋ git・make・pytest・setuptools。ビルド時だけネットワークを使う。SPEC.md 5.2 節） | 中身は G0 で承認を取る（G0.md）。推奨は、W1-I2 の Dockerfile がレビューを通った時点で runner がビルドし（ビルド前にコマンドを提示）、W1 の Docker 印のテストを W1 の中で走らせること。承認がそこまで無ければ W2-V1 でビルドする |
 | U7 | サブエージェントのモデル指定 | **解決（2026-11-07）**: 別名が Opus 5.5 / Sonnet 5.5 / Haiku 5.5 に解決されることを確認した（2.2.1 節） |
-| U8 | 1 run の費用見積りと c01 の `history_cache`（K13） | G0 で判断を受ける（G0.md）。判断までは ADR-035 のとおり c01 は off のまま。6.2 節の予算の数字は変えていない |
-| U9 | 中断した run を同じ塩でやり直すときの `data/cassettes/` の上書き（ADR-038 影響） | G0 で事前承認の可否を判断する（G0.md）。承認が無ければ、やり直しのたびにユーザーに確認する |
+| U8 | 1 run の費用見積りと c01 の `history_cache`（K13） | **決定（G0 項目 13）**: c01 系を `history_cache: on` にし、EC-B2 の植込みを off にした版に入れ替える。`HarnessConfig` の既定値（false）は変えず、版の YAML で on を指定する。関連文書の修正は W0-Y（designer） |
+| U9 | 中断した run を同じ塩でやり直すときの `data/cassettes/` の上書き（ADR-038 影響） | **事前承認（G0 項目 14）**: コーディングの塩付きカセットに限る。やり直した run_id は runner が報告に列挙する |
 
 ### 0.3 着手前に確認した事実（2026-11-07、HEAD `b2881e8`）
 
@@ -478,7 +478,8 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 - [x] W0-D3 6 実験の 5 項目（`docs/results/EC-*.md`）、registry 下書き（`docs/plan/coding/registry_draft.yaml`）、Θ（`docs/plan/coding/THETA.md`、`coding/theta.yaml`）
 - [x] W0-D4 `docs/plan/coding/CONTENT.md`、`coding/prompts/{c01_baseline,c12_null,c13_minimal_fix}.md`
 - [x] W0-X 4 成果物の突き合わせ、`docs/plan/coding/G0.md`（判断事項と、反映済みの食い違いの付録）
-- [ ] **G0** ユーザー承認（`docs/plan/coding/G0.md` の判断事項）
+- [x] **G0** ユーザー承認（2026-11-07、全 15 項目を推奨案どおり）
+- [ ] W0-Y G0 項目 13 の反映（c01 系を `history_cache: on`、EC-B2 の植込みを off の版に入れ替え。designer）
 
 ### W1 実装
 - [ ] W1-A0 共有型の先行コミット（`core/coding_types.py`、`schema.py` のクラス、`econ/__init__.py`、`conftest.py`） ＋ 軽いレビュー
