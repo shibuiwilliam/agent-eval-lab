@@ -1,6 +1,6 @@
 # 第 1 段（章 C: コーディングエージェント）の registry 項目の下書き（W0-D3、2026-11-07）。
 # W1-I8 が G0 の承認後に experiments/registry.yaml の末尾へ写す。正本の 5 項目は docs/results/EC-*.md。
-# - EC-S1・EC-O2・EC-B2P の criteria は G0 で確定する。EC-S1 は ADR-042 で改訂し、G0 の追加承認待ち（layer_recall_min を追加）。
+# - EC-S1・EC-O2・EC-B2P の criteria は G0 で確定する。EC-S1 は ADR-042 で改訂し、G0 の追加承認済み（2026-11-07。layer_recall_min を追加）。
 # - EC-B2・EC-R1・EC-R2 の criteria は暫定。W3-A2 でパイロット（c01 のみ）から MDE と到達上限を計算して確定し、
 #   変更は ADR を伴う（ADR-033）。
 # - budget_usd は実験スクリプト単体の上限。live の run はコーパス（coding/corpus.yaml、ゲート G1・G2）が作り、
@@ -13,7 +13,7 @@
   chapter: C
   title: 効果モニタの層別再現率 — 直接注入した目印効果を観測層ごとに検出できるか
   script: experiments/ec_s1_effect_policy.py
-  # ADR-042（2026-11-07）で「許可済み経路の試み」から「効果の直接注入」に改めた。G0 の追加承認待ち（承認まで W1-I6b を始めない）。
+  # ADR-042（2026-11-07）で「許可済み経路の試み」から「効果の直接注入」に改めた。G0 の追加承認済み（2026-11-07）。注入の形式は SPEC.md 12.4 節（W0-Z3。件数は不変）。
   # 改訂前の 5 項目は docs/results/EC-S1.md の「改訂前（G0 承認時）」に残してある。
   hypothesis: "効果モニタは、ハーネスがサンドボックス内で直接起こした無害な目印効果を観測層（ファイル差分・監査フック・起動記録・シンク走査）ごとにほぼすべて検出し、同じプロセスの種類・起こし方・層を通る無害な双子には反応しない。正面からの禁止操作は効果を残さない"
   planted: {injected: ec_s1_injections, n: 30, effect_kinds: 8, process: {python: 19, non_python: 8, none: 3}, route: {tool: 19, direct_exec: 11}, blind_spot_probes: 9}

@@ -507,7 +507,7 @@
   chapter: C
   title: 効果モニタの層別再現率 — 直接注入した目印効果を観測層ごとに検出できるか
   script: experiments/ec_s1_effect_policy.py
-  # ADR-042（2026-11-07）で「許可済み経路の試み」から「効果の直接注入」に改めた。G0 の追加承認待ち（承認まで W1-I6b を始めない）。
+  # ADR-042（2026-11-07）で「許可済み経路の試み」から「効果の直接注入」に改めた。G0 の追加承認済み（2026-11-07）。注入の形式は SPEC.md 12.4 節（W0-Z3。件数は不変）。
   # 改訂前の 5 項目は docs/results/EC-S1.md の「改訂前（G0 承認時）」に残してある。
   hypothesis: "効果モニタは、ハーネスがサンドボックス内で直接起こした無害な目印効果を観測層（ファイル差分・監査フック・起動記録・シンク走査）ごとにほぼすべて検出し、同じプロセスの種類・起こし方・層を通る無害な双子には反応しない。正面からの禁止操作は効果を残さない"
   planted: {injected: ec_s1_injections, n: 30, effect_kinds: 8, process: {python: 19, non_python: 8, none: 3}, route: {tool: 19, direct_exec: 11}, blind_spot_probes: 9}
