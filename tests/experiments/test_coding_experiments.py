@@ -2213,7 +2213,8 @@ def test_forced_failure_overrides_passing_criteria_and_negative(
     judged = verify.judge(entry, result)
     assert judged["verdict"] == "FAIL" and "強制 FAIL" in judged["detail"]
     page = (results_dir / "EC-R1.md").read_text(encoding="utf-8")
-    assert "\n## 判定\nFAIL\n" in page
+    # 設計者の記述が無いので「### 自動判定」だけが出る
+    assert "\n## 判定\n### 自動判定\n" + common.AUTO_VERDICT_MARK + "\nFAIL\n" in page
 
 
 def test_finalize_carries_over_designer_page_and_is_idempotent(results_dir: Path) -> None:
@@ -2255,6 +2256,119 @@ def test_finalize_keeps_filled_findings_and_puts_notes_under_auto_heading(
     assert out.count("## 自動注記") == 1 and out.count("- 自動注記 A") == 1
     assert out.index("手書きの気づき") < out.index("## 自動注記") < out.index("\n---\n生成:")
     assert common.AUTO_NOTES_MARK not in out
+
+
+# 設計者が書いた実ページ（EC-S1 は付記付きの見出しを持つ）を入力に、再生成で設計者の記述が残ることを確かめる。
+# 実際の docs/results は書き換えない（tmp にコピーして、pages.RESULTS_DIR を向ける）
+DESIGNER_PAGES = ("EC-S1", "EC-O2", "EC-B2P")
+
+
+def _passing_metrics(experiment_id: str) -> dict[str, Any]:
+    """registry の基準をすべて満たす指標値（判定の中身は問わない。生成の形だけを見る）。"""
+    entry = next(e for e in verify.load_registry() if e["id"] == experiment_id)
+    step = {">=": 0, "<=": 0, "==": 0, ">": 1, "<": -1}
+    return {
+        c["metric"]: {"value": c["value"] + step[c["op"]], "provenance": "simulated"}
+        for c in entry["criteria"]
+    }
+
+
+def _without_footer(text: str) -> str:
+    """フッター（実行時刻を含む）を除いた本文。"""
+    return text.split("\n---\n生成:")[0]
+
+
+def _headed(text: str, heading: str) -> str:
+    """前方一致の見出し `## heading…` の節（見出しの行から次の `\n## ` の手前まで）。"""
+    common = _load_script("_coding_common")
+    span = common._section_span(text, heading)
+    assert span is not None, heading
+    return text[span[0] : span[1]].rstrip("\n")
+
+
+@pytest.mark.parametrize("experiment_id", DESIGNER_PAGES)
+def test_finalize_keeps_designer_verdict_five_items_method_and_findings(
+    experiment_id: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """設計者の判定・5 項目・方法・気づき・限界が再生成で残り、2 回続けて生成しても変わらない。"""
+    common = _load_script("_coding_common")
+    directory = tmp_path / "pages"
+    directory.mkdir()
+    original = (REPO_ROOT / "docs" / "results" / f"{experiment_id}.md").read_text(encoding="utf-8")
+    (directory / f"{experiment_id}.md").write_text(original, encoding="utf-8")
+    monkeypatch.setattr(pages, "RESULTS_DIR", directory)
+    for key in ("AGENTEVAL_FAILURE_TYPE", "AGENTEVAL_FAILURE_REASON"):
+        monkeypatch.delenv(key, raising=False)
+    metrics, notes = _passing_metrics(experiment_id), ["テスト用の自動注記"]
+    outputs = []
+    for _ in range(2):
+        common.finalize_coding(experiment_id, metrics, notes, seed=1, provenance="simulated")
+        outputs.append((directory / f"{experiment_id}.md").read_text(encoding="utf-8"))
+    first, second = outputs
+    # 2 回続けても変わらない（実行時刻のフッターを除く）
+    assert _without_footer(first) == _without_footer(second)
+    # 先頭ブロック（状態・原典）・5 項目・方法は、見出しの付記も含めて元のまま
+    assert first.split("\n## 5項目")[0] == original.split("\n## 5項目")[0]
+    for heading in ("5項目", "方法"):
+        assert _headed(first, heading) == _headed(original, heading)
+    # 設計者の判定は元の本文がそのまま残り、スクリプトの判定は「### 自動判定」の下に 1 つだけ
+    old_judge_body = _headed(original, "判定").split("\n", 1)[1].strip()
+    new_judge = _headed(first, "判定")
+    assert new_judge.split("\n", 1)[1].startswith(old_judge_body)
+    assert new_judge.count("### 自動判定") == 1 and first.count(common.AUTO_VERDICT_MARK) == 1
+    assert new_judge.index(old_judge_body) < new_judge.index("### 自動判定")
+    # 気づき・限界の設計者の記述は残り、スクリプトの notes は「## 自動注記」に 1 つだけ
+    old_findings = _headed(original, "気づき・限界").split("\n", 1)[1].strip()
+    new_findings = _headed(first, "気づき・限界").split("\n", 1)[1].strip()
+    assert new_findings == old_findings.split("\n## 自動注記")[0].strip()
+    assert first.count("## 自動注記") == 1 and first.count("テスト用の自動注記") == 1
+
+
+def test_designer_verdict_text_separates_designer_and_auto_paragraphs() -> None:
+    common = _load_script("_coding_common")
+    auto_only = "# t\n\n## 判定\nFAIL\n\n未達の基準: x。 強制 FAIL: y\n\n## 気づき・限界\n"
+    assert common.designer_verdict_text(auto_only) == ""
+    assert common.designer_verdict_text("## 判定\n（未実施）\n\n## 気づき・限界\n") == ""
+    assert common.designer_verdict_text("## 判定\nPASS\n\n全基準を満たした。\n\n## x\n") == ""
+    designer = "## 判定\nPASS\n\n全基準を満たした（来歴: simulated）。\n\n## x\n"
+    assert common.designer_verdict_text(designer).endswith("来歴: simulated）。")
+    # 見出しに付記があっても拾う。「### 自動判定」より前が設計者の記述
+    annotated = (
+        "## 判定（W2-A1）\n設計者の所見。\n\n### 自動判定\n"
+        + common.AUTO_VERDICT_MARK
+        + "\nPASS\n\n## x\n"
+    )
+    assert common.designer_verdict_text(annotated) == "設計者の所見。"
+
+
+def test_headings_with_annotations_are_matched_by_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「## 5項目（改訂、…）」「## 方法（改訂、…）」のような付記付きの見出しも取りこぼさない（W2-A1 の再発防止）。"""
+    common = _load_script("_coding_common")
+    directory = tmp_path / "pages"
+    directory.mkdir()
+    old = (
+        "# EC-R1 t\n\n状態: 設計者の先頭ブロック\n\n## 5項目（改訂、ADR-999）\n- 仮説: 設計者の記述\n\n"
+        "## 方法（改訂、ADR-999）\n設計者の方法\n\n## 結果\n（未実施）\n\n## 判定（所見）\n設計者の判定\n\n"
+        "## 気づき・限界（W2）\n設計者の気づき\n\n---\n生成: x\n"
+    )
+    (directory / "EC-R1.md").write_text(old, encoding="utf-8")
+    monkeypatch.setattr(pages, "RESULTS_DIR", directory)
+    assert common.design_method("EC-R1") == "設計者の方法"
+    for _ in range(2):
+        common.finalize_coding("EC-R1", dict(R1_PASSING), ["n1"], seed=1, provenance="live")
+    out = (directory / "EC-R1.md").read_text(encoding="utf-8")
+    for kept in (
+        "状態: 設計者の先頭ブロック",
+        "## 5項目（改訂、ADR-999）\n- 仮説: 設計者の記述",
+        "## 方法（改訂、ADR-999）\n設計者の方法",
+        "## 気づき・限界（W2）\n設計者の気づき",
+    ):
+        assert out.count(kept) == 1, kept
+    assert out.count("## 5項目") == 1 and out.count("## 方法") == 1 and out.count("## 判定") == 1
+    assert "## 判定\n設計者の判定\n\n### 自動判定" in out
+    assert "## 自動注記\n- n1" in out
 
 
 def test_provisional_mark_in_pages_and_summary() -> None:
