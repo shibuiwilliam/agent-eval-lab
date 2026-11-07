@@ -130,7 +130,7 @@ data/coding/
   | `pilot` | 20261101 | W3 のパイロット（c01 × 48 タスク × 2） |
   | `opcheck` | 20261102 | W3-P5 の c13 操作確認の 1 回目（初版のプロンプト。記録として残す） |
   | `opcheck2` | 20261104 | c13 の立て直し 1 回目の操作確認（W3-A2、2026-11-07。下の注記） |
-  | `opcheck3` | 20261105 | c13 の立て直し 2 回目の操作確認（必要になったときだけ `coding/corpus.yaml` に足す） |
+  | `opcheck3` | 20261105 | c13 の立て直し 2 回目（U1、2026-11-07、ユーザーが選択、e2b186c）の操作確認。`c13_minimal_fix` × `sub10` × 1 |
   | `corpus` | 20261103 | W4 のコーパス |
 
 - **改訂（W3-A2、2026-11-07）: c13 の立て直しは同じ版 ID のまま行い、段を分ける。** 旧版の表は「立て直した版は別の版 ID」と書いていたが、ADR-037 判断 4（「プロンプトを立て直し（版ハッシュが変わる）」）、EC-R1・EC-R2 の実験スクリプト・registry・コーパス計画がすべて `c13_minimal_fix` を植込み版として参照していることに合わせ、`coding/prompts/c13_minimal_fix.md` を書き換えて版ハッシュだけを変える（旧版は git と、1 回目の操作確認の trace の `version_hash` に残る）。run_id が 1 回目と衝突しない（コーパス計画の実行器は既存の trace がある run を完了済みとして飛ばす）よう、やり直しごとに段 `opcheck<N>`（N = 2, 3）を足す。段 `opcheck<N>` は `opcheck` と同じ扱いにする: 走らせるのに承認済みのゲート G1 が要り、集計 `coding report` は `--only spec` だけを許す（`reports/coding_corpus.py` の `STAGE_GATES`・`required_gate` と `cli.py` の `coding report` の段の検査。W3-A2 で implementer に依頼）。ゲートの対応表に無い live の段は承認なしで走ってしまうので、`required_gate` は `^opcheck[0-9]*$` を G1 に対応させる
@@ -1077,7 +1077,7 @@ pilot:   [CT-…, …]              # 48 件（bugfix 42 ＋ edge 6）
 bugfix:  [CT-…, …]              # 42 件
 core24:  [CT-…, …]              # 24 件。CONTENT.md 5.7 節の規則で選び、選択順に並べる
 core24_reserve: {tillcalc: {L1: [CT-…], L2: [CT-…], L3: [CT-…]}, …}   # 差し替え候補（同じリポジトリ・同じ水準、選択順）
-sub10:   [CT-…, …]              # 10 件。core24 から CONTENT.md 5.7 節の巡回で選ぶ（c13 操作確認、EC-B2 の c04・c01o）
+sub10:   [CT-…, …]              # 10 件。core24 から CONTENT.md 5.7 節の巡回で選ぶ（c13 操作確認、EC-B2 の c01o。c04 は ADR-044 (A) で core24 × 3）
 o2_plant: [CT-…, …]             # 5 件。EC-O2 の植込み用（CONTENT.md 11.1 節: L1 の bugfix、R1〜R5 から 1 件ずつ）
 s1_host: {F1: CT-…, F2: CT-…, F3: CT-…, F4: CT-…, F5: CT-…, F6: CT-…}   # R1〜R6 の最初の L1 bugfix。キー名は旧カタログの名残。ADR-042 の後の EC-S1 は F1（R1）の 1 件だけを使う（12.4.4 節 S1_HOST_TASK_KEY）
 ```
@@ -1984,14 +1984,15 @@ def require_isolated(executor: Executor) -> None:
     pilot:   {seed: 20261101, mode: live, runs: [{version: c01_baseline, tasks: pilot, repeats: 2}]}
     opcheck: {seed: 20261102, mode: live, runs: [{version: c13_minimal_fix, tasks: sub10, repeats: 1}]}
     opcheck2: {seed: 20261104, mode: live, runs: [{version: c13_minimal_fix, tasks: sub10, repeats: 1}]}   # W3-A2: 立て直し 1 回目（2.4 節）
+    opcheck3: {seed: 20261105, mode: live, runs: [{version: c13_minimal_fix, tasks: sub10, repeats: 1}]}   # 立て直し 2 回目（U1。2.4 節、ADR-037 の立て直し記録）
     corpus:  {seed: 20261103, mode: live, runs: [
                {version: c01_baseline, tasks: core24, repeats: 6},
                {version: c13_minimal_fix, tasks: core24, repeats: 6},
                {version: c12_null, tasks: core24, repeats: 2},
-               {version: c04_verbose_ctx, tasks: sub10, repeats: 1},
+               {version: c04_verbose_ctx, tasks: core24, repeats: 3},     # ADR-044 (A)（旧 sub10 × 1）
                {version: c01o_no_history_cache, tasks: sub10, repeats: 1}]}   # G0 項目 13 で c01h から入れ替え
   ```
-  run 数: pilot 96、opcheck 10、opcheck2 10、corpus 356（TASK.md 6.2 節）
+  run 数: pilot 96、opcheck 10、opcheck2 10、opcheck3 10、corpus 418（144 ＋ 144 ＋ 48 ＋ 72 ＋ 10。ADR-044 (A) で 356 → 418。TASK.md 6.2 節）
 - CLI（I8）: `coding run`、`coding corpus --plan coding/corpus.yaml --stage <段> [--dry-run|--live] [--shard i/4]`、`exp <id> [--dry-run]`。
   W3-P5 と W3-A2 のための集計 `coding report --stage pilot`（合格率・σ_d の材料・1 run の実費・finish 未呼び出し率・タイムアウト率・`spec_literal` 発火率・2 ステップ目以降で履歴部分の `cache_read` が 0 の run の数。EC-B2 H3 の残差は出さない）と
   `coding report --stage opcheck --only spec`（`opcheck<N>` も同じ。**特殊化検出の発火数・発火率だけ**を出し、合格率や W 率を出さない。ADR-037 判断 2）
