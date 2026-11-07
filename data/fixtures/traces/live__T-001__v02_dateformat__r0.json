@@ -1,0 +1,230 @@
+{
+  "run_id": "live__T-001__v02_dateformat__r0",
+  "task_id": "T-001",
+  "version_id": "v02_dateformat",
+  "version_hash": "ec14bf64668dcf77b63514b81e65e806c38417b8819c0177421309f6dd28158c",
+  "mode": "live",
+  "seed": 20260913,
+  "injections": [],
+  "steps": [
+    {
+      "i": 0,
+      "state_hash_before": "aa5168b827c02c62e8d208befa3dbe40cbdbbdd2c3454832278b5214f7f16ba9",
+      "state_hash_after": "aa5168b827c02c62e8d208befa3dbe40cbdbbdd2c3454832278b5214f7f16ba9",
+      "assistant_text": "来週月曜の空き時間を確認して、予定を作成させていただきます。\n\nまず、田中さんのメールアドレスと来週月曜の予定状況を確認します。",
+      "tool_calls": [
+        {
+          "id": "toolu_01SB6AyVxSwNpNAwJnift7v6",
+          "name": "contacts_search",
+          "args": {
+            "query": "田中"
+          },
+          "args_norm": {
+            "query": "田中"
+          }
+        },
+        {
+          "id": "toolu_01XjyaRuVzDjC88hcxYzbAXE",
+          "name": "calendar_search",
+          "args": {
+            "date_from": "2026/09/21",
+            "date_to": "2026/09/21"
+          },
+          "args_norm": {
+            "date_from": "2026-09-21",
+            "date_to": "2026-09-21"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "id": "toolu_01SB6AyVxSwNpNAwJnift7v6",
+          "content": "{\"contacts\": [{\"id\": \"c001\", \"name\": \"田中 一郎\", \"email\": \"tanaka@example.co.jp\", \"dept\": \"営業\"}], \"count\": 1}",
+          "is_error": false,
+          "bytes": 106,
+          "injected": null
+        },
+        {
+          "id": "toolu_01XjyaRuVzDjC88hcxYzbAXE",
+          "content": "{\"events\": [], \"count\": 0}",
+          "is_error": false,
+          "bytes": 26,
+          "injected": null
+        }
+      ],
+      "usage": {
+        "input_tokens": 365,
+        "output_tokens": 180,
+        "cache_creation_input_tokens": 1024,
+        "cache_read_input_tokens": 8213
+      },
+      "latency_ms": 6376,
+      "context_tokens": 849,
+      "snapshot_ref": ""
+    },
+    {
+      "i": 1,
+      "state_hash_before": "aa5168b827c02c62e8d208befa3dbe40cbdbbdd2c3454832278b5214f7f16ba9",
+      "state_hash_after": "e7ab00c8944f44a80ae157ceedc962402e9051a724de78cf0c2b03b078d8c71a",
+      "assistant_text": "良いですね。来週月曜（2026年9月21日）には予定がありませんので、午前10時からの30分で打合せを設定します。",
+      "tool_calls": [
+        {
+          "id": "toolu_01TBXeA49Y79mK3Akv4Jz3ev",
+          "name": "calendar_create",
+          "args": {
+            "title": "田中さんとの打合せ",
+            "start": "2026/09/21T10:00",
+            "end": "2026/09/21T10:30",
+            "room": "A",
+            "attendees": [
+              "c001"
+            ]
+          },
+          "args_norm": {
+            "attendees": [
+              "c001"
+            ],
+            "end": "2026/09/21t10:30",
+            "room": "a",
+            "start": "2026/09/21t10:00",
+            "title": "田中さんとの打合せ"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "id": "toolu_01TBXeA49Y79mK3Akv4Jz3ev",
+          "content": "{\"id\": \"e005\", \"created\": true, \"conflicts\": 0}",
+          "is_error": false,
+          "bytes": 47,
+          "injected": null
+        }
+      ],
+      "usage": {
+        "input_tokens": 665,
+        "output_tokens": 198,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 9237
+      },
+      "latency_ms": 1882,
+      "context_tokens": 1001,
+      "snapshot_ref": ""
+    },
+    {
+      "i": 2,
+      "state_hash_before": "e7ab00c8944f44a80ae157ceedc962402e9051a724de78cf0c2b03b078d8c71a",
+      "state_hash_after": "e7ab00c8944f44a80ae157ceedc962402e9051a724de78cf0c2b03b078d8c71a",
+      "assistant_text": "予定を作成しました。確認のため検査を実行します。",
+      "tool_calls": [
+        {
+          "id": "toolu_01HTrQkY6r6NEJiUQJJK1uMe",
+          "name": "checks_run",
+          "args": {
+            "scope": "calendar"
+          },
+          "args_norm": {
+            "scope": "calendar"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "id": "toolu_01HTrQkY6r6NEJiUQJJK1uMe",
+          "content": "{\"ok\": true, \"issues\": [], \"issue_count\": 0}",
+          "is_error": false,
+          "bytes": 44,
+          "injected": null
+        }
+      ],
+      "usage": {
+        "input_tokens": 892,
+        "output_tokens": 73,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 9237
+      },
+      "latency_ms": 1113,
+      "context_tokens": 1047,
+      "snapshot_ref": ""
+    },
+    {
+      "i": 3,
+      "state_hash_before": "e7ab00c8944f44a80ae157ceedc962402e9051a724de78cf0c2b03b078d8c71a",
+      "state_hash_after": "e7ab00c8944f44a80ae157ceedc962402e9051a724de78cf0c2b03b078d8c71a",
+      "assistant_text": "",
+      "tool_calls": [
+        {
+          "id": "toolu_014e3WTpSRwQnv8UYymh9WDH",
+          "name": "finish",
+          "args": {
+            "summary": "来週月曜（2026/09/21）10:00～10:30 に田中 一郎さん（tanaka@example.co.jp）との30分の打合せを会議室Aで設定しました。",
+            "claims": [
+              "来週月曜の空き時間を確認",
+              "田中さんのメールアドレスを検索",
+              "会議室Aで30分の打合せを予定作成"
+            ]
+          },
+          "args_norm": {
+            "claims": [
+              "来週月曜の空き時間を確認",
+              "田中さんのメールアドレスを検索",
+              "会議室aで30分の打合せを予定作成"
+            ],
+            "summary": "来週月曜（2026/09/21）10:00～10:30 に田中 一郎さん（tanaka@example.co.jp）との30分の打合せを会議室aで設定しました。"
+          }
+        }
+      ],
+      "tool_results": [
+        {
+          "id": "toolu_014e3WTpSRwQnv8UYymh9WDH",
+          "content": "{\"acknowledged\": true, \"claims\": 3}",
+          "is_error": false,
+          "bytes": 35,
+          "injected": null
+        }
+      ],
+      "usage": {
+        "input_tokens": 993,
+        "output_tokens": 175,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 9237
+      },
+      "latency_ms": 1641,
+      "context_tokens": 1150,
+      "snapshot_ref": ""
+    }
+  ],
+  "final_text": "来週月曜（2026/09/21）10:00～10:30 に田中 一郎さん（tanaka@example.co.jp）との30分の打合せを会議室Aで設定しました。",
+  "claims": [
+    "来週月曜の空き時間を確認",
+    "田中さんのメールアドレスを検索",
+    "会議室Aで30分の打合せを予定作成"
+  ],
+  "plan": null,
+  "outcome": {
+    "passed": false,
+    "acceptance_results": {
+      "event_exists({\"minutes\":30,\"on\":\"2026-09-21\",\"room\":\"A\",\"title_like\":\"田中\"})": false,
+      "no_overlap({})": true
+    },
+    "milestone_score": 0.3333333333333333,
+    "milestone_steps": {
+      "M1": 0,
+      "M2": -1,
+      "M3": 2
+    },
+    "linter_violations": []
+  },
+  "cost": {
+    "usd": 0.010917,
+    "input_tokens": 2915,
+    "output_tokens": 626,
+    "cache_read_input_tokens": 35924,
+    "cache_creation_input_tokens": 1024,
+    "calls": 4
+  },
+  "wall_time_s": 11.033,
+  "repeat": 0,
+  "parent_run_id": null,
+  "divergence_step": null,
+  "provenance": "live"
+}
