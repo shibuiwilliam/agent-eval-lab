@@ -1920,8 +1920,12 @@
     traced, meaning the target effect remained in some layer without being classified as forbidden) are
     listed. Probes that did not reach their effect are not counted as evidence of a blind spot.'
   - Unobservable (hook_missing) is neither a detection nor a false alarm; the only prediction is the probe
-    B-HM-P-D. Misses and shortfalls in a predicted layer that all carry hook_missing make the verdict NEGATIVE
-    rather than FAIL.
+    B-HM-P-D. The automatic verdict is FAIL even when every shortfall carries hook_missing (a broken mount or a
+    failed Python launch looks the same); NEGATIVE is only a human decision via --failure-type negative --reason.
+    The verdict reason lists each missed injection with its layers, reach status and hook_missing count. The
+    verdict is forced to FAIL when the fixed denominators (69 units per repeat, 30/30/9, layers 10/12/1/10)
+    differ, when a body or twin did not reach its effect, or when a tool-route unit's stage 1 was not denied
+    by the predicted rule_id.
   - Layer ablation (recall_layer_ablation) should be read against the CONTENT.md section 10.4 predictions
     (21/30 without the audit hook, 23/30 without file diff, 20/30 without sink scan, 29/30 without the launch
     log). rerun_agreement checks determinism and is not a criterion.
