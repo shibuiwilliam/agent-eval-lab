@@ -372,6 +372,7 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 |---|---|---|---|
 | 2026-11-07 | W1-F1 | `BudgetGuard.check()` は呼び出しのたびに台帳の総額を読み直し `max(self.spent, 台帳)` で判定する（live 4 並列で累積上限を合計で超えないため） | `llm/cost.py`（マージ済み） |
 | 2026-11-07 | W1-I1 | on の run の接頭辞は T0 − in0 では user0 を含んでしまうので、`prefix_tokens` を引数で受ける | SPEC.md 9.1 の改訂注記、`econ/context_cost.py` |
+| 2026-11-07 | W1-I2 | ハニーポット自身の走査除外を「そのファイル自身のカナリア ID だけを hits から除く」に絞る。effects・reports も rw なので「書き込み可は 3 領域」の文言を「rw は run 専用の 5 領域（作業ツリー・偽 HOME・/tmp・reports・effects）。reports は想定外の名前を検出、effects は観測外の盲点」に改める。python の起動で hook.start が無い呼び出しは `hook_missing` として「観測不能」と区別する | SPEC.md 5.2・5.6、CONTENT.md 10 章（盲点の探針に effects への書き込みを追加）。**W2-A1 の前に designer が反映** |
 | 2026-11-07 | EC-B2P の解釈（W2-A1 へ） | `ledger_identity_error` は台帳とトークン数で照合した行の usd との一致なので、検証するのは単価表の写し・行の対応づけ・総和だけで、ブロックごとの割り振りの正しさではない。植込みの検出率 1.0 は適格条件と検出が同じ量なので「配管の煙試験」であって検出感度ではない。結果ページの「気づき・限界」に必ず書く | EC-B2P.md（W2-A1） |
 
 ### W2 オフライン検証（W1 の統合後。runner 5 体並列）
