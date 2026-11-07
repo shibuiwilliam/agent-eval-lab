@@ -133,15 +133,16 @@ def test_chapter_c_rows_are_pending_without_results_and_have_a_footnote(tmp_path
     ja = verify.write_summary(rows, tmp_path / "summary.md").read_text(encoding="utf-8")
     en = verify.write_summary_en(rows, tmp_path / "summary.en.md").read_text(encoding="utf-8")
     assert "| [EC-S1](EC-S1.md) | C |" in ja
-    assert (
-        "章 C = コーディングエージェント" in ja
-        and "暫定の基準を持つ実験（G2 で確定する。ADR-033）: EC-B2。" in ja
-    )
-    assert "EC-R1、" not in ja and "EC-R2。" not in ja  # R1・R2 は確定（W3-A2）
-    assert (
-        "Chapter C = coding agent" in en
-        and "provisional criterion (fixed at G2; ADR-033): EC-B2." in en
-    )
+    # ADR-044 (A) で EC-B2 の H2 が確定し、暫定の基準を持つ実験は無くなった（注記に暫定の行は出ない）
+    assert not any(r["provisional"] for r in c_rows)
+    assert "章 C = コーディングエージェント" in ja and "暫定の基準を持つ実験" not in ja
+    assert "Chapter C = coding agent" in en and "provisional criterion" not in en
+    # 暫定の印のある行が表にあれば注記に出る（注記の機能は残す）
+    marked = [dict(r, provisional=(r["id"] == "EC-B2")) for r in rows]
+    ja2 = verify.write_summary(marked, tmp_path / "summary2.md").read_text(encoding="utf-8")
+    en2 = verify.write_summary_en(marked, tmp_path / "summary2.en.md").read_text(encoding="utf-8")
+    assert "暫定の基準を持つ実験（G2 で確定する。ADR-033）: EC-B2。" in ja2
+    assert "provisional criterion (fixed at G2; ADR-033): EC-B2." in en2
     # 章 C が無い表には注記を足さない（既存の行・体裁を変えない）
     only_old = [r for r in rows if str(r["chapter"]) != "C"]
     assert verify._chapter_c_footnote(only_old, "ja") == []
@@ -182,16 +183,24 @@ def test_corpus_plan_counts_and_seeds() -> None:
         "opcheck": 20261102,
         "corpus": 20261103,
         "opcheck2": 20261104,  # W3-A2: c13 の立て直し 1 回目（SPEC.md 2.3・2.4 節）
+        "opcheck3": 20261105,  # W3-IC: c13 の立て直し 2 回目（U1。ADR-037・044）
     }
     assert len(cc.plan_units(plan, "pilot")) == 96
     assert len(cc.plan_units(plan, "opcheck")) == 10
     assert len(cc.plan_units(plan, "opcheck2")) == 10
+    assert len(cc.plan_units(plan, "opcheck3")) == 10
+    assert cc.required_gate("opcheck3") == "G1"  # opcheck3 は G1 に結ばれ、計画にある
+    assert {u.version_id for u in cc.plan_units(plan, "opcheck3")} == {"c13_minimal_fix"}
     # 立て直しは同じ版 ID のまま段で分ける: 1 回目と run_id が衝突しない
     first = {u.run_id for u in cc.plan_units(plan, "opcheck")}
     assert first.isdisjoint(u.run_id for u in cc.plan_units(plan, "opcheck2"))
+    second = {u.run_id for u in cc.plan_units(plan, "opcheck2")}
+    assert second.isdisjoint(u.run_id for u in cc.plan_units(plan, "opcheck3"))
     corpus = cc.plan_units(plan, "corpus")
-    assert len(corpus) == 356
-    assert len({u.run_id for u in corpus}) == 356
+    assert len(corpus) == 418  # ADR-044 (A): c04 を core24 × 3 に広げた（356 + 62）
+    assert len({u.run_id for u in corpus}) == 418
+    c04 = [u for u in corpus if u.version_id == "c04_verbose_ctx"]
+    assert len(c04) == 72 and len({u.task_id for u in c04}) == 24
     assert all("__corpus__" in u.run_id for u in corpus)
     with pytest.raises(cc.PlanError):
         cc.plan_units(plan, "offline")  # sim の段は計画から展開できない
@@ -212,8 +221,9 @@ def test_estimate_reproduces_task_md_reference_within_tolerance(tmp_path: Path) 
         ref["history_cache_off"], rel=0.10
     )
     assert est["usd_conservative"] == pytest.approx(est["usd_nominal"] * 1.5, abs=0.01)
-    assert est["usd_nominal"] == pytest.approx(16.5, rel=0.10)  # TASK.md 6.2 節（約 16.5 USD）
-    assert est["remaining_runs"] == 356 and est["budget_fits_remaining_conservative"] is None
+    # TASK.md 6.2 節の約 16.5 USD（356 run）に、ADR-044 (A) の c04 の拡大（+62 run）を加えた見積り出力（418 run、計画時の単価）
+    assert est["usd_nominal"] == pytest.approx(18.5, rel=0.05)
+    assert est["remaining_runs"] == 418 and est["budget_fits_remaining_conservative"] is None
 
 
 def test_estimate_budget_check(tmp_path: Path) -> None:
@@ -957,6 +967,80 @@ def test_b2_compute_on_position_model_runs_has_zero_errors_and_full_attribution(
     assert m["history_cache_predicted_increase_rate_sub10"] > 0
     assert out["metrics"]["control_attribution"]["provenance"] == "simulated"
     assert out["extras"]["cache_chain_broken"] is False
+
+
+def test_b2_h2_task_set_follows_the_c04_runs_core24_x3() -> None:
+    """ADR-044 (A): c04 が core24 × 3 のとき H2 は 24 タスクで計算され、c01 側はそのタスクの全反復の平均になる。
+    H3（c01o・sub10 × 1）の計算は sub10 のまま変わらない。"""
+    b2 = _load_script("ec_b2_context_cost")
+    tasks = [f"CT-h-{i:03d}" for i in range(24)]
+    sub10 = tasks[:10]
+    outs = [100, 80, 60, 40]
+    tools = ["run_tests", "read_file", "run_tests", "finish"]
+
+    def mk(version: str, task: str, rep: int, c: list[int], on: bool) -> Run:
+        return _model_run(
+            f"cd__{task}__{version}__corpus__r{rep}", task, version, outs, c, on=on, tools=tools
+        )
+
+    runs: dict[str, list[Run]] = {
+        v: [] for v in ("c01_baseline", "c04_verbose_ctx", "c01o_no_history_cache", "c12_null")
+    }
+    for t in tasks:
+        runs["c01_baseline"] += [mk("c01_baseline", t, r, [300, 200, 100], True) for r in range(6)]
+        runs["c04_verbose_ctx"] += [
+            mk("c04_verbose_ctx", t, r, [2300, 200, 100], True) for r in range(3)
+        ]
+    for t in sub10:
+        runs["c01o_no_history_cache"].append(
+            mk("c01o_no_history_cache", t, 0, [300, 200, 100], False)
+        )
+        runs["c12_null"] += [mk("c12_null", t, r, [300, 200, 100], True) for r in range(2)]
+    all_runs = [r for v in runs.values() for r in v]
+    out = b2.compute(
+        runs, _ledger_for(all_runs), load_pricing(), None, sub10=sub10, seed=1, n_boot=50
+    )
+    m = {k: v["value"] for k, v in out["metrics"].items()}
+    assert (
+        m["verbose_attribution_ci"]["n_tasks"] == 24
+    )  # sub10 の 10 ではなく c04 の run のあるタスク数
+    assert m["verbose_attribution_to_run_tests"] == pytest.approx(1.0, abs=1e-9)
+    # H3 は sub10 × 1 の c01o のまま（on 側の sub10 限定の値は sub10 の c01 の run から）
+    assert m["e_on_e_off"]["n_off"] == 10
+    assert m["history_cache_predicted_increase_rate_sub10"] > 0
+    # 期待タスク集合（core24）を渡すと一致で通り、c04 または c01 に 1 タスクの欠けがあれば止まる
+    ok = b2.compute(
+        runs, _ledger_for(all_runs), load_pricing(), None,
+        sub10=sub10, h2_expected=tasks, seed=1, n_boot=20,
+    )  # fmt: skip
+    assert ok["metrics"]["verbose_attribution_ci"]["value"]["n_tasks"] == 24
+    for version in ("c04_verbose_ctx", "c01_baseline"):
+        cut = dict(runs)
+        cut[version] = [r for r in runs[version] if r.task_id != tasks[5]]
+        with pytest.raises(ValueError, match="期待と一致しない"):
+            b2.compute(
+                cut,
+                _ledger_for([r for v in cut.values() for r in v]),
+                load_pricing(),
+                None,
+                sub10=sub10,
+                h2_expected=tasks,
+                seed=1,
+                n_boot=20,
+            )
+    # c04 が sub10 × 1 のときは従来どおり 10 タスク
+    small = dict(runs)
+    small["c04_verbose_ctx"] = [r for r in runs["c04_verbose_ctx"] if r.task_id in sub10][::3]
+    out10 = b2.compute(
+        small,
+        _ledger_for([r for v in small.values() for r in v]),
+        load_pricing(),
+        None,
+        sub10=sub10,
+        seed=1,
+        n_boot=50,
+    )
+    assert out10["metrics"]["verbose_attribution_ci"]["value"]["n_tasks"] == 10
 
 
 def test_b2_broken_cache_chain_is_flagged() -> None:
@@ -2079,7 +2163,7 @@ def test_cli_opcheck2_live_is_refused_without_g1_and_accepted_with_g1(
 
 
 def test_cli_undefined_opcheck_stage_never_runs(monkeypatch: pytest.MonkeyPatch) -> None:
-    """計画に無い `opcheck3` は、G1 を付けても拒否される（plan に足されるまで走らない）。未知の名前も同じ。"""
+    """計画に無い `opcheck4` は、G1 を付けても拒否される（plan に足されるまで走らない）。未知の名前も同じ。"""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100000")
     calls: list[str] = []
@@ -2090,20 +2174,20 @@ def test_cli_undefined_opcheck_stage_never_runs(monkeypatch: pytest.MonkeyPatch)
             calls.append(stage) or {"stopped": None, "blocked_partial": [], "incomplete": 0}
         ),
     )
-    for stage in ("opcheck3", "opcheckx", "unit"):
+    for stage in ("opcheck4", "opcheckx", "unit"):
         for approved in ("G1", "G2", ""):
             res = RUNNER.invoke(
                 app, ["coding", "corpus", "--stage", stage, "--live", "--approved", approved]
             )
             assert res.exit_code != 0, (stage, approved, res.output)
     assert calls == []
-    # opcheck3 は G1 に対応するが、計画に足されるまでは「未知の段」で見積りの時点で止まる
-    assert cc.required_gate("opcheck3") == "G1"
+    # opcheck4 は G1 に対応するが、計画に足されるまでは「未知の段」で見積りの時点で止まる
+    assert cc.required_gate("opcheck4") == "G1"
     unknown = RUNNER.invoke(
-        app, ["coding", "corpus", "--stage", "opcheck3", "--live", "--approved", "G1"]
+        app, ["coding", "corpus", "--stage", "opcheck4", "--live", "--approved", "G1"]
     )
     assert unknown.exit_code != 0 and "未知の段" in unknown.output
-    dry = RUNNER.invoke(app, ["coding", "corpus", "--stage", "opcheck3"])
+    dry = RUNNER.invoke(app, ["coding", "corpus", "--stage", "opcheck4"])
     assert dry.exit_code != 0 and "未知の段" in dry.output
 
 
@@ -2200,7 +2284,7 @@ def test_cli_coding_run_live_seed_is_the_plan_seed_only(monkeypatch: pytest.Monk
     monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100000")
     base = ["coding", "run", "--version", "c13_minimal_fix", "--task", "CT-tillcalc-001"]
     gated = ["--mode", "record", "--approved", "G1"]
-    unplanned = RUNNER.invoke(app, [*base, *gated, "--stage", "opcheck3"])
+    unplanned = RUNNER.invoke(app, [*base, *gated, "--stage", "opcheck4"])
     assert unplanned.exit_code != 0 and seen == [], unplanned.output
     assert "計画" in unplanned.output
     wrong = RUNNER.invoke(app, [*base, *gated, "--stage", "opcheck2", "--seed", "0"])
@@ -2662,17 +2746,23 @@ def test_headings_with_annotations_are_matched_by_prefix(
 def test_provisional_mark_in_pages_and_summary() -> None:
     entry = next(e for e in verify.load_registry() if e["id"] == "EC-B2")
     marks = {c["metric"]: bool(c.get("provisional")) for c in entry["criteria"]}
-    # W3-A2 で確定。暫定は verbose_attribution_to_run_tests だけ（sub10 × 1 では検出力不足。G2 で決める）
+    # ADR-044 (A) で H2 が確定し、暫定の基準は無い（値 0.8 は変えない）
     assert marks == {
         "allocation_identity_error": False,
         "ledger_identity_error": False,
-        "verbose_attribution_to_run_tests": True,
+        "verbose_attribution_to_run_tests": False,
         "history_cache_prediction_error": False,
         "control_attribution": False,
     }
-    # 暫定扱いは registry の印から導く: EC-B2 だけ。EC-R1・EC-R2 と既存の章は確定
+    assert (
+        next(c for c in entry["criteria"] if c["metric"] == "verbose_attribution_to_run_tests")[
+            "value"
+        ]
+        == 0.8
+    )
+    # 暫定扱いは registry の印から導く: 章 C の全実験が確定（EC-B2 は ADR-044 (A)）
     provisional_ids = [e["id"] for e in verify.load_registry() if verify.is_provisional(e)]
-    assert provisional_ids == ["EC-B2"]
+    assert provisional_ids == []
     assert not hasattr(verify, "CHAPTER_C_PROVISIONAL")
     assert not verify.is_provisional({"criteria": [{"metric": "m", "op": ">=", "value": 1}]})
     assert verify.is_provisional(
@@ -2692,7 +2782,15 @@ def test_provisional_mark_in_pages_and_summary() -> None:
             "verbose_attribution_to_run_tests": {"value": 0.9, "provenance": "live"},
         }
     }
-    judged = verify.judge(entry, result)
+    # 暫定の印の描画は機能として残す: 印を付けた版の基準で judge する
+    marked_entry = {
+        **entry,
+        "criteria": [
+            {**c, "provisional": True} if c["metric"] == "verbose_attribution_to_run_tests" else c
+            for c in entry["criteria"]
+        ],
+    }
+    judged = verify.judge(marked_entry, result)
     row = {
         "id": "EC-B2",
         "chapter": "C",

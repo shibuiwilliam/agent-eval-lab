@@ -269,6 +269,7 @@ def compute(
     control: tuple[Run, Run] | None,
     *,
     sub10: Sequence[str],
+    h2_expected: Sequence[str] | None = None,
     seed: int,
     n_boot: int = N_BOOT,
 ) -> dict[str, Any]:  # Any: 指標と補助量
@@ -303,7 +304,19 @@ def compute(
         voided = f"台帳の照合率 {report.ledger_match_rate:.3f} が {MIN_LEDGER_MATCH_RATE} 未満"
 
     # --- H2: 詳細出力の run_tests への帰属 ---
+    # H2 のタスク集合は c04 の run があるタスクから決める（ADR-044 (A): core24 × 3。ハードコードしない）。
+    # c01 側はそのタスクの全反復（core24 では 6 反復）の平均を使う。H3（c01o は sub10 × 1）は sub10 のまま。
     sub = set(sub10)
+    h2_tasks = {r.task_id for r in runs_by_version[VERBOSE]}
+    if h2_expected is not None:
+        # c04 か c01 にタスクの欠けがあると、積集合が縮んで分母・分子が黙って小さくなる。期待（corpus 計画の core24）と
+        # 一致しなければ止める
+        common = h2_tasks & {r.task_id for r in runs_by_version[BASE]}
+        if common != set(h2_expected):
+            raise ValueError(
+                "H2 のタスク集合（c04 と c01 の積集合）が期待と一致しない: "
+                f"欠け {sorted(set(h2_expected) - common)}、期待外 {sorted(common - set(h2_expected))}"
+            )
 
     def by_task(version: str, tasks: set[str] | None = None) -> dict[str, list[RunAllocation]]:
         out: dict[str, list[RunAllocation]] = {}
@@ -313,7 +326,7 @@ def compute(
         return out
 
     attribution = verbose_attribution(
-        by_task(BASE, sub), by_task(VERBOSE), tool=TOOL, n_boot=n_boot, seed=seed
+        by_task(BASE, h2_tasks), by_task(VERBOSE), tool=TOOL, n_boot=n_boot, seed=seed
     )
 
     # --- H3: 履歴キャッシュを外したコスト増の予測（run 内の反実仮想） ---
@@ -496,6 +509,7 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         load_pricing(),
         control,
         sub10=load_task_sets()["sub10"],
+        h2_expected=load_task_sets()["core24"],  # corpus 計画の c04 の tasks（ADR-044 (A)）
         seed=seed,
     )
     metrics = out["metrics"]

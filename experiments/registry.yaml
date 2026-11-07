@@ -570,14 +570,14 @@
   title: コンテキスト・コスト帰属 — ツール出力の生涯コストと履歴キャッシュの事前予測
   script: experiments/ec_b2_context_cost.py
   hypothesis: "割り振りは台帳に一致し、詳細出力の版のコスト増の大部分は run_tests の出力に帰属し、history_cache を off にしたときのコスト増は軌跡のトークン量だけから事前に予測でき実測と一致する"
-  planted: {versions: [c04_verbose_ctx, c01o_no_history_cache], tasks: sub10, repeats: 1}   # G0 項目 13: c01h_history_cache（on）を off の版に入れ替えた。c01 系は history_cache: true
-  planted_text: "c04_verbose_ctx（test_output_limit 無効＋詳細出力）、c01o_no_history_cache（c01 から history_cache: true を除いた版。予測可能なコスト増）。各 10 タスク（sub10）× 1。H3 の on 側は c01_baseline のコーパス全 run（core24 × 6）"
+  planted: {versions: [c04_verbose_ctx, c01o_no_history_cache], tasks: {c04_verbose_ctx: core24, c01o_no_history_cache: sub10}, repeats: {c04_verbose_ctx: 3, c01o_no_history_cache: 1}}   # 版ごとの集合。c04 は core24 × 3（ADR-044 (A): sub10 × 1 から広げた。H2 の検出力）、c01o は sub10 × 1 のまま（G0 項目 13: c01h_history_cache（on）を off の版に入れ替えた。c01 系は history_cache: true）
+  planted_text: "c04_verbose_ctx（test_output_limit 無効＋詳細出力）、c01o_no_history_cache（c01 から history_cache: true を除いた版。予測可能なコスト増）。c04 は 24 タスク（core24）× 3（72 run。ADR-044 (A)。H2 の対応タスクは c01_baseline の同タスクの 6 反復平均）、c01o は 10 タスク（sub10）× 1。H3 の on 側は c01_baseline のコーパス全 run（core24 × 6）"
   control: {scripted: verbose_early_vs_late, versions: [c12_null]}
   control_text: "同じ詳細出力をステップ 1 で出す版と最後のツールステップで出す版のスクリプト化エージェントの対（simulated、history_cache off。c01o_no_history_cache のハーネスを借りる）。c12_null は記録のみ"
-  criteria:   # W3-A2（2026-11-07）で H2 以外を確定（ADR-033 の確定記録）。H2 は G2 で ADR を書いて決める
+  criteria:   # W3-A2（2026-11-07）で H2 以外を確定（ADR-033 の確定記録）。H2 は ADR-044 (A) で確定
     - {metric: allocation_identity_error, op: "<=", value: 1.0e-9}  # TASK からの変更: 0.03 → 1e-9（EC-B2P と同じ理由）
     - {metric: ledger_identity_error, op: "<=", value: 0.001}       # TASK からの変更: 追加（EC-B2P と同じ根拠。今確定してよい）
-    - {metric: verbose_attribution_to_run_tests, op: ">=", value: 0.8, provisional: true}   # 保留: sub10 × 1 では検出力不足（予測コスト増 約 0.04 USD < 必要 0.101 USD）。G2 で c04 の拡大か記録のみへの変更を ADR で決める
+    - {metric: verbose_attribution_to_run_tests, op: ">=", value: 0.8}   # ADR-044 (A) で確定（2026-11-07）。c04 を core24 × 3 に広げて検査する（sub10 × 1 では検出力不足だった）。値 0.8 は変えない
     - {metric: history_cache_prediction_error, op: "<=", value: 0.10}  # 確定（予測増加 1 run 平均 0.084 USD、事前予測の増加率 1.586）。|e_off − e_on|（G0 項目 13 で on/off の差の予測誤差に改めた）。run 内の反実仮想。キャッシュ関係の usage を予測に使わない
     - {metric: control_attribution, op: "<=", value: 0.10}           # 確定。CCA_L / CCA_E。予測 1/11
   # 記録のみ: verbose_attribution の区間, e_on と e_off（個別）, sub10 に限った e_on と版ごとの e_on, history_cache_increase_between_versions と事前予測, c12 の帰属の差と区間
