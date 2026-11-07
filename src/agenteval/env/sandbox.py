@@ -9,10 +9,14 @@
 from __future__ import annotations
 
 import atexit
+import errno
 import hashlib
 import os
 import posixpath
+import re
+import stat
 import subprocess
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -51,10 +55,25 @@ CONTAINER_PATH: Final = f"{CONTAINER_REPO}/.venv/bin:/usr/local/bin:/usr/sbin:/u
 KILL_GRACE_S: Final = 2  # coreutils timeout -k の猶予
 HOST_TIMEOUT_MARGIN_S: Final = 10.0  # ホスト側の subprocess の timeout は timeout_s + この値
 TIMEOUT_EXIT_CODE: Final = 124
+DOCKER_CLI_ERROR_EXIT_CODE: Final = 125  # docker CLI 自身のエラー（デーモンの失敗など）
 SPAWN_FAILURE_EXIT_CODE: Final = 127
 HOOK_READ_LIMIT: Final = (
     16 * 1024 * 1024
 )  # 1 回の回収で 1 ファイルから読む上限（エージェントが書き込める入力なので）
+
+OUTPUT_LIMIT_BYTES: Final = (
+    16 * 1024 * 1024
+)  # docker CLI の stdout・stderr それぞれの上限（超えた分は捨てる）
+FSIZE_LIMIT_BYTES: Final = (
+    256 * 1024 * 1024
+)  # コンテナ内のプロセスが作れる 1 ファイルの上限（--ulimit fsize）
+OUTPUT_TRUNCATED_NOTE: Final = "\n[… agenteval: {which} が {limit} バイトを超えたため打ち切った …]"
+REPORT_NAME: Final = re.compile(r"^[0-9]+\.xml$")  # reports 領域に作ってよい名前（<n>.xml）
+REPORT_SCAN_LIMIT: Final = 10_000  # reports 領域の走査で数える項目の上限
+PYTHON_ARGV0: Final = re.compile(r"^(python[0-9.]*|pytest|py\.test)$")
+HOOK_START_DETAIL: Final = "hook.start"
+HOOK_MISSING_DETAIL: Final = "hook_missing"
+HOOK_LOG_IRREGULAR_DETAIL: Final = "hook_log_not_regular"
 
 DockerRunner = Callable[..., "subprocess.CompletedProcess[str]"]
 
@@ -74,14 +93,69 @@ class DockerConfig:
     user: str = "1000:1000"
     payload_dir: Path = PAYLOAD_DIR  # EC-O2 の植込みは別のディレクトリを渡せる
     docker_bin: str = "docker"
+    fsize_bytes: int = FSIZE_LIMIT_BYTES  # --ulimit fsize（作業ツリー等に書ける 1 ファイルの上限）
+
+
+def _stream_run(
+    argv: Sequence[str], *, timeout: float, limit: int = OUTPUT_LIMIT_BYTES
+) -> subprocess.CompletedProcess[str]:
+    """docker CLI を実行し、stdout・stderr をストリームで読む。それぞれ limit バイトを超えた分は捨てる。
+
+    出力が上限を超えたら、stderr の末尾にその旨を注記する（ExecResult に旗の欄が無いため）。
+    捨てるだけで読み続けるので、子プロセスが書き込みで詰まることは無い。時間切れなら子を kill して
+    subprocess.TimeoutExpired を投げる。
+    """
+    proc = subprocess.Popen(
+        list(argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    assert proc.stdout is not None and proc.stderr is not None
+    buffers = (bytearray(), bytearray())
+    truncated = [False, False]
+
+    def pump(fd: int, index: int) -> None:
+        buf = buffers[index]
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                return
+            room = limit - len(buf)
+            if room > 0:
+                buf += chunk[:room]
+            if len(chunk) > max(room, 0):
+                truncated[index] = True
+
+    threads = [
+        threading.Thread(target=pump, args=(proc.stdout.fileno(), 0), daemon=True),
+        threading.Thread(target=pump, args=(proc.stderr.fileno(), 1), daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise
+    finally:
+        for thread in threads:
+            thread.join(timeout=5)
+        proc.stdout.close()
+        proc.stderr.close()
+    out = bytes(buffers[0]).decode("utf-8", "replace")
+    err = bytes(buffers[1]).decode("utf-8", "replace")
+    for flag, which in zip(truncated, ("stdout", "stderr"), strict=True):
+        if flag:
+            err += OUTPUT_TRUNCATED_NOTE.format(which=which, limit=limit)
+    return subprocess.CompletedProcess(list(argv), proc.returncode, out, err)
 
 
 def _run_docker(
     argv: Sequence[str], *, timeout: float, runner: DockerRunner | None = None
 ) -> subprocess.CompletedProcess[str]:
     """docker CLI を実行する。runner はテストが差し込む（実際には起動しない）。"""
-    run = runner if runner is not None else subprocess.run
-    return run(
+    if runner is None:
+        return _stream_run(argv, timeout=timeout)
+    return runner(
         list(argv),
         capture_output=True,
         text=True,
@@ -105,6 +179,12 @@ def docker_available(config: DockerConfig | None = None) -> bool:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
     return proc.returncode == 0
+
+
+def _check_argv(argv: Sequence[str]) -> None:
+    """argv が空なら ValueError（何を実行するのか決まらない）。"""
+    if not argv:
+        raise ValueError("argv が空")
 
 
 def _check_cwd(cwd: str) -> str:
@@ -133,6 +213,8 @@ class DockerExecutor:
         self._runner = runner
         self._state: str = "new"  # new -> running -> stopped
         self._offsets: dict[Path, int] = {}
+        self._irregular_logs: set[Path] = set()
+        self._reports_seen: dict[str, tuple[int, int, int]] = {}
         self.container_name = (
             CONTAINER_NAME_PREFIX + hashlib.sha256((mode + run_id).encode()).hexdigest()[:16]
         )
@@ -193,6 +275,11 @@ class DockerExecutor:
             f"{cfg.cpus:g}",
             "--memory",
             cfg.memory,
+            "--memory-swap",
+            cfg.memory,
+            "--init",
+            "--ulimit",
+            f"fsize={cfg.fsize_bytes}:{cfg.fsize_bytes}",
             "--pids-limit",
             str(cfg.pids_limit),
             "--cap-drop",
@@ -230,6 +317,7 @@ class DockerExecutor:
         env: Mapping[str, str] | None = None,
     ) -> list[str]:
         """`docker exec ...` の引数。cwd が不正なら ValueError。"""
+        _check_argv(argv)
         rel = _check_cwd(cwd)
         workdir = CONTAINER_REPO if rel == "." else f"{CONTAINER_REPO}/{rel}"
         out = [self._config.docker_bin, "exec"]
@@ -265,6 +353,7 @@ class DockerExecutor:
         if proc.returncode != 0:
             raise SandboxError(f"docker run が失敗した: {proc.stderr.strip()}")
         self._state = "running"
+        self._reports_seen = self._scan_reports()
         atexit.register(self.stop)
 
     def stop(self) -> None:
@@ -287,6 +376,7 @@ class DockerExecutor:
         """作業ツリー相対の cwd で argv を実行する。時間はコンテナ内 timeout とホスト側の二重で切る。"""
         if self._state != "running":
             raise RuntimeError(f"DockerExecutor が実行中でない（state={self._state}）")
+        _check_argv(argv)
         docker_argv = self.build_exec_argv(
             argv, timeout_s=timeout_s, cwd=cwd, call_id=call_id, env=env
         )
@@ -309,7 +399,21 @@ class DockerExecutor:
         if timed_out:
             exit_code = TIMEOUT_EXIT_CODE
         effects: list[Effect] = [exec_log_effect(argv, call_id=call_id)]
-        effects += self._collect_hook_effects(call_id)
+        hook_effects = self._collect_hook_effects(call_id)
+        effects += hook_effects
+        effects += self._reports_effects(call_id)
+        # python を起動したのにフックの起動記録が 1 件も無い = 「検出されなかった」ではなく「観測できなかった」
+        # （python -S、仮想環境の sitecustomize による遮蔽、フックの沈黙など）
+        if (
+            PYTHON_ARGV0.match(posixpath.basename(argv[0]))
+            and exit_code != SPAWN_FAILURE_EXIT_CODE
+            and not any(e.detail.startswith(HOOK_START_DETAIL) for e in hook_effects)
+        ):
+            effects.append(
+                exec_log_effect(argv, call_id=call_id).model_copy(
+                    update={"detail": HOOK_MISSING_DETAIL}
+                )
+            )
         return ExecResult(
             argv=list(argv),
             cwd=cwd,
@@ -334,18 +438,66 @@ class DockerExecutor:
         except (OSError, subprocess.TimeoutExpired):
             return subprocess.CompletedProcess(list(args), 1, "", "")
 
-    @staticmethod
-    def _is_docker_failure(proc: subprocess.CompletedProcess[str]) -> bool:
-        """docker CLI 自身の失敗（コンテナが無い等）か。コマンドの非 0 終了とは区別する。"""
-        return proc.returncode != 0 and proc.stderr.startswith(
+    def _is_docker_failure(self, proc: subprocess.CompletedProcess[str]) -> bool:
+        """docker CLI 自身の失敗（コンテナが落ちている等）か。コマンドの非 0 終了とは区別する。
+
+        エージェントのコマンドも 125 で終われる・同じ文字列を出せるので、どちらか 1 つだけでは決めない。
+        終了コード 125 と daemon のエラー文字列が揃えば失敗、どちらか片方なら docker inspect でコンテナの状態を確かめる。
+        """
+        if proc.returncode == 0:
+            return False
+        has_prefix = proc.stderr.startswith(
             ("Error response from daemon:", "Error: No such container")
         )
+        is_125 = proc.returncode == DOCKER_CLI_ERROR_EXIT_CODE
+        if is_125 and has_prefix:
+            return True
+        if not (is_125 or has_prefix):
+            return False
+        state = self._docker(
+            ["inspect", "-f", "{{.State.Running}}", self.container_name], timeout=30
+        )
+        return state.returncode != 0 or state.stdout.strip() != "true"
+
+    def _read_hook_log(self, path: Path, call_id: str | None) -> tuple[bytes, Effect | None]:
+        """効果ログ 1 ファイルの未読分を読む。通常ファイル以外は読まず、1 回だけ効果として記録する。
+
+        effects ディレクトリはエージェントが書き込めるので、FIFO・シンボリックリンク・ディレクトリを置かれても
+        ホストが固まらないように O_NONBLOCK | O_NOFOLLOW で開き、fstat で通常ファイルを確かめる
+        （is_symlink してから open する TOCTOU も塞ぐ）。
+        """
+        irregular = Effect(
+            kind="fs_write",
+            target=f"abs:{CONTAINER_EFFECTS}/{path.name}",
+            source="fs_diff",
+            via_call_id=call_id,
+            detail=HOOK_LOG_IRREGULAR_DETAIL,
+        )
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP and path not in self._irregular_logs:
+                self._irregular_logs.add(path)
+                return b"", irregular
+            return b"", None
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                if path in self._irregular_logs:
+                    return b"", None
+                self._irregular_logs.add(path)
+                return b"", irregular
+            return os.pread(fd, HOOK_READ_LIMIT, self._offsets.get(path, 0)), None
+        except OSError:
+            return b"", None
+        finally:
+            os.close(fd)
 
     def _collect_hook_effects(self, call_id: str | None) -> list[Effect]:
         """ホスト側の mounts.effects の *.jsonl を、前回の読み取り位置から末尾の完全な行まで読む。
 
         読み取り位置はファイルごとに持つ。exec の後も生き残ったプロセスの記録は次の回収で拾われる。
-        エージェントが書き込める入力なので、シンボリックリンクは辿らず、1 回の読み取りに上限を置く。
+        エージェントが書き込める入力なので、通常ファイル以外は読まず（_read_hook_log）、
+        1 回の読み取りに上限を置く。改行の無いまま上限を超えた行は、その分を捨てて読み取り位置を進める。
         """
         step_call_ids = {call_id} if call_id is not None else set()
         effects: list[Effect] = []
@@ -354,19 +506,15 @@ class DockerExecutor:
         except OSError:
             return effects
         for path in paths:
-            if path.is_symlink():
-                continue
-            offset = self._offsets.get(path, 0)
-            try:
-                with path.open("rb") as fh:
-                    fh.seek(offset)
-                    data = fh.read(HOOK_READ_LIMIT)
-            except OSError:
-                continue
+            data, anomaly = self._read_hook_log(path, call_id)
+            if anomaly is not None:
+                effects.append(anomaly)
             end = data.rfind(b"\n")
             if end < 0:
+                if len(data) >= HOOK_READ_LIMIT:
+                    self._offsets[path] = self._offsets.get(path, 0) + len(data)
                 continue
-            self._offsets[path] = offset + end + 1
+            self._offsets[path] = self._offsets.get(path, 0) + end + 1
             for raw in data[: end + 1].splitlines():
                 effect = parse_hook_record(
                     raw.decode("utf-8", "replace"),
@@ -376,6 +524,60 @@ class DockerExecutor:
                 if effect is not None:
                     effects.append(effect)
         return effects
+
+    def _scan_reports(self) -> dict[str, tuple[int, int, int]]:
+        """reports 領域の (種別, サイズ, mtime_ns)。想定した名前（<n>.xml の通常ファイル）は含めない。
+
+        シンボリックリンクは辿らない。エージェントが大量に作っても止まるように件数に上限を置く。
+        """
+        seen: dict[str, tuple[int, int, int]] = {}
+
+        def walk(directory: str, prefix: str) -> None:
+            try:
+                entries = list(os.scandir(directory))
+            except OSError:
+                return
+            for entry in entries:
+                if len(seen) >= REPORT_SCAN_LIMIT:
+                    return
+                try:
+                    st = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                rel = prefix + entry.name
+                kind = stat.S_IFMT(st.st_mode)
+                if not (not prefix and kind == stat.S_IFREG and REPORT_NAME.match(entry.name)):
+                    seen[rel] = (kind, st.st_size, st.st_mtime_ns)
+                if stat.S_ISDIR(st.st_mode):
+                    walk(entry.path, rel + "/")
+
+        walk(str(self._mounts.reports), "")
+        return seen
+
+    def _reports_effects(self, call_id: str | None) -> list[Effect]:
+        """reports 領域への、想定外の名前の作成・変更・削除を範囲外の効果（fs_diff）にする。
+
+        reports（/var/agenteval/reports）は pytest の結果ファイル <n>.xml 用に rw でマウントしている。
+        effects ディレクトリは観測の外（監査フックのログの置き場。盲点として SPEC に書く）。
+        """
+        now = self._scan_reports()
+        before, self._reports_seen = self._reports_seen, now
+        out: list[Effect] = []
+        for rel in sorted(before.keys() | now.keys()):
+            old, new = before.get(rel), now.get(rel)
+            if old == new:
+                continue
+            change = "added" if old is None else "deleted" if new is None else "modified"
+            out.append(
+                Effect(
+                    kind="fs_write",
+                    target=f"abs:{CONTAINER_REPORTS}/{rel}",
+                    source="fs_diff",
+                    via_call_id=call_id,
+                    detail=change,
+                )
+            )
+        return out
 
 
 # --- FakeExecutor（5.7 節） ---------------------------------------------------
@@ -444,6 +646,7 @@ class FakeExecutor:
         """呼び出しを記録し、responder の結果（または既定の結果）を返す。"""
         if self._state != "running":
             raise RuntimeError(f"FakeExecutor が実行中でない（state={self._state}）")
+        _check_argv(argv)
         _check_cwd(cwd)
         call = FakeCall(
             argv=list(argv), cwd=cwd, timeout_s=timeout_s, call_id=call_id, env=dict(env or {})

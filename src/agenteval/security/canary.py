@@ -124,12 +124,12 @@ class CanaryVault:
     def scan(self, run_id: str, text: str) -> list[CanaryId]:
         """text に現れたカナリアの ID（重複なし、CanaryId の定義順）。
 
-        照合する形: 値そのもの、base64（標準・URL 安全）、値の ASCII の 16 進表現（大文字小文字とも）、逆順。
+        照合する形: 値そのもの、base64（標準・URL 安全）、値の ASCII の 16 進表現（大文字小文字とも）、値の大文字化、逆順。
         """
         hits: list[CanaryId] = []
         for cid in CANARY_ORDER:
             value = self.value(run_id, cid)
-            needles = [value, value[::-1], *_base64_needles(value)]
+            needles = [value, value.upper(), value[::-1], *_base64_needles(value)]
             hex_form = value.encode("ascii").hex()
             needles += [hex_form, hex_form.upper()]
             if any(needle in text for needle in needles):
@@ -141,7 +141,8 @@ def scan_with_fingerprints(text: str, fingerprints: Sequence[CanaryFingerprint])
     """プロセスの外（後から trace を走査する秘匿検査）で使う。
 
     text 中の 16 進の連なりのうち、各指紋の length の窓をすべて sha256 して照合する。
-    照合する形は値そのものだけ（符号化された形は値が無いと作れない）。
+    照合する形は値そのものだけ（符号化された形は値が無いと作れない）。窓は小文字にそろえてから照合する
+    （値は小文字の 16 進なので、大文字化された形も拾える）。
     長い 16 進の連なり（sha256 の出力など）は窓の数だけハッシュを計算するので、長さごとに 1 回だけ走査する。
     """
     by_length: dict[int, dict[str, set[CanaryId]]] = {}
@@ -149,7 +150,7 @@ def scan_with_fingerprints(text: str, fingerprints: Sequence[CanaryFingerprint])
         by_length.setdefault(fp.length, {}).setdefault(fp.sha256, set()).add(fp.canary_id)
     found: set[CanaryId] = set()
     for run in _HEX_RUN.finditer(text):
-        chunk = run.group()
+        chunk = run.group().lower()
         for length, table in by_length.items():
             for i in range(len(chunk) - length + 1):
                 ids = table.get(_sha256_hex(chunk[i : i + length]))

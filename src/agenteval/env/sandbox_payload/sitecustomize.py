@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 from collections.abc import Sequence
 from typing import Any
@@ -38,6 +39,11 @@ NOISE_PREFIXES = (
 READ_NOISE_PREFIXES = ("/work/repo/.venv/lib/",)
 
 EVENTS_DELETE = ("os.remove", "os.rmdir", "shutil.rmtree")
+# パス 1 つを書き換える操作（fd を渡した呼び出しは扱えないので記録しない）
+EVENTS_PATH_WRITE = ("os.truncate", "os.chmod", "os.mkdir")
+# 名前を作る操作（dst を記録する）
+EVENTS_NEW_NAME = ("os.link", "os.symlink")
+EVENTS_NAME_LOOKUP = ("socket.gethostbyname", "socket.gethostbyaddr")
 
 
 def trunc(value: object) -> str:
@@ -55,6 +61,14 @@ def absolute(path: object) -> str | None:
         return None
     try:
         return os.path.abspath(os.fsdecode(path))  # type: ignore[arg-type]
+    except Exception:  # noqa: BLE001 - 計測器はホストのプログラムに例外を伝えない
+        return None
+
+
+def real(path: str) -> str | None:
+    """シンボリックリンクと /proc/self/root 経由を解決したパス。解決できなければ None。"""
+    try:
+        return os.path.realpath(path)
     except Exception:  # noqa: BLE001 - 計測器はホストのプログラムに例外を伝えない
         return None
 
@@ -93,13 +107,14 @@ class Recorder:
     def __init__(self, fd: int) -> None:
         self.fd = fd
         self.dead = False
-        self.busy = False
+        # 再入防止の旗はスレッドごとに持つ（別スレッドの記録を落とさない）
+        self.local = threading.local()
 
     def handle(self, event: str, args: tuple[Any, ...]) -> None:
         """sys.addaudithook に登録する関数。例外は外に出さない。"""
-        if self.dead or self.busy:
+        if self.dead or getattr(self.local, "busy", False):
             return
-        self.busy = True
+        self.local.busy = True
         try:
             record = self.build(event, args)
             if record is not None:
@@ -107,7 +122,7 @@ class Recorder:
         except Exception:  # noqa: BLE001, S110 - 計測器はホストのプログラムに例外を伝えない
             pass
         finally:
-            self.busy = False
+            self.local.busy = False
 
     def write(self, record: dict[str, Any]) -> None:
         """1 行を書く。失敗したら以後は黙って止める。"""
@@ -137,23 +152,43 @@ class Recorder:
             mode = args[1] if len(args) > 1 else None
             flags = args[2] if len(args) > 2 else None
             write = is_write_open(mode, flags)
-            if is_noise(path, write=write):
+            # /proc/self/root 経由で雑音の下に見えるパスが外を指すことがあるので、/proc は実体を見てから捨てる
+            if is_noise(path, write=write) and not path.startswith("/proc/"):
                 return None
-            return self.envelope(
-                "open",
-                {
-                    "path": trunc(path),
-                    "mode": None if mode is None else trunc(mode),
-                    "flags": flags if isinstance(flags, int) else None,
-                    # 判定はコンテナ内の OS の定数で行う（ホストの定数とは値が違うため、結果を持たせる）
-                    "write": write,
-                },
-            )
+            resolved = real(path)
+            if is_noise(path, write=write) and (
+                resolved is None or is_noise(resolved, write=write)
+            ):
+                return None
+            info: dict[str, Any] = {
+                "path": trunc(path),
+                "mode": None if mode is None else trunc(mode),
+                "flags": flags if isinstance(flags, int) else None,
+                # 判定はコンテナ内の OS の定数で行う（ホストの定数とは値が違うため、結果を持たせる）
+                "write": write,
+            }
+            if resolved is not None and resolved != path:
+                # シンボリックリンク・/proc/self/root 経由でも実体で判定できるように併記する
+                info["realpath"] = trunc(resolved)
+            return self.envelope("open", info)
         if event in EVENTS_DELETE:
             path = absolute(args[0])
             if path is None or is_noise(path, write=True):
                 return None
             return self.envelope(event, {"path": trunc(path)})
+        if event in EVENTS_PATH_WRITE:
+            path = absolute(args[0])
+            if path is None or is_noise(path, write=True):
+                return None
+            return self.envelope(event, {"path": trunc(path)})
+        if event in EVENTS_NEW_NAME:
+            # os.link(src, dst, ...)、os.symlink(src, dst, ...)。新しくできる名前 dst を記録する
+            dst = absolute(args[1]) if len(args) > 1 else None
+            if dst is None or is_noise(dst, write=True):
+                return None
+            return self.envelope(event, {"src": trunc(args[0]), "dst": trunc(dst)})
+        if event in EVENTS_NAME_LOOKUP:
+            return self.envelope(event, {"host": trunc(args[0])})
         if event == "os.rename":
             src, dst = absolute(args[0]), absolute(args[1])
             if src is None or dst is None:
@@ -171,7 +206,7 @@ class Recorder:
             )
         if event == "os.system":
             return self.envelope(event, {"command": trunc(args[0])})
-        if event == "socket.connect":
+        if event in ("socket.connect", "socket.sendto"):
             address = args[1]
             if isinstance(address, tuple):
                 shown: Any = [trunc(address[0]), address[1] if len(address) > 1 else None]

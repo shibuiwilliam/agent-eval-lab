@@ -11,6 +11,8 @@ import importlib.util
 import json
 import os
 import subprocess
+import sys
+import threading
 import types
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -36,6 +38,7 @@ from agenteval.env.sandbox import (
     FakeCall,
     FakeExecutor,
     SandboxError,
+    _stream_run,
     cleanup_containers,
     docker_available,
     docker_executor_factory,
@@ -67,6 +70,7 @@ class FakeDocker:
         self.exec_raises: BaseException | None = None
         self.run_returncode = 0
         self.ps_stdout = ""
+        self.inspect_running = "true"
         self.on_exec: Any = None
 
     def __call__(self, argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -75,6 +79,8 @@ class FakeDocker:
         sub = argv[1]
         if sub == "run":
             return subprocess.CompletedProcess(argv, self.run_returncode, "cid\n", "boom")
+        if sub == "inspect":
+            return subprocess.CompletedProcess(argv, 0, self.inspect_running + "\n", "")
         if sub == "ps":
             return subprocess.CompletedProcess(argv, 0, self.ps_stdout, "")
         if sub == "exec":
@@ -113,6 +119,9 @@ def test_run_argv_follows_spec(mounts: SandboxMounts) -> None:
     assert pairs(argv, "--user") == ["1000:1000"]
     assert pairs(argv, "--cpus") == ["1"]
     assert pairs(argv, "--memory") == ["1g"]
+    assert pairs(argv, "--memory-swap") == ["1g"]  # swap を使わせない（--memory と同じ値）
+    assert "--init" in argv
+    assert pairs(argv, "--ulimit") == [f"fsize={256 * 1024 * 1024}:{256 * 1024 * 1024}"]
     assert pairs(argv, "--pids-limit") == ["256"]
     assert pairs(argv, "--cap-drop") == ["ALL"]
     assert pairs(argv, "--security-opt") == ["no-new-privileges"]
@@ -183,6 +192,7 @@ def test_run_argv_honors_config(mounts: SandboxMounts, tmp_path: Path) -> None:
     argv = make_executor(mounts, FakeDocker(), config=cfg).build_run_argv()
     assert pairs(argv, "--cpus") == ["2.5"]
     assert pairs(argv, "--memory") == ["512m"]
+    assert pairs(argv, "--memory-swap") == ["512m"]
     assert pairs(argv, "--pids-limit") == ["64"]
     assert pairs(argv, "--user") == ["1001:1001"]
     assert argv[-3] == "img:x"
@@ -330,13 +340,43 @@ def test_host_side_timeout_kills_container_and_raises(mounts: SandboxMounts) -> 
     assert docker.subcommands().count("run") == 1  # 作り直さない
 
 
-def test_daemon_error_is_sandbox_error(mounts: SandboxMounts) -> None:
+DAEMON_ERROR = "Error response from daemon: container x is not running"
+
+
+def test_daemon_error_with_stopped_container_is_sandbox_error(mounts: SandboxMounts) -> None:
     docker = FakeDocker()
-    docker.exec_result = subprocess.CompletedProcess(
-        [], 1, "", "Error response from daemon: container x is not running"
-    )
+    docker.exec_result = subprocess.CompletedProcess([], 1, "", DAEMON_ERROR)
+    docker.inspect_running = "false"
     with make_executor(mounts, docker) as ex, pytest.raises(SandboxError):
         ex.exec(["ls"], timeout_s=1)
+    assert "inspect" in docker.subcommands()
+
+
+def test_exit_125_with_daemon_prefix_is_sandbox_error_without_inspect(
+    mounts: SandboxMounts,
+) -> None:
+    docker = FakeDocker()
+    docker.exec_result = subprocess.CompletedProcess([], 125, "", DAEMON_ERROR)
+    with make_executor(mounts, docker) as ex, pytest.raises(SandboxError):
+        ex.exec(["ls"], timeout_s=1)
+    assert "inspect" not in docker.subcommands()
+
+
+def test_agent_command_cannot_fake_a_sandbox_failure(mounts: SandboxMounts) -> None:
+    """エージェントのコマンドが 125 で終わる・daemon のエラー文を出すだけでは run を落とさない。"""
+    docker = FakeDocker()
+    docker.inspect_running = "true"
+    with make_executor(mounts, docker) as ex:
+        docker.exec_result = subprocess.CompletedProcess([], 125, "", "plain failure")
+        assert ex.exec(["sh", "-c", "exit 125"], timeout_s=1).exit_code == 125
+        docker.exec_result = subprocess.CompletedProcess([], 1, "", DAEMON_ERROR)
+        assert ex.exec(["sh", "-c", "echo x >&2"], timeout_s=1).exit_code == 1
+    # コマンドの普通の失敗は inspect を呼ばない
+    docker2 = FakeDocker()
+    docker2.exec_result = subprocess.CompletedProcess([], 2, "", "usage")
+    with make_executor(mounts, docker2) as ex2:
+        ex2.exec(["ls"], timeout_s=1)
+    assert "inspect" not in docker2.subcommands()
 
 
 # --- フックの記録の回収 -----------------------------------------------------
@@ -390,13 +430,160 @@ def test_collect_hook_effects_incrementally(mounts: SandboxMounts) -> None:
         assert late[0].via_call_id == "c3" and "origin_call=c1" in late[0].detail
 
 
-def test_collect_ignores_symlinked_logs(mounts: SandboxMounts, tmp_path: Path) -> None:
+def run_with_deadline(fn: Any, seconds: float = 20.0) -> Any:
+    """fn をスレッドで実行し、deadline までに終わらなければ失敗にする（FIFO で固まらないことの検査用）。"""
+    box: list[Any] = []
+
+    def target() -> None:
+        box.append(fn())
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    assert not thread.is_alive(), "ホスト側の回収が固まった"
+    return box[0]
+
+
+def test_collect_ignores_symlinked_logs_and_reports_them_once(
+    mounts: SandboxMounts, tmp_path: Path
+) -> None:
     secret = tmp_path / "outside.jsonl"
     secret.write_text(hook_line("os.system", {"command": "x"}, "c1"))
     (mounts.effects / "link.jsonl").symlink_to(secret)
     with make_executor(mounts, FakeDocker()) as ex:
-        result = ex.exec(["ls"], timeout_s=1, call_id="c1")
-    assert [e.source for e in result.effects] == ["exec_log"]
+        first = ex.exec(["ls"], timeout_s=1, call_id="c1")
+        second = ex.exec(["ls"], timeout_s=1, call_id="c2")
+    assert [(e.source, e.detail) for e in first.effects] == [
+        ("exec_log", ""),
+        ("fs_diff", "hook_log_not_regular"),
+    ]
+    assert first.effects[1].target == "abs:/var/agenteval/effects/link.jsonl"
+    assert first.effects[1].kind == "fs_write" and first.effects[1].via_call_id == "c1"
+    assert [e.source for e in second.effects] == ["exec_log"]  # 同じものは 1 回だけ
+
+
+def test_collect_does_not_hang_on_fifo_in_effects_dir(mounts: SandboxMounts) -> None:
+    fifo = mounts.effects / "evil.jsonl"
+    os.mkfifo(fifo)
+    (mounts.effects / "dir.jsonl").mkdir()
+    with make_executor(mounts, FakeDocker()) as ex:
+        result = run_with_deadline(lambda: ex.exec(["ls"], timeout_s=1, call_id="c1"))
+    got = sorted((e.target, e.detail) for e in result.effects if e.source == "fs_diff")
+    assert got == [
+        ("abs:/var/agenteval/effects/dir.jsonl", "hook_log_not_regular"),
+        ("abs:/var/agenteval/effects/evil.jsonl", "hook_log_not_regular"),
+    ]
+
+
+def test_oversized_line_without_newline_is_skipped(
+    mounts: SandboxMounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("agenteval.env.sandbox.HOOK_READ_LIMIT", 256)
+    log = mounts.effects / "1-1.jsonl"
+    log.write_bytes(b"x" * 1000)  # 改行の無い巨大な行
+    with make_executor(mounts, FakeDocker()) as ex:
+        for _ in range(3):  # 256 バイトずつ捨てて読み取り位置を進める
+            ex.exec(["ls"], timeout_s=1, call_id="c1")
+        with log.open("ab") as fh:
+            fh.write(b"\n" + hook_line("os.system", {"command": "x"}, "c1").encode())
+        results = [ex.exec(["ls"], timeout_s=1, call_id="c1") for _ in range(3)]
+    # 残りの断片は壊れた行として捨てられ、その後の正常な行は（小さい上限で数回に分かれても）拾える
+    seen = [e.detail for r in results for e in r.effects if e.source == "audit_hook"]
+    assert seen == ["os.system"]
+
+
+# --- argv ------------------------------------------------------------------
+def test_empty_argv_is_value_error(mounts: SandboxMounts) -> None:
+    docker = FakeDocker()
+    with make_executor(mounts, docker) as ex:
+        with pytest.raises(ValueError):
+            ex.exec([], timeout_s=1)
+        with pytest.raises(ValueError):
+            ex.build_exec_argv([], timeout_s=1)
+    assert "exec" not in docker.subcommands()
+    fake = FakeExecutor(mounts)
+    fake.start()
+    with pytest.raises(ValueError):
+        fake.exec([], timeout_s=1)
+    assert fake.calls == []
+
+
+# --- 観測不能の区別（hook_missing） -----------------------------------------
+@pytest.mark.parametrize(
+    "argv0", ["python", "python3", "python3.13", "/usr/local/bin/python", "pytest"]
+)
+def test_hook_missing_when_python_leaves_no_hook_start(mounts: SandboxMounts, argv0: str) -> None:
+    with make_executor(mounts, FakeDocker()) as ex:
+        result = ex.exec([argv0, "-S", "-c", "1"], timeout_s=1, call_id="c1")
+    missing = [e for e in result.effects if e.detail == "hook_missing"]
+    assert len(missing) == 1
+    assert (missing[0].kind, missing[0].via_call_id, missing[0].source) == (
+        "exec",
+        "c1",
+        "exec_log",
+    )
+    assert missing[0].target.startswith("exec:")
+
+
+def test_no_hook_missing_when_hook_started_or_not_python_or_not_found(
+    mounts: SandboxMounts,
+) -> None:
+    docker = FakeDocker()
+    log = mounts.effects / "9-1.jsonl"
+
+    def on_exec(argv: list[str]) -> None:
+        with log.open("a") as fh:
+            fh.write(hook_line("hook.start", {"argv": ["python"]}, "c1"))
+
+    with make_executor(mounts, docker) as ex:
+        docker.on_exec = on_exec
+        started = ex.exec(["python", "-c", "1"], timeout_s=1, call_id="c1")
+        docker.on_exec = None
+        shell = ex.exec(["/bin/sh", "-c", "python x"], timeout_s=1, call_id="c2")
+        docker.exec_result = subprocess.CompletedProcess([], 127, "", "not found")
+        notfound = ex.exec(["python"], timeout_s=1, call_id="c3")
+    for result in (started, shell, notfound):
+        assert not any(e.detail == "hook_missing" for e in result.effects)
+
+
+# --- reports 領域 -----------------------------------------------------------
+def test_reports_dir_unexpected_writes_are_out_of_scope_effects(mounts: SandboxMounts) -> None:
+    docker = FakeDocker()
+    (mounts.reports / "preexisting.txt").write_text("x")  # start 前からあるものは効果にしない
+    steps: list[Any] = []
+    docker.on_exec = lambda argv: steps.pop(0)() if steps else None
+    with make_executor(mounts, docker) as ex:
+        steps.append(lambda: (mounts.reports / "1.xml").write_text("<testsuites/>"))
+        ok = ex.exec(["python", "-m", "pytest"], timeout_s=1, call_id="c1")
+        assert not [e for e in ok.effects if e.target.startswith("abs:")]
+        steps.append(lambda: (mounts.reports / "run.sh").write_text("evil"))
+        bad = ex.exec(["ls"], timeout_s=1, call_id="c2")
+        steps.append(lambda: (mounts.reports / "run.sh").write_text("evil2-longer"))
+        mod = ex.exec(["ls"], timeout_s=1, call_id="c3")
+        again = ex.exec(["ls"], timeout_s=1, call_id="c4")
+        steps.append(
+            lambda: (mounts.reports / "2.xml").mkdir()
+        )  # 名前は <n>.xml でもディレクトリは範囲外
+        asdir = ex.exec(["ls"], timeout_s=1, call_id="c5")
+        steps.append(lambda: (mounts.reports / "run.sh").unlink())
+        gone = ex.exec(["ls"], timeout_s=1, call_id="c6")
+
+    def abs_effects(result: ExecResult) -> list[tuple[str, str, str | None]]:
+        return [
+            (e.target, e.detail, e.via_call_id) for e in result.effects if e.source == "fs_diff"
+        ]
+
+    assert abs_effects(bad) == [("abs:/var/agenteval/reports/run.sh", "added", "c2")]
+    assert abs_effects(mod) == [("abs:/var/agenteval/reports/run.sh", "modified", "c3")]
+    assert abs_effects(again) == []
+    assert abs_effects(asdir) == [("abs:/var/agenteval/reports/2.xml", "added", "c5")]
+    assert abs_effects(gone) == [("abs:/var/agenteval/reports/run.sh", "deleted", "c6")]
+    assert all(
+        not fx.is_allowed_path(e.target, ["**"])
+        for r in (bad, mod)
+        for e in r.effects
+        if e.source == "fs_diff"
+    )
 
 
 # --- cleanup_containers / factory ------------------------------------------
@@ -522,9 +709,13 @@ def hook(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
 
 @pytest.fixture
-def recorder(hook: types.ModuleType, tmp_path: Path) -> Iterator[tuple[Any, Path]]:
+def recorder(
+    hook: types.ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[tuple[Any, Path]]:
     path = tmp_path / "log.jsonl"
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    # realpath の解決はホスト（macOS の /System/Volumes/Data など）で値が変わるので恒等にする。解決の試験は別にある
+    monkeypatch.setattr(hook, "real", lambda p: p)
     rec = hook.Recorder(fd)
     yield rec, path
     try:
@@ -642,6 +833,135 @@ def test_hook_stops_silently_after_write_failure(recorder: tuple[Any, Path]) -> 
     rec.handle("os.system", ("ls",))  # 以後は何もしない
 
 
+def test_hook_records_realpath_for_symlinks(hook: types.ModuleType, tmp_path: Path) -> None:
+    """シンボリックリンク経由の open は realpath を併記し、パーサは実体の target で判定する。"""
+    real_dir = (tmp_path / "real").resolve()
+    real_dir.mkdir()
+    (real_dir / "secret").write_text("x")
+    link = tmp_path / "link"
+    link.symlink_to(real_dir / "secret")
+    log = tmp_path / "log.jsonl"
+    fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    rec = hook.Recorder(fd)
+    try:
+        rec.handle("open", (str(link), "r", 0))
+        rec.handle("open", (str(real_dir / "secret"), "r", 0))
+    finally:
+        os.close(fd)
+    first, second = lines(log)
+    assert first["args"]["path"] == str(link)
+    assert first["args"]["realpath"] == str(real_dir / "secret")
+    assert "realpath" not in second["args"]  # 同じなら併記しない
+
+
+def test_hook_keeps_proc_self_root_paths_that_escape_noise(
+    hook: types.ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """/proc 配下は雑音だが、実体が雑音の外を指すもの（/proc/self/root 経由）は記録する。"""
+    log = tmp_path / "log.jsonl"
+    fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    mapping = {"/proc/self/root/home/agent/.aws/credentials": "/home/agent/.aws/credentials"}
+    monkeypatch.setattr(hook, "real", lambda p: mapping.get(p, p))
+    rec = hook.Recorder(fd)
+    try:
+        rec.handle("open", ("/proc/self/root/home/agent/.aws/credentials", "r", 0))
+        rec.handle("open", ("/proc/self/status", "r", 0))  # 本当の雑音は捨てる
+    finally:
+        os.close(fd)
+    records = lines(log)
+    assert [r["args"]["realpath"] for r in records] == ["/home/agent/.aws/credentials"]
+    e = fx.parse_hook_record(
+        log.read_text().splitlines()[0], current_call_id=None, step_call_ids=()
+    )
+    assert e is not None and e.target == "home:.aws/credentials" and e.kind == "fs_read"
+
+
+def test_hook_records_additional_events(recorder: tuple[Any, Path]) -> None:
+    rec, path = recorder
+    rec.handle("socket.gethostbyname", ("evil.example",))
+    rec.handle("socket.gethostbyaddr", ("10.0.0.1",))
+    rec.handle("socket.sendto", (object(), ("10.0.0.1", 53)))
+    rec.handle("os.link", ("/work/repo/a", "/work/repo/b", None, None))
+    rec.handle("os.symlink", ("/etc/passwd", "/work/repo/l", None))
+    rec.handle("os.truncate", ("/work/repo/a", 0))
+    rec.handle("os.truncate", (5, 0))  # fd は扱えない
+    rec.handle("os.chmod", ("/home/agent/x", 0o777, None))
+    rec.handle("os.mkdir", ("/tmp/d", 0o777, None))
+    rec.handle("os.mkdir", ("/work/repo/src/__pycache__", 0o777, None))  # 雑音
+    parsed = [
+        fx.parse_hook_record(line, current_call_id="c", step_call_ids=())
+        for line in path.read_text().splitlines()
+    ]
+    assert [(e.kind, e.target, e.detail) for e in parsed if e is not None] == [
+        ("net_attempt", "net:evil.example:", "socket.gethostbyname"),
+        ("net_attempt", "net:10.0.0.1:", "socket.gethostbyaddr"),
+        ("net_attempt", "net:10.0.0.1:53", "socket.sendto"),
+        ("fs_write", "repo:b", "linked"),
+        ("fs_write", "repo:l", "symlinked"),
+        ("fs_write", "repo:a", "truncated"),
+        ("fs_write", "home:x", "chmod"),
+        ("fs_write", "tmp:d", "mkdir"),
+    ]
+
+
+def test_hook_busy_flag_is_per_thread(recorder: tuple[Any, Path]) -> None:
+    """再入防止の旗は別スレッドの記録を落とさない。"""
+    rec, path = recorder
+    n_threads, per_thread = 8, 50
+    barrier = threading.Barrier(n_threads)
+
+    def work(i: int) -> None:
+        barrier.wait()
+        for j in range(per_thread):
+            rec.handle("os.system", (f"cmd-{i}-{j}",))
+
+    threads = [threading.Thread(target=work, args=(i,)) for i in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(20)
+    assert len(lines(path)) == n_threads * per_thread
+
+
+def test_hook_busy_flag_blocks_reentry_in_same_thread_and_resets(
+    recorder: tuple[Any, Path],
+) -> None:
+    rec, path = recorder
+    original = rec.build
+    nested: list[Any] = []
+
+    def build(event: str, args: tuple[Any, ...]) -> Any:
+        rec.handle("os.system", ("nested",))  # 同じスレッドの再入は無視される
+        nested.append(1)
+        return original(event, args)
+
+    rec.build = build
+    rec.handle("os.system", ("outer",))
+    rec.build = original
+    rec.handle("os.system", ("after",))  # 旗は元に戻っている
+    assert [r["args"]["command"] for r in lines(path)] == ["outer", "after"]
+
+
+# --- docker CLI 出力のストリーム読み ------------------------------------------
+def test_stream_run_truncates_output_over_limit_and_notes_it() -> None:
+    code = "import sys; sys.stdout.write('a' * 100000); sys.stderr.write('b' * 10)"
+    proc = _stream_run([sys.executable, "-c", code], timeout=30, limit=1000)
+    assert proc.returncode == 0
+    assert proc.stdout == "a" * 1000
+    assert proc.stderr.startswith("b" * 10)
+    assert "stdout" in proc.stderr and "1000" in proc.stderr and "打ち切った" in proc.stderr
+
+
+def test_stream_run_keeps_output_within_limit_untouched() -> None:
+    proc = _stream_run([sys.executable, "-c", "print('hi'); import sys; sys.exit(3)"], timeout=30)
+    assert (proc.returncode, proc.stdout, proc.stderr) == (3, "hi\n", "")
+
+
+def test_stream_run_timeout_kills_child() -> None:
+    with pytest.raises(subprocess.TimeoutExpired):
+        _stream_run([sys.executable, "-c", "import time; time.sleep(60)"], timeout=0.5)
+
+
 # --- Docker 印のテスト（イメージが無ければ自動でスキップ）-----------------------
 def tree_manifest(m: SandboxMounts, step: int = 0) -> SnapshotManifest:
     """ホスト側のディレクトリから簡易の目録を作る（RepoEnv の代わり。テスト用）。"""
@@ -689,6 +1009,12 @@ def test_docker_container_is_isolated(container: DockerExecutor) -> None:
     assert host["ReadonlyRootfs"] is True
     assert host["PidsLimit"] == 256
     assert host["Memory"] == 1024**3
+    assert host["MemorySwap"] == 1024**3  # swap を使わせない
+    assert host["Init"] is True
+    assert {u["Name"]: (u["Soft"], u["Hard"]) for u in host["Ulimits"]}["fsize"] == (
+        256 * 1024 * 1024,
+        256 * 1024 * 1024,
+    )
     assert host["CapDrop"] == ["ALL"] or host["CapDrop"] == ["CAP_ALL"]
     uid = container.exec(["id", "-u"], timeout_s=20)
     assert uid.stdout.strip() == "1000"
@@ -820,3 +1146,65 @@ def test_docker_cleanup_containers(docker_mounts: SandboxMounts) -> None:
     finally:
         ex.stop()
     assert cleanup_containers(run_id) == 0
+
+
+@pytest.mark.docker
+def test_docker_file_size_limit_is_enforced(docker_mounts: SandboxMounts) -> None:
+    ex = DockerExecutor(
+        docker_mounts,
+        run_id=RUN + "__fsize",
+        mode="sim",
+        config=DockerConfig(fsize_bytes=1024 * 1024),
+    )
+    ex.start()
+    try:
+        result = ex.exec(["/bin/sh", "-c", "head -c 5000000 /dev/zero > /tmp/big"], timeout_s=30)
+        assert result.exit_code != 0
+        assert (docker_mounts.tmp / "big").stat().st_size <= 1024 * 1024
+    finally:
+        ex.stop()
+
+
+@pytest.mark.docker
+def test_docker_proc_self_root_read_of_honeypot_is_caught(
+    container: DockerExecutor, docker_mounts: SandboxMounts
+) -> None:
+    vault = CanaryVault(b"docker-test-key-docker-test-key-00")
+    (docker_mounts.home / ".aws").mkdir()
+    (docker_mounts.home / ".aws").chmod(0o777)
+    cred = docker_mounts.home / ".aws" / "credentials"
+    cred.write_text(vault.honeypot_files(RUN, HoneypotSpec())["home:.aws/credentials"])
+    cred.chmod(0o666)
+    code = (
+        "import os; os.symlink('/home/agent/.aws/credentials', '/tmp/l');"
+        "open('/proc/self/root/home/agent/.aws/credentials').read(); open('/tmp/l').read()"
+    )
+    result = container.exec(["python", "-c", code], timeout_s=30, call_id="c1")
+    assert result.exit_code == 0, result.stderr
+    reads = [e.target for e in result.effects if e.source == "audit_hook" and e.kind == "fs_read"]
+    assert reads.count("home:.aws/credentials") >= 1
+    assert not any(t.startswith("abs:/proc") or t == "tmp:l" for t in reads)
+
+
+@pytest.mark.docker
+def test_docker_python_without_site_is_hook_missing(container: DockerExecutor) -> None:
+    plain = container.exec(["python", "-c", "1"], timeout_s=30, call_id="c1")
+    assert not any(e.detail == "hook_missing" for e in plain.effects)
+    no_site = container.exec(["python", "-S", "-c", "1"], timeout_s=30, call_id="c2")
+    assert [e.detail for e in no_site.effects if e.detail == "hook_missing"] == ["hook_missing"]
+
+
+@pytest.mark.docker
+def test_docker_reports_dir_unexpected_write_is_recorded(container: DockerExecutor) -> None:
+    ok = container.exec(
+        ["/bin/sh", "-c", "echo '<testsuites/>' > /var/agenteval/reports/1.xml"],
+        timeout_s=20,
+        call_id="c1",
+    )
+    assert not [e for e in ok.effects if e.target.startswith("abs:/var/agenteval/reports")]
+    bad = container.exec(
+        ["/bin/sh", "-c", "echo x > /var/agenteval/reports/evil.sh"], timeout_s=20, call_id="c2"
+    )
+    assert [(e.target, e.detail, e.via_call_id) for e in bad.effects if e.source == "fs_diff"] == [
+        ("abs:/var/agenteval/reports/evil.sh", "added", "c2")
+    ]
