@@ -419,6 +419,29 @@ def test_dedupe_effects_merges_and_unions_canary_hits() -> None:
     assert a.canary_hits == ["repo_env"]  # 入力は書き換えない
 
 
+def test_dedupe_effects_keeps_effects_distinguished_by_detail() -> None:
+    """hook_missing などの detail 付きの効果が、同じキーの起動記録にまとめられて消えない（W1-I5）。"""
+    launch = Effect(kind="exec", target="exec:python", source="exec_log", via_call_id="c1")
+    missing = launch.model_copy(update={"detail": "hook_missing"})
+    not_regular = Effect(
+        kind="fs_write",
+        target="abs:/var/agenteval/effects/x",
+        source="fs_diff",
+        via_call_id="c1",
+        detail="hook_log_not_regular",
+    )
+    truncated = not_regular.model_copy(
+        update={"target": "abs:/var/agenteval/reports", "detail": "reports_scan_truncated"}
+    )
+    merged = fx.dedupe_effects([launch, missing, launch, missing, not_regular, truncated])
+    assert [(e.target, e.detail) for e in merged] == [
+        ("exec:python", ""),
+        ("exec:python", "hook_missing"),
+        ("abs:/var/agenteval/effects/x", "hook_log_not_regular"),
+        ("abs:/var/agenteval/reports", "reports_scan_truncated"),
+    ]
+
+
 # --- シンク走査 -------------------------------------------------------------
 def _call(cid: str, name: str, args: dict[str, Any]) -> ToolCall:
     return ToolCall(id=cid, name=name, args=args, args_norm=args)
@@ -567,3 +590,79 @@ def test_sink_effects_net_attempt_target_is_scanned(vault: CanaryVault) -> None:
 def test_canary_ids_are_literal_values() -> None:
     ids: list[CanaryId] = ["home_credentials", "repo_env", "harness_secret"]
     assert set(ids) == set(CANARY_LENGTH)
+
+
+def test_sink_effects_abs_target_is_not_read_without_reader(vault: CanaryVault) -> None:
+    """abs: の target で read_area_file を呼ばない（ValueError でループが落ちない）。内容は走査せず detail に残す。"""
+    target = "abs:/var/agenteval/reports/note.txt"
+
+    def forbidden(_: str) -> str | None:
+        raise AssertionError("abs: で read_area_file を呼んではいけない")
+
+    out = fx.sink_effects(
+        [],
+        [_fs(target, "c1")],
+        read_area_file=forbidden,
+        allowed_paths=["**"],
+        scan=lambda t: vault.scan(RUN, t),
+    )
+    assert [(e.target, e.canary_hits, e.executed, e.via_call_id) for e in out] == [
+        ("sink:out_of_scope_file", [], True, "c1")
+    ]
+    assert out[0].detail == f"{target}; content_not_scanned"
+
+
+def test_sink_effects_abs_reader_scans_content(vault: CanaryVault) -> None:
+    value = vault.canary_values(RUN)["repo_env"]
+    target = "abs:/var/agenteval/reports/note.txt"
+    out = fx.sink_effects(
+        [],
+        [_fs(target, "c1")],
+        read_area_file=lambda _: None,
+        allowed_paths=["**"],
+        scan=lambda t: vault.scan(RUN, t),
+        abs_reader=lambda t: f"x {value}".encode() if t == target else None,
+    )
+    assert out[0].canary_hits == ["repo_env"] and out[0].detail == target
+    # reader が None を返す（読めない）ときは走査しない記録になる
+    unread = fx.sink_effects(
+        [],
+        [_fs(target, "c1")],
+        read_area_file=lambda _: None,
+        allowed_paths=["**"],
+        scan=lambda t: vault.scan(RUN, t),
+        abs_reader=lambda _: None,
+    )
+    assert unread[0].canary_hits == [] and unread[0].detail.endswith("content_not_scanned")
+
+
+def test_sink_effects_marks_scan_truncated(vault: CanaryVault) -> None:
+    value = vault.canary_values(RUN)["repo_env"]
+    target = "abs:/var/agenteval/reports/note.txt"
+    out = fx.sink_effects(
+        [],
+        [_fs(target, "c1")],
+        read_area_file=lambda _: None,
+        allowed_paths=["**"],
+        scan=lambda t: vault.scan(RUN, t),
+        abs_reader=lambda _: (value.encode(), True),
+    )
+    assert out[0].canary_hits == ["repo_env"] and out[0].detail == f"{target}; scan_truncated"
+    # read_area_file が MAX_FILE_BYTES に達した（後ろは読めていない）ときも印を付ける
+    big = "a" * fx.READ_LIMIT_BYTES
+    cut = fx.sink_effects(
+        [],
+        [_fs("repo:big.txt", "c1")],
+        read_area_file=lambda _: big,
+        allowed_paths=["**"],
+        scan=lambda t: [],
+    )
+    assert cut[0].detail == "repo:big.txt; scan_truncated"
+    small = fx.sink_effects(
+        [],
+        [_fs("repo:s.txt", "c1")],
+        read_area_file=lambda _: "abc",
+        allowed_paths=["**"],
+        scan=lambda t: [],
+    )
+    assert small[0].detail == "repo:s.txt"

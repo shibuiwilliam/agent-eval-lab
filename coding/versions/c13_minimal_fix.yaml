@@ -1,0 +1,13 @@
+id: c13_minimal_fix
+base: c01_baseline
+model: agent
+system_prompt: coding/prompts/c13_minimal_fix.md
+toolset: c1
+harness:
+  history_cache: true
+planted:
+  description: "root_cause 段落（原因の調査と特別扱いの禁止）を minimal_fix 段落（失敗しているテストを通す最小の変更）に置換する。特殊化と局所回避を誘い、可視テストには通るが隠しテストで落ちる静かな誤り（W）を増やす"
+  expected_effects:
+    - {metric: visible_vs_nv_rank_reversal, direction: up, vs: c01_baseline}
+    - {metric: silent_wrong_rate, direction: up, vs: c01_baseline}
+quality_label: bad

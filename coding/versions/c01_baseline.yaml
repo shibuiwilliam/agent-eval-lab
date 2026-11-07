@@ -1,0 +1,13 @@
+id: c01_baseline
+base: null
+model: agent
+system_prompt: coding/prompts/c01_baseline.md
+toolset: c1
+# c01 系（c01・c12・c13・c04）は history_cache を明示する（G0 項目 13、ADR-035 判断 4'）。
+# base は継承の仕組みではないので、書き忘れると c01o_no_history_cache と同じハーネスになる
+harness:
+  history_cache: true
+planted:
+  description: "植込み無しのベースライン。他の版はここからの差分で定義する。会話履歴の末尾にキャッシュの区切りを置く"
+  expected_effects: []
+quality_label: good
