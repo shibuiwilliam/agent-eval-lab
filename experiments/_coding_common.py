@@ -249,13 +249,41 @@ def load_existing_run(run_id: str, *, data_root: Path, mode_dir: str = "sim") ->
 
 
 def failure_caution(experiment_id: str) -> str:
-    """EC-R1・R2・B2 の未達の判定理由に必ず添える注意（自動では NEGATIVE にしない。designer が判断する）。"""
-    return (
+    """EC-R1・R2・B2 の未達の判定理由に必ず添える注意（自動では NEGATIVE にしない。designer が判断する）。
+
+    (1) 検出力不足は全実験共通。(2) 植込みの注意は実験で違う:
+    - EC-R1・R2: c13 は操作確認を通っていない（ADR-046）。`w_rate_diff_ci_low` <= 0 なら NEGATIVE にしない
+    - EC-B2: 植込みはハーネスの版で ADR-037 の対象外（ADR-037 判断 6）。c13 の文言は出さない
+    """
+    command = (
+        f"`uv run agenteval exp {experiment_id.lower().replace('-', '_')} "
+        '--failure-type negative --reason "<理由>"`'
+    )
+    power = (
         "自動の判定は FAIL。次を確かめてから判断する: (1) 検出力不足の可能性: 観測した差・区間の幅を、パイロットで確定した"
-        "MDE（W3-A2 の記録）と比べる（MDE 未満の差は否定的結果ではなく検出力不足）。(2) 植込みの効果は操作確認"
-        "（ADR-037。c13 の spec_literal の発火数）で確認済みか。実装は正しく手法が主張どおり働かなかったと判断したときは、"
-        f'`uv run agenteval exp {experiment_id.lower().replace("-", "_")} --failure-type negative --reason "<理由>"` で'
-        "明示する（理由は結果 JSON と結果ページに残る）。"
+        "MDE（W3-A2 の記録）と比べる（MDE 未満の差は否定的結果ではなく検出力不足）。"
+    )
+    if experiment_id in ("EC-R1", "EC-R2"):
+        return (
+            power
+            + "(2) c13 は操作確認を通っていない（ADR-046。3 回とも特殊化 0/10）。`w_rate_diff_ci_low` <= 0 なら、"
+            "c13 に依存する基準の未達は植込みの不発による FAIL のままとし、`--failure-type negative` を使わない"
+            "（MDE 未満の差でも同じ。c13 に依存しない基準の未達は各結果ページの「FAIL と NEGATIVE の区別」で扱う）。"
+            "`w_rate_diff_ci_low` > 0 で、検出力と到達上限を確かめたうえで手法が主張どおり働かなかったと判断したときだけ、"
+            f"{command} で明示する（理由は結果 JSON と結果ページに残る。PASS・NEGATIVE のどちらでも"
+            "「操作確認を通っていない植込み。機構は特殊化ではない（局所回避と指示違反）」と結果ページに明記する）。"
+        )
+    if experiment_id == "EC-B2":
+        return (
+            power
+            + "(2) ハーネスの植込みは単体テストと W4-OB の観測で確かめる（ADR-037 判断 6。EC-B2 の植込みはハーネスの版で"
+            "操作確認の対象外）。実装は正しく手法が主張どおり働かなかったと判断したときは、"
+            f"{command} で明示する（理由は結果 JSON と結果ページに残る）。"
+        )
+    return (
+        power
+        + "(2) 植込みの効果は操作確認（ADR-037）で確認済みか。実装は正しく手法が主張どおり働かなかったと判断したときは、"
+        f"{command} で明示する（理由は結果 JSON と結果ページに残る）。"
     )
 
 
