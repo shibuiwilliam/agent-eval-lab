@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 if TYPE_CHECKING:
     from agenteval.llm.client import Mode
@@ -96,12 +96,195 @@ def exp(
     experiment_id: Annotated[str, typer.Argument(help="実験 ID（e3_1 / E3-1）")],
     live: Annotated[bool, typer.Option("--live/--no-live")] = False,
     seed: Annotated[int, typer.Option("--seed")] = 20260913,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run/--no-dry-run",
+            help="実行せず、依存する入力（段の run の有無）と費用の見込みを出す。API は呼ばない",
+        ),
+    ] = False,
 ) -> None:
     """実験を 1 つ実行し、結果 JSON と結果ページを更新する。"""
+    if dry_run:
+        from agenteval.reports.coding_corpus import experiment_dry_run
+
+        typer.echo(
+            json.dumps(
+                experiment_dry_run(experiment_id, seed=seed),
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
+        return
+
+    from agenteval.reports.coding_corpus import StageIncompleteError
     from agenteval.reports.runner import run_experiment
 
-    result = run_experiment(experiment_id, live=live, seed=seed)
+    try:
+        result = run_experiment(experiment_id, live=live, seed=seed)
+    except StageIncompleteError as exc:
+        # 章 C の live の実験は run を作らない。結果 JSON を書かずに案内して止まる（verify では PENDING のまま）
+        typer.echo(f"[停止] {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
+coding_app = typer.Typer(help="コーディング環境（NEW_IDEA 第 1 段）。run・コーパス・集計")
+app.add_typer(coding_app, name="coding")
+
+CODING_PLAN_DEFAULT = Path("coding/corpus.yaml")
+
+
+@coding_app.command("run")
+def coding_run(
+    version: Annotated[
+        str, typer.Option("--version", help="コーディングの版 ID（c01_baseline など）")
+    ],
+    task: Annotated[str, typer.Option("--task", help="コーディングのタスク ID（CT-...）")],
+    mode: Annotated[
+        str, typer.Option("--mode", help="sim | record | replay（auto は拒否される）")
+    ] = "sim",
+    stage: Annotated[str, typer.Option("--stage", help="段（run_id に入る）")] = "unit",
+    repeat: Annotated[int, typer.Option("--repeat")] = 0,
+    seed: Annotated[
+        int | None,
+        typer.Option("--seed", help="既定: coding/corpus.yaml の段の seed（無い段は 0）"),
+    ] = None,
+    script: Annotated[
+        str,
+        typer.Option("--script", help="sim の台本: gold | spec（record・replay では指定しない）"),
+    ] = "",
+    plan: Annotated[Path, typer.Option("--plan")] = CODING_PLAN_DEFAULT,
+) -> None:
+    """1 run を実行して結果を表示する。live は record だけ（ANTHROPIC_API_KEY と AGENTEVAL_BUDGET_USD が要る）。"""
+    from agenteval.agent.coding_loop import CodingRunOptions, run_coding_task
+    from agenteval.agent.scripted import gold_script, specialization_script
+    from agenteval.core.coding_registry import get_coding_task, get_coding_version
+    from agenteval.econ.outcome import classify
+    from agenteval.reports.coding_corpus import PlanError, load_plan, stage_seed
+
+    if mode not in ("sim", "record", "replay"):
+        raise typer.BadParameter("--mode は sim | record | replay（auto は拒否される）")
+    if seed is None:
+        try:
+            seed = stage_seed(load_plan(plan), stage)
+        except (PlanError, KeyError):
+            seed = 0
+    task_def = get_coding_task(task)
+    script_obj = None
+    if mode == "sim":
+        if script not in ("gold", "spec"):
+            raise typer.BadParameter("--mode sim には --script gold|spec が要る")
+        script_obj = gold_script(task_def) if script == "gold" else specialization_script(task_def)
+    elif script:
+        raise typer.BadParameter("--script は --mode sim のときだけ指定できる")
+    run_result, outcome = run_coding_task(
+        task_def,
+        get_coding_version(version),
+        CodingRunOptions(
+            mode=cast("Mode", mode), stage=stage, repeat=repeat, seed=seed, script=script_obj
+        ),
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "run_id": run_result.run_id,
+                "mode": run_result.mode,
+                "provenance": run_result.provenance,
+                "class": classify(run_result) if task_def.kind == "bugfix" else None,
+                "finished": outcome.finished,
+                "visible_passed": outcome.visible.passed if outcome.visible else None,
+                "hidden_passed": outcome.hidden.passed if outcome.hidden else None,
+                "steps": run_result.n_steps,
+                "usd": run_result.cost.usd,
+                "test_files_modified": outcome.test_files_modified,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@coding_app.command("corpus")
+def coding_corpus(
+    plan: Annotated[Path, typer.Option("--plan")] = CODING_PLAN_DEFAULT,
+    stage: Annotated[str, typer.Option("--stage", help="pilot | opcheck | corpus")] = "pilot",
+    dry_run: Annotated[bool, typer.Option("--dry-run/--no-dry-run")] = True,
+    live: Annotated[bool, typer.Option("--live/--no-live")] = False,
+    mode: Annotated[str, typer.Option("--mode", help="record（live。塩付き）| replay")] = "record",
+    shard: Annotated[
+        str, typer.Option("--shard", help="i/n（0 <= i < n）。位置 mod n で分ける")
+    ] = "",
+    approved: Annotated[
+        str, typer.Option("--approved", help="--live のとき必須。承認済みのゲート（G1 | G2）")
+    ] = "",
+) -> None:
+    """段（pilot・opcheck・corpus）の見積りを出す。`--live` で未完了の run を実行する（承認が要る）。
+
+    既定は見積りだけ（API を呼ばない）。`--live` は `--approved G1|G2`、ANTHROPIC_API_KEY、
+    AGENTEVAL_BUDGET_USD（累積上限）が揃い、上限が保守見積り（×1.5）の残りを賄えるときだけ始まる。
+    `auto` は使わない（コーディングのループが拒否する）。
+    """
+    import os
+
+    from agenteval.reports.coding_corpus import (
+        PlanError,
+        estimate_stage,
+        load_plan,
+        parse_shard,
+        run_stage,
+    )
+
+    if mode not in ("record", "replay"):
+        raise typer.BadParameter("--mode は record | replay（auto は拒否される）")
+    try:
+        the_plan = load_plan(plan)
+        estimate = estimate_stage(the_plan, stage)
+        shard_pair = parse_shard(shard) if shard else None
+    except PlanError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if not live:
+        typer.echo(json.dumps(estimate, ensure_ascii=False, indent=2))
+        return
+    if approved not in ("G1", "G2"):
+        raise typer.BadParameter("--live には --approved G1|G2（承認済みのゲート）が要る")
+    if mode == "record" and not os.environ.get("ANTHROPIC_API_KEY"):
+        raise typer.BadParameter("--live (record) には ANTHROPIC_API_KEY が要る")
+    if mode == "record" and estimate["budget_usd"] is None:
+        raise typer.BadParameter("--live (record) には AGENTEVAL_BUDGET_USD（累積上限）が要る")
+    if mode == "record" and not estimate["budget_fits_remaining_conservative"]:
+        typer.echo(json.dumps(estimate, ensure_ascii=False, indent=2))
+        raise typer.BadParameter(
+            "累積上限が保守見積り（×1.5）の残りを賄えない。上限を上げるのはユーザーの承認後"
+        )
+    typer.echo(json.dumps({"estimate": estimate}, ensure_ascii=False, indent=2))
+    summary = run_stage(the_plan, stage, mode=cast("Any", mode), shard=shard_pair)
+    typer.echo(json.dumps(summary, ensure_ascii=False, indent=2))
+
+
+@coding_app.command("report")
+def coding_report(
+    stage: Annotated[str, typer.Option("--stage", help="pilot | opcheck")] = "pilot",
+    only: Annotated[
+        str, typer.Option("--only", help="spec: 特殊化検出の発火数・発火率だけを出す（操作確認）")
+    ] = "",
+    plan: Annotated[Path, typer.Option("--plan")] = CODING_PLAN_DEFAULT,
+) -> None:
+    """パイロット・操作確認の集計。`--stage opcheck --only spec` は合格率・W 率を出さない（ADR-037）。"""
+    from agenteval.reports.coding_corpus import PlanError, load_plan, stage_report
+
+    if only not in ("", "spec"):
+        raise typer.BadParameter("--only は spec だけ")
+    if stage == "opcheck" and only != "spec":
+        raise typer.BadParameter(
+            "opcheck では合格率・W 率を見ない（ADR-037 判断 2）。--only spec を付ける"
+        )
+    try:
+        report = stage_report(load_plan(plan), stage, only_spec=only == "spec")
+    except PlanError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 @app.command("ptscorpus")
