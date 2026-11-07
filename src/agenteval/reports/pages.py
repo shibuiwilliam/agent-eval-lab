@@ -99,7 +99,11 @@ def provisional_mark(criterion: dict[str, Any], lang: str = "ja") -> str:
 
 
 def metrics_table(metrics: dict[str, Any], criteria: list[dict[str, Any]], lang: str = "ja") -> str:
-    """指標の表。合格基準に対応する行には基準と可否を書く。"""
+    """指標の表。合格基準に対応する行には基準と可否を書く。
+
+    `applies_if` を持つ基準は、基準の欄に適用条件を併記し、判定の欄に条件が偽なら N/A（理由つき）、
+    条件の指標が無い・来歴ラベルが無ければ ×（理由つき）と書く（ADR-045）。
+    """
     by_metric = {c["metric"]: c for c in criteria}
     header = (
         "| Metric | Value (provenance) | Criterion | OK |"
@@ -113,10 +117,11 @@ def metrics_table(metrics: dict[str, Any], criteria: list[dict[str, Any]], lang:
         if criterion is None:
             lines.append(f"| {key} | {format_value(value)} | — | — |")
             continue
-        ok = check_criterion(value, criterion)
+        ev = evaluate_criterion(criterion, metrics)
         lines.append(
             f"| {key} | {format_value(value)} | {criterion['op']} {criterion['value']}"
-            f"{provisional_mark(criterion, lang)} | {'○' if ok else '×'} |"
+            f"{provisional_mark(criterion, lang)}{applies_if_text(criterion, lang)} "
+            f"| {_status_cell(ev, lang)} |"
         )
     return "\n".join(lines)
 
@@ -143,6 +148,121 @@ def check_criterion(value: Any, criterion: dict[str, Any]) -> bool:
     if op == "==":
         return bool(actual == target)
     raise ValueError(f"未知の演算子: {op}")
+
+
+_NEGATED_OP = {">=": "<", "<=": ">", ">": "<=", "<": ">=", "==": "!="}
+APPLIES_IF_KEYS = frozenset({"metric", "op", "value"})
+CRITERION_KEYS = frozenset({"metric", "op", "value", "provisional", "applies_if"})
+
+
+def validate_criterion(criterion: dict[str, Any], where: str = "") -> None:
+    """registry の基準 1 つの形を検査する。未知のキーと不正な `applies_if` を黙って無視しない。"""
+    unknown = set(criterion) - CRITERION_KEYS
+    if unknown:
+        raise ValueError(f"{where}基準 {criterion.get('metric')} に未知のキー: {sorted(unknown)}")
+    cond = criterion.get("applies_if")
+    if cond is None:
+        return
+    if not isinstance(cond, dict) or set(cond) != APPLIES_IF_KEYS:
+        raise ValueError(
+            f"{where}基準 {criterion.get('metric')} の applies_if は metric / op / value を持つ辞書"
+        )
+    if cond["op"] not in (">=", "<=", ">", "<", "=="):
+        raise ValueError(
+            f"{where}基準 {criterion.get('metric')} の applies_if の演算子: {cond['op']}"
+        )
+
+
+def applies_if_text(criterion: dict[str, Any], lang: str = "ja") -> str:
+    """基準の表示に足す適用条件の文字列。条件が無ければ空。"""
+    cond = criterion.get("applies_if")
+    if not cond:
+        return ""
+    body = f"{cond['metric']} {cond['op']} {cond['value']}"
+    return f" (applies if {body})" if lang == "en" else f"（適用条件: {body}）"
+
+
+def evaluate_criterion(criterion: dict[str, Any], metrics: dict[str, Any]) -> dict[str, Any]:
+    """基準 1 つを結果の指標に照らして評価する（適用条件 `applies_if` を含む。ADR-045）。
+
+    返す辞書の `status`:
+    - `pass` / `fail`: 適用され、基準を満たした／満たさない（値が無ければ fail）
+    - `na`: 適用条件が偽。合格ではない。判定の AND から外す。`na` に条件の指標・値・否定した演算子を持つ
+    - `error`: 適用条件の指標が結果に無い、または来歴ラベルが無い（実装の不備。判定は FAIL）。`error` に理由
+    """
+    value = metrics.get(criterion["metric"])
+    actual = raw_value(value)
+    out: dict[str, Any] = {"actual": actual, "value": value, "na": None, "error": ""}
+    cond = criterion.get("applies_if")
+    if cond:
+        cond_value = metrics.get(cond["metric"])
+        if cond_value is None or raw_value(cond_value) is None:
+            out["status"] = "error"
+            out["error"] = f"適用条件の指標 {cond['metric']} が結果に無い"
+            return out
+        if not (isinstance(cond_value, dict) and cond_value.get("provenance")):
+            out["status"] = "error"
+            out["error"] = f"適用条件の指標 {cond['metric']} に来歴ラベルが無い"
+            return out
+        if not check_criterion(cond_value, cond):
+            out["status"] = "na"
+            out["na"] = {
+                "metric": cond["metric"],
+                "actual": raw_value(cond_value),
+                "op": _NEGATED_OP[cond["op"]],
+                "value": cond["value"],
+            }
+            return out
+    out["status"] = "pass" if value is not None and check_criterion(value, criterion) else "fail"
+    return out
+
+
+def na_text(na: dict[str, Any], lang: str = "ja") -> str:
+    """N/A の表示（例: `N/A（検出力不足: c13_f_hat = 0.04 < 0.15）`）。"""
+    actual = na["actual"]
+    shown = f"{actual:.3g}" if isinstance(actual, float) else str(actual)
+    cond = f"{na['metric']} = {shown} {na['op']} {na['value']}"
+    return f"N/A (insufficient power: {cond})" if lang == "en" else f"N/A（検出力不足: {cond}）"
+
+
+def _status_cell(ev: dict[str, Any], lang: str = "ja") -> str:
+    status = ev["status"]
+    if status == "na":
+        return na_text(ev["na"], lang)
+    if status == "error":
+        return f"× ({ev['error']})"
+    return "○" if status == "pass" else "×"
+
+
+def na_criteria(
+    criteria: list[dict[str, Any]], metrics: dict[str, Any]
+) -> list[tuple[str, dict[str, Any]]]:
+    """N/A になった基準の (指標名, `evaluate_criterion` の `na`)。"""
+    out: list[tuple[str, dict[str, Any]]] = []
+    for c in criteria:
+        ev = evaluate_criterion(c, metrics)
+        if ev["status"] == "na":
+            out.append((c["metric"], ev["na"]))
+    return out
+
+
+def na_sentence(na: list[tuple[str, dict[str, Any]]], lang: str = "ja") -> str:
+    """判定理由に入れる N/A の文（例: `x は N/A（検出力不足: f = 0.04 < 0.15）。N/A は合格ではない。`）。N/A が無ければ空。"""
+    if not na:
+        return ""
+    if lang == "en":
+        listed = " ".join(f"{m}: {na_text(n, 'en')}." for m, n in na)
+        return f"{listed} N/A is not a pass; it is excluded from the verdict."
+    listed = " ".join(f"{m} は {na_text(n)}。" for m, n in na)
+    return f"{listed}N/A は合格ではない（判定から外した）。"
+
+
+def _with_na_note(reason: str, na: list[tuple[str, dict[str, Any]]], lang: str = "ja") -> str:
+    """N/A の基準があるときだけ、判定理由に N/A の文を足す（ADR-045）。実験が書いた理由に既にあれば足さない。"""
+    note = na_sentence(na, lang)
+    if not note or "N/A" in reason:
+        return reason
+    return f"{reason}\n\n{note}" if reason else note
 
 
 def render(
@@ -183,18 +303,25 @@ def render(
         planted=pick("planted", meta.get("planted_text", meta.get("planted", ""))),
         control=pick("control", meta.get("control_text", meta.get("control", ""))),
         criteria="、".join(
-            f"{c['metric']} {c['op']} {c['value']}{provisional_mark(c)}" for c in criteria
+            f"{c['metric']} {c['op']} {c['value']}{provisional_mark(c)}{applies_if_text(c)}"
+            for c in criteria
         )
         if lang != "en"
         else ", ".join(
-            f"{c['metric']} {c['op']} {c['value']}{provisional_mark(c, 'en')}" for c in criteria
+            f"{c['metric']} {c['op']} {c['value']}{provisional_mark(c, 'en')}"
+            f"{applies_if_text(c, 'en')}"
+            for c in criteria
         ),
         provenance=meta.get("provenance", ""),
         method=pick("method", result.get("method", "")),
         table=metrics_table(result.get("metrics", {}), criteria, lang),
         figures=figures,
         verdict=result.get("verdict", "PENDING"),
-        verdict_reason=pick("verdict_reason", result.get("verdict_reason", "")),
+        verdict_reason=_with_na_note(
+            pick("verdict_reason", result.get("verdict_reason", "")),
+            na_criteria(criteria, result.get("metrics", {})),
+            lang,
+        ),
         notes=notes,
         script_id=meta["id"].lower().replace("-", "_"),
         ran_at=result.get("ran_at", "-"),
