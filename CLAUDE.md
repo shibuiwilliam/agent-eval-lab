@@ -96,7 +96,7 @@ NEW_IDEA の作業は、メインセッションがオーケストレーター�
 | 役割 | モデル | `model:` | 担当 |
 |---|---|---|---|
 | designer | Opus 5.5 | `opus` | **設計**: ADR、インターフェース仕様、実験の 5 項目と合格基準（到達上限・検出力つき）、タスク内容、結果の解釈。`src/` は書かない |
-| implementer | Sonnet 5.5 | `sonnet` | **実装**: 1 タスク = 1 worktree（`isolation: "worktree"`）= 1 ブランチ `task/<ID>`。所有ファイルだけを編集し、単体テストと `make check` を通してコミット |
+| implementer | Sonnet 5.5 | `sonnet` | **実装**: 1 タスク = 1 worktree = 1 ブランチ `task/<ID>`。worktree はオーケストレーターが `impl/coding-eval` から `../agent-eval-lab-wt/<ID>` に作る（自動の `isolation: "worktree"` は main から切られるので使わない。`TASK.md` 2.3 節）。所有ファイルだけを編集し、単体テストと `make check` を通してコミット |
 | reviewer | Sonnet 5.5 | `sonnet` | **レビュー**: 実装タスクごと・結果ページごとの独立レビュー。新しいコンテキストで、仕様と差分だけを渡す。指摘だけ返し、直さない |
 | runner | Haiku 5.5 | `haiku` | **実行と観測**: `make check`、Docker、オフライン実験、`--dry-run`、承認済みの live、集計。観測した事実だけを返し、ファイルを編集せず、解釈しない |
 
