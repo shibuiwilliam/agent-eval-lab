@@ -21,6 +21,7 @@ import re
 import shutil
 import sys
 import tempfile
+import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -163,6 +164,11 @@ def apply_gold_patch(env: RepoEnv, task: CodingTask) -> list[str]:
     return sorted(parts)
 
 
+def new_launch_id() -> str:
+    """起動ごとに一意な 8 桁の 16 進数。"""
+    return uuid.uuid4().hex[:8]
+
+
 # --- 実行 --------------------------------------------------------------------------
 def measure_task(
     task: CodingTask,
@@ -172,11 +178,17 @@ def measure_task(
     data_root: Path,
     fixture_root: Path = REPO_FIXTURE_ROOT,
     require_isolated: bool = True,
+    launch_id: str | None = None,
 ) -> list[Row]:
-    """1 タスクを、変異側・正解側の順に測る。作業領域は側ごとに作って片付ける。"""
+    """1 タスクを、変異側・正解側の順に測る。作業領域は側ごとに作って片付ける。
+
+    launch_id: 起動ごとに一意な値。run_id（= コンテナ名とラベル）に入れ、同時起動や再実行の重なりで
+    コンテナ名が衝突したり、片方の cleanup がもう片方を消したりしないようにする。None なら作る。
+    """
+    launch = launch_id or new_launch_id()
     rows: list[Row] = []
     for side in SIDES:
-        run_id = f"cd__measure__{task.id}__{side}__r0"
+        run_id = f"cd__measure__{launch}__{task.id}__{side}__r0"
         env = RepoEnv.create(
             task,
             run_id,
@@ -250,8 +262,17 @@ def summarize(
                     "diff_mean_tokens": mean / chars_per_token,
                 }
             totals[f"{side}/{subset}"] = entry
+    n_timed_out = sum(1 for r in rows if r.timed_out)
+    warnings: list[str] = []
+    if n_timed_out:
+        warnings.append(
+            f"timed_out の行が {n_timed_out} 件ある。出力が途中で切れており、文字数は過小評価になる"
+        )
     return {
         "chars_per_token": chars_per_token,
+        "n_rows": len(rows),
+        "n_timed_out": n_timed_out,
+        "warnings": warnings,
         "baseline": baseline,
         "verbose": verbose,
         "per_task": per_task,
@@ -291,8 +312,10 @@ def run_measurement(
     fixture_root: Path = REPO_FIXTURE_ROOT,
     require_isolated: bool = True,
     on_task: Callable[[str], None] | None = None,
+    launch_id: str | None = None,
 ) -> dict[str, Any]:  # Any: JSON にする入れ子の辞書
-    """指定タスクを全部測り、行と集計を持つ辞書を返す。"""
+    """指定タスクを全部測り、行と集計を持つ辞書を返す。launch_id は全タスクで共通（None なら作る）。"""
+    launch = launch_id or new_launch_id()
     tasks = load_coding_tasks()
     versions_all = load_coding_versions()
     versions = [versions_all[BASELINE_VERSION], versions_all[VERBOSE_VERSION]]
@@ -308,10 +331,27 @@ def run_measurement(
                 data_root=data_root,
                 fixture_root=fixture_root,
                 require_isolated=require_isolated,
+                launch_id=launch,
             )
         )
+    summary = summarize(rows)
     return {
         "provenance": "offline-measured (Docker, --network none, no LLM, cost 0 USD)",
+        "notes": {
+            "provenance": (
+                "LLM を使わないオフラインの実測。live / replay / simulated のいずれでもない"
+            ),
+            "chars_per_token": (
+                f"換算比 {CHARS_PER_TOKEN} は EC-B2.md の run_tests 出力の実測値（c01 の簡潔な出力で"
+                "測った比。来歴 live）。詳細出力では比が違いうる"
+            ),
+            "diff_total": (
+                "diff_total は 1 回の呼び出しあたりの出力の大きさ（c04 − c01）の、タスクにわたる和。"
+                "EC-B2 の ΣD_t（呼び出し回数と再送回数 n_i が要る）の直接の見積りではない"
+            ),
+        },
+        "launch_id": launch,
+        "warnings": list(summary["warnings"]),
         "task_ids": list(task_ids),
         "harness": {
             v.id: {
@@ -321,7 +361,7 @@ def run_measurement(
             for v in versions
         },
         "rows": [asdict(r) for r in rows],
-        "summary": summarize(rows),
+        "summary": summary,
     }
 
 
@@ -338,6 +378,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     work_root = Path(tempfile.mkdtemp(prefix="work-", dir=args.out.parent))
     started: list[str] = []
+    launch = new_launch_id()  # 起動ごとに一意（同時起動のコンテナ名の衝突を避ける）
 
     def factory_of(run_id: str) -> ExecutorFactory:
         started.append(run_id)
@@ -349,11 +390,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             executor_factory_of=factory_of,
             data_root=work_root,
             on_task=lambda tid: print(f"measuring {tid}", file=sys.stderr),
+            launch_id=launch,
         )
     finally:
         for run_id in started:  # 自分の run のコンテナだけ消す（他の runner のものは触らない）
             cleanup_containers(run_id)
         shutil.rmtree(work_root, ignore_errors=True)
+    for warning in result["warnings"]:
+        print(f"WARNING: {warning}", file=sys.stderr)
     text = json.dumps(result, ensure_ascii=False, indent=2)
     args.out.write_text(text + "\n", encoding="utf-8")
     print(text)
