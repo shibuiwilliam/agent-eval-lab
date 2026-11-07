@@ -453,8 +453,8 @@ def test_cache_prediction_error_old_definition_equals_abs_e_on() -> None:
     s_meas = 0.0
     s_pred = 0.0
     for r in on_runs:
-        c_off = counterfactual_cost(r, PRICES, history_cache=False)
-        c_on = counterfactual_cost(r, PRICES, history_cache=True)
+        c_off = counterfactual_cost(r, PRICES, history_cache=False, prefix_tokens=1000)
+        c_on = counterfactual_cost(r, PRICES, history_cache=True, prefix_tokens=1000)
         s_pred += c_off - c_on
         s_meas += c_off - ledger[r.run_id]
     old = abs(s_meas - s_pred) / s_pred
@@ -479,7 +479,8 @@ def test_cache_prediction_error_invalid_inputs() -> None:
         history_cache_prediction_error(on_runs, [], ledger, PRICES)
     with pytest.raises(KeyError):
         history_cache_prediction_error(on_runs, off_runs, {}, PRICES)
-    no_saving = [_run([_step(0, inp=10, out=5, cw=100)], "n1")]  # 1 ステップは節約が 0
+    # 1 ステップだけの on の run は再送が無く、書き込み分だけ高くなるので予測節約が負
+    no_saving = [_run([_step(0, inp=0, out=5, cw=1100)], "n1")]
     with pytest.raises(ValueError):
         history_cache_prediction_error(no_saving, off_runs, {**ledger, "n1": 0.0}, PRICES)
 
@@ -668,3 +669,134 @@ def test_fixture_plants_are_detected() -> None:
             a = allocate(r, prices, plant=AllocationPlant(cache_write_as_input=True))
             assert abs(a.allocated_usd - m.ledger_usd) / m.ledger_usd > 0.001
     assert n_cases > 0
+
+
+# ---------------------------------------------------------------------------
+# prefix_tokens（history_cache: on の run は user0 にも区切りが付く）
+# ---------------------------------------------------------------------------
+
+_OUTS = [50, 40, 30, 20, 10, 10]
+_TAUS = [100, 200, 300, 50, 50]
+
+
+def _saving(run: Run, prefix_tokens: int | None) -> float:
+    return counterfactual_cost(
+        run, PRICES, history_cache=False, prefix_tokens=prefix_tokens
+    ) - counterfactual_cost(run, PRICES, history_cache=True, prefix_tokens=prefix_tokens)
+
+
+def test_saving_same_for_on_and_off_usage_with_prefix_tokens() -> None:
+    """同じ軌跡なら、on の usage でも off の usage でも、prefix_tokens を渡せば Ŝ が一致する。"""
+    on = _blocks_run(_OUTS, _TAUS, user0=1000, history_cache=True)
+    off = _blocks_run(_OUTS, _TAUS, user0=1000)
+    assert on.steps[0].usage.input_tokens == 0  # on ではステップ 0 の in がほぼ 0
+    assert _saving(on, 1000) == pytest.approx(_saving(off, None))
+    assert _saving(off, 1000) == pytest.approx(_saving(off, None))
+    # user0（1000 トークン）の節約も入っている: 5 回再送される
+    assert _saving(off, None) > 0
+
+
+def test_saving_underestimated_for_on_usage_without_prefix_tokens() -> None:
+    """prefix_tokens を渡さない on の run は user0 が接頭辞に入り、Ŝ が過小になる（従来の挙動）。"""
+    on = _blocks_run(_OUTS, _TAUS, user0=1000, history_cache=True)
+    off = _blocks_run(_OUTS, _TAUS, user0=1000)
+    assert _saving(on, None) < _saving(off, None)
+    # 過小の大きさは user0 の再送分の節約 1000 × [p_in·6 − (p_w + p_r·5)]
+    gap = _saving(off, None) - _saving(on, None)
+    assert gap == pytest.approx(1000 * (1.0 * 6 - (1.25 + 0.1 * 5)) / MTOK)
+
+
+def test_counterfactual_on_equals_direct_with_prefix_tokens() -> None:
+    on = _blocks_run(_OUTS, _TAUS, user0=1000, history_cache=True)
+    direct = allocate(on, PRICES).direct_usd
+    assert counterfactual_cost(on, PRICES, history_cache=True, prefix_tokens=1000) == pytest.approx(
+        direct
+    )
+
+
+def test_allocate_prefix_tokens_splits_user0_for_on_usage() -> None:
+    on = _blocks_run(_OUTS, _TAUS, user0=1000, history_cache=True)
+    default = allocate(on, PRICES)
+    explicit = allocate(on, PRICES, prefix_tokens=1000)
+    assert default.segments[1].tokens == 0 and default.segments[0].tokens == 2000
+    assert explicit.segments[0].tokens == 1000 and explicit.segments[1].tokens == 1000
+    assert explicit.initial_user_usd > 0
+    assert explicit.allocation_identity_error < 1e-12
+    assert explicit.direct_usd == pytest.approx(default.direct_usd)
+
+
+def test_cache_prediction_error_records_and_derives_prefix_tokens() -> None:
+    on = [_blocks_run(_OUTS, _TAUS, user0=1000, history_cache=True, run_id="on")]
+    off = [_blocks_run(_OUTS, _TAUS, user0=1000, run_id="off")]
+    ledger = {r.run_id: allocate(r, PRICES).direct_usd for r in (*on, *off)}
+    r = history_cache_prediction_error(on, off, ledger, PRICES)
+    assert r.prefix_tokens == 1000  # off_runs の T0 − in0 から求めた
+    assert r.error == pytest.approx(0.0, abs=1e-12)
+    # 明示的に渡した値が優先され、記録される
+    r2 = history_cache_prediction_error(on, off, ledger, PRICES, prefix_tokens=900)
+    assert r2.prefix_tokens == 900
+
+
+def test_cache_prediction_error_rejects_inconsistent_off_prefix() -> None:
+    on = [_blocks_run(_OUTS, _TAUS, user0=1000, history_cache=True, run_id="on")]
+    off = [
+        _blocks_run(_OUTS, _TAUS, prefix=1000, run_id="off1"),
+        _blocks_run(_OUTS, _TAUS, prefix=1200, run_id="off2"),
+    ]
+    ledger = {r.run_id: allocate(r, PRICES).direct_usd for r in (*on, *off)}
+    with pytest.raises(ValueError):
+        history_cache_prediction_error(on, off, ledger, PRICES)
+    r = history_cache_prediction_error(on, off, ledger, PRICES, prefix_tokens=1000)
+    assert r.prefix_tokens == 1000
+
+
+# ---------------------------------------------------------------------------
+# P4 の適格条件・固定の 3 本・重複 run_id
+# ---------------------------------------------------------------------------
+
+
+def test_p4_not_eligible_when_original_has_negative_increment() -> None:
+    run = _run(
+        [
+            _step(0, inp=100, out=50, cw=1000),
+            _step(1, inp=700, out=20, cr=1000),  # T1 = 1700
+            _step(2, inp=300, out=10, cr=1000),  # T2 = 1300: 元から負の増分
+            _step(3, inp=350, out=10, cr=1000),
+        ]
+    )
+    assert allocate(run, PRICES).negative_increment_steps == [2]
+    assert not plant_eligible(run, PRICES, "P4", j=0)
+    assert not plant_eligible(run, PRICES, "P4", j=1)
+
+
+def test_p4_not_eligible_when_tau_not_positive() -> None:
+    # τ0 = Δ1 − out0 = 100 − 500 < 0。最後の増分（Δ2 = −… ではなく 0 未満になる場合）でなくても対象外
+    run = _run(
+        [
+            _step(0, inp=100, out=500, cw=1000),
+            _step(1, inp=200, out=10, cr=1000),
+            _step(2, inp=200, out=10, cr=1000),  # Δ2 = 0
+        ]
+    )
+    assert not plant_eligible(run, PRICES, "P4", j=0)
+
+
+def test_fixture_p4_eligibility_and_detection() -> None:
+    prices = _fixture_prices()
+    cases = 0
+    for r in _fixture_runs():
+        if r.n_steps < 3:
+            continue
+        for j in range(r.n_steps - 2):
+            if plant_eligible(r, prices, "P4", j=j):
+                cases += 1
+                assert allocate(r, prices).negative_increment_steps == []
+                p = allocate(perturb_drop_tool_result(r, j), prices)
+                assert p.negative_increment_steps  # 植込みで負の増分が出る
+    assert cases > 0
+
+
+def test_match_ledger_rejects_duplicate_run_ids() -> None:
+    run = _hand_run()
+    with pytest.raises(ValueError):
+        match_ledger([run, run.model_copy()], [])

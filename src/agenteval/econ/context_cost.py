@@ -14,6 +14,12 @@
     呼ばない（台帳との照合が同じ関数どうしの比較になるのを避ける。EC-B2P）。
   - ブロック長が負でも切り捨てない（切り捨てると分割が壊れ、負の増分を隠してしまう）。
   - このモジュールはファイルを読まない。台帳の読み込みは呼び出し側の責務。
+  - ledger_identity_error が検証するのは、単価表の写し・台帳の行の対応づけ・総和であり、
+    ブロックごとの割り振りの正しさ（どのブロックにいくら掛かったか）ではない。ブロック別の正しさは
+    位置モデルの仮定（連続するリクエストの総入力は減らない）と植込み・対照の検査で別に確かめる。
+  - history_cache: on の run は user0 の末尾にも区切りが付き、ステップ 0 の input_tokens がほぼ 0 になる。
+    その run では T0 − in0 が接頭辞（system＋ツール定義）に user0 を含んでしまうので、
+    接頭辞のトークン数 prefix_tokens を明示的に渡す（allocate・counterfactual_cost・H3 の予測誤差）。
 """
 
 from __future__ import annotations
@@ -204,10 +210,31 @@ def _split_cca(step: Step, cca_k: float) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 
 
+def _prefix_and_user0(run: Run, prefix_tokens: int | None) -> tuple[int, int]:
+    """(接頭辞のトークン数 P, 初回ユーザーメッセージのトークン数) を返す。
+
+    prefix_tokens が None なら P = T0 − in0、user0 = in0（history_cache: off の run でだけ正しい。
+    on の run は in0 がほぼ 0 なので user0 が P に入ってしまう）。
+    与えられたときは P = prefix_tokens、user0 = T0 − P。
+    """
+    s0 = run.steps[0]
+    t0 = _total_input(s0)
+    if prefix_tokens is None:
+        return t0 - s0.usage.input_tokens, s0.usage.input_tokens
+    return prefix_tokens, t0 - prefix_tokens
+
+
 def allocate(
-    run: Run, prices: UnitPrices, *, plant: AllocationPlant | None = None
+    run: Run,
+    prices: UnitPrices,
+    *,
+    plant: AllocationPlant | None = None,
+    prefix_tokens: int | None = None,
 ) -> RunAllocation:
-    """run の課金を、ブロック（prefix・user0・a<k>・t<k>）と出力に割り振る。"""
+    """run の課金を、ブロック（prefix・user0・a<k>・t<k>）と出力に割り振る。
+
+    prefix_tokens: system＋ツール定義だけのトークン数（history_cache: on の run で指定する）。
+    """
     plant = plant or AllocationPlant()
     steps = run.steps
     n = len(steps)
@@ -236,8 +263,7 @@ def allocate(
     totals = [_total_input(s) for s in steps]
     outs = [s.usage.output_tokens for s in steps]
     increments = [totals[m] - totals[m - 1] for m in range(1, n)]  # increments[m-1] = Δ_m
-    prefix_tokens = totals[0] - steps[0].usage.input_tokens
-    user0_tokens = steps[0].usage.input_tokens
+    prefix_tokens, user0_tokens = _prefix_and_user0(run, prefix_tokens)
     # τ_k = Δ_{k+1} − out_k（k = 0..n−2）。切り捨てない
     taus = [increments[k] - outs[k] for k in range(n - 1)]
 
@@ -382,15 +408,19 @@ def plant_eligible(
     """EC-B2P の適格条件。
 
     P2・P3: 恒等式への相対的な影響が許容値の 2 倍（0.002）以上。
-    P4: 3 ステップ以上で、τ_j が最後の増分を上回る（植込みで負の増分が生じることが植込み自体から分かる）。
+    P4: 3 ステップ以上で、τ_j > 0 かつ τ_j が最後の増分を上回り（植込みで負の増分が生じることが
+    植込み自体から分かる）、元の run に負の増分が無い（元からの負の増分を植込みの検出と数えない）。
     """
     if plant in ("P2", "P3"):
         return plant_relative_effect(run, prices, plant) >= PLANT_ELIGIBLE_EFFECT
     n = len(run.steps)
     if n < 3 or j is None or not 0 <= j <= n - 3:
         return False
-    last_increment = _total_input(run.steps[-1]) - _total_input(run.steps[-2])
-    return _tau(run, j) > last_increment
+    totals = [_total_input(s) for s in run.steps]
+    if any(totals[m] < totals[m - 1] for m in range(1, n)):
+        return False
+    tau = _tau(run, j)
+    return tau > 0 and tau > totals[-1] - totals[-2]
 
 
 # ---------------------------------------------------------------------------
@@ -467,9 +497,8 @@ def verbose_attribution(
     return RatioEstimate(value=value, ci_low=float(lo), ci_high=float(hi), n_clusters=len(tasks))
 
 
-def _measured_prefix_usd(run: Run, prices: UnitPrices) -> list[float]:
+def _measured_prefix_usd(run: Run, prices: UnitPrices, prefix_tokens: int) -> list[float]:
     """リクエストごとの接頭辞（system＋ツール定義）の課金の実測値（usage の区間で計算）。"""
-    prefix_tokens = _total_input(run.steps[0]) - run.steps[0].usage.input_tokens
     out: list[float] = []
     for s in run.steps:
         f = _cum_price(s, prices)
@@ -477,21 +506,32 @@ def _measured_prefix_usd(run: Run, prices: UnitPrices) -> list[float]:
     return out
 
 
-def counterfactual_cost(run: Run, prices: UnitPrices, *, history_cache: bool) -> float:
+def counterfactual_cost(
+    run: Run,
+    prices: UnitPrices,
+    *,
+    history_cache: bool,
+    prefix_tokens: int | None = None,
+) -> float:
     """キャッシュ関係の usage を使わず、Δ と output_tokens だけから費用を計算する（EC-B2 H3）。
 
     接頭辞（prefix）の課金はステップごとの実測値をそのまま使う。
     history_cache=False: 接頭辞より後ろはすべて通常入力。
     True: 各ブロック（user0、k 番目の a<k>＋t<k>）は、最初に現れるリクエストでキャッシュ書き込み、
     以降は読み出し。出力は output_tokens × 出力単価。
+
+    prefix_tokens: system＋ツール定義だけのトークン数。None のときは T0 − in0 を使う（off の run で
+    だけ正しい。on の run は in0 がほぼ 0 で user0 が接頭辞に入り、Ĉoff で user0 が通常入力として
+    数えられず節約が過小になる）。与えられたときは user0 = T0 − prefix_tokens として履歴ブロックに入れ、
+    Ĉoff では毎ステップ通常入力、Ĉon では初回書き込み・以降読み出しで数える。
     """
     steps = run.steps
     n = len(steps)
     if n == 0:
         return 0.0
     totals = [_total_input(s) for s in steps]
-    prefix_measured = _measured_prefix_usd(run, prices)
-    user0 = steps[0].usage.input_tokens
+    prefix_tokens, user0 = _prefix_and_user0(run, prefix_tokens)
+    prefix_measured = _measured_prefix_usd(run, prices, prefix_tokens)
     # ブロック k = a<k> と t<k> を合わせた長さ = Δ_{k+1}
     deltas = [totals[k + 1] - totals[k] for k in range(n - 1)]
     total = 0.0
@@ -516,6 +556,7 @@ class CachePredictionError(BaseModel):
     error: float  # |e_off − e_on| = history_cache_prediction_error
     n_on: int
     n_off: int
+    prefix_tokens: int  # 予測に使った接頭辞（system＋ツール定義）のトークン数
 
 
 def _residual_ratio(
@@ -524,13 +565,14 @@ def _residual_ratio(
     prices: UnitPrices,
     *,
     on: bool,
+    prefix_tokens: int,
 ) -> float:
     """Σ (L − Ĉ) / Σ Ŝ。Ĉ は on の run なら Ĉon、off の run なら Ĉoff。Ŝ = Ĉoff − Ĉon。"""
     residual = 0.0
     predicted = 0.0
     for r in runs:
-        c_off = counterfactual_cost(r, prices, history_cache=False)
-        c_on = counterfactual_cost(r, prices, history_cache=True)
+        c_off = counterfactual_cost(r, prices, history_cache=False, prefix_tokens=prefix_tokens)
+        c_on = counterfactual_cost(r, prices, history_cache=True, prefix_tokens=prefix_tokens)
         predicted += c_off - c_on
         residual += ledger_usd[r.run_id] - (c_on if on else c_off)
     if predicted <= 0.0:
@@ -543,6 +585,8 @@ def history_cache_prediction_error(
     off_runs: Sequence[Run],
     ledger_usd: Mapping[str, float],
     prices: UnitPrices,
+    *,
+    prefix_tokens: int | None = None,
 ) -> CachePredictionError:
     """履歴キャッシュの節約予測の誤差（EC-B2 H3）。
 
@@ -551,13 +595,29 @@ def history_cache_prediction_error(
     error = |e_off − e_on|。改訂前の定義 |Σ S − Σ Ŝ| / Σ Ŝ（S_j = Ĉoff_j − L_j、on の run だけ）は |e_on|
     に等しい。ledger_usd は run_id -> 台帳の usd の和（無ければ KeyError）。
     どちらかの群が空、または予測節約の和が 0 以下なら ValueError。
+
+    prefix_tokens: system＋ツール定義のトークン数。on の run は user0 にも区切りが付いて in0 が
+    ほぼ 0 になるので、T0 − in0 を使わない。None のときは off_runs のステップ 0 の T0 − in0 から求め、
+    off_runs の間で一致しなければ ValueError（版が違えば呼び出し側が明示的に渡す）。
     """
     if not on_runs or not off_runs:
         raise ValueError("on_runs と off_runs の両方が必要")
-    e_on = _residual_ratio(on_runs, ledger_usd, prices, on=True)
-    e_off = _residual_ratio(off_runs, ledger_usd, prices, on=False)
+    if prefix_tokens is None:
+        found = {_prefix_and_user0(r, None)[0] for r in off_runs}
+        if len(found) != 1:
+            raise ValueError(
+                f"off_runs の接頭辞のトークン数が一致しない（{sorted(found)}）。prefix_tokens を渡す"
+            )
+        prefix_tokens = found.pop()
+    e_on = _residual_ratio(on_runs, ledger_usd, prices, on=True, prefix_tokens=prefix_tokens)
+    e_off = _residual_ratio(off_runs, ledger_usd, prices, on=False, prefix_tokens=prefix_tokens)
     return CachePredictionError(
-        e_on=e_on, e_off=e_off, error=abs(e_off - e_on), n_on=len(on_runs), n_off=len(off_runs)
+        e_on=e_on,
+        e_off=e_off,
+        error=abs(e_off - e_on),
+        n_on=len(on_runs),
+        n_off=len(off_runs),
+        prefix_tokens=prefix_tokens,
     )
 
 
@@ -622,6 +682,8 @@ def match_ledger(
     行は duplicate_identical_rows、どのステップにも対応しなかった行は unmatched_ledger_rows に数える。
     """
     wanted = {r.run_id for r in runs}
+    if len(wanted) != len(runs):
+        raise ValueError("runs に同じ run_id が重複している")
     by_run: dict[str, list[LedgerEntry]] = {}
     for e in ledger:
         if e.mode in modes and e.run_id in wanted:
