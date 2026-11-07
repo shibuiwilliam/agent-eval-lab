@@ -375,6 +375,8 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 | 2026-11-07 | W1-I2 | ハニーポット自身の走査除外を「そのファイル自身のカナリア ID だけを hits から除く」に絞る。effects・reports も rw なので「書き込み可は 3 領域」の文言を「rw は run 専用の 5 領域（作業ツリー・偽 HOME・/tmp・reports・effects）。reports は想定外の名前を検出、effects は観測外の盲点」に改める。python の起動で hook.start が無い呼び出しは `hook_missing` として「観測不能」と区別する | SPEC.md 5.2・5.6、CONTENT.md 10 章（盲点の探針に effects への書き込みを追加）。**W2-A1 の前に designer が反映** |
 | 2026-11-07 | W1-I7 | 文書の追記（designer、W2-A1 の前）: CONTENT.md 6.2 に「L_vis はテストが名前で参照するモジュール直下の定数を推移的に含む」、THETA.md の損益分岐を SPEC どおり「解が [0,1] に無ければ nan」に、EC-R2.md の MAE の表に「SPEC どおりの実装（k≤3 は全列挙）では 0.061〜0.077（simulated）。W3-A2 は実装の関数で再模擬する」、EC-R1.md に「同時信頼帯の familywise 被覆は 24 クラスタで約 0.85（simulated）」 | 各文書 |
 | 2026-11-07 | W1-I8 への申し送り | `economics_of` は `tasks=共通タスク` を明示して呼ぶ（点推定と複製のタスク集合を揃える）。損益分岐の nan は「常に得」「常に損」の別を記録する。H3 は `prefix_tokens` を c01o から求める | I8 の指示文 |
+| 2026-11-07 | W1-I3（重大） | 隠しテストの `tests_hidden/pytest.ini` は `pythonpath = ../src`（pytest 9 は ini の位置から相対）。評価（隠しテスト・最終評価）の合否は JUnit XML が必須（標準出力の件数へのフォールバックは評価では使わない）、skip・error・name の無い testcase は不合格、フィクスチャの `expected_nodeids.json`（W1-I4 が正しいコードで生成）の全ノードが passed であることを条件にする。同一プロセス内の偽装は完全には防げないことを限界として記録する | SPEC.md 6.6、**新 ADR-041 が要る（SPEC 6.6 の標準出力フォールバックからの逸脱）**。W2-A1 の前に designer が反映 |
+| 2026-11-07 | W1-I3（中） | digest に実行ビットを含め、目録に全クラスの `full_hash` を足す。除外分類は repo 領域だけ。読み込みに上限（oversize は blob を保存しない）。`create` は既存のスナップショットがあれば拒否。blob にはカナリアの値が生で残るので、ADR-030 に「blob は例外、事後の秘匿走査は blobs を対象外」と追記 | SPEC.md 6.4・6.5、ADR-030 の追記（designer） |
 | 2026-11-07 | EC-B2P の解釈（W2-A1 へ） | `ledger_identity_error` は台帳とトークン数で照合した行の usd との一致なので、検証するのは単価表の写し・行の対応づけ・総和だけで、ブロックごとの割り振りの正しさではない。植込みの検出率 1.0 は適格条件と検出が同じ量なので「配管の煙試験」であって検出感度ではない。結果ページの「気づき・限界」に必ず書く | EC-B2P.md（W2-A1） |
 
 ### W2 オフライン検証（W1 の統合後。runner 5 体並列）
