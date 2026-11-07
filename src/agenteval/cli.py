@@ -210,7 +210,7 @@ def coding_run(
         str,
         typer.Option(
             "--approved",
-            help="record・replay で live の段（pilot・opcheck・corpus）を指定するとき必須。pilot・opcheck は G1、corpus は G2",
+            help="record・replay で live の段（pilot・opcheck<N>・corpus）を指定するとき必須。pilot・opcheck<N> は G1、corpus は G2",
         ),
     ] = "",
 ) -> None:
@@ -219,10 +219,21 @@ def coding_run(
     from agenteval.agent.scripted import gold_script, specialization_script
     from agenteval.core.coding_registry import get_coding_task, get_coding_version
     from agenteval.econ.outcome import classify
-    from agenteval.reports.coding_corpus import PlanError, check_gate, load_plan, stage_seed
+    from agenteval.reports.coding_corpus import (
+        PlanError,
+        check_gate,
+        load_plan,
+        required_gate,
+        stage_seed,
+    )
 
     if mode not in ("sim", "record", "replay"):
         raise typer.BadParameter("--mode は sim | record | replay（auto は拒否される）")
+    if mode == "record" and required_gate(stage) is None:
+        # record は live API を呼ぶ。ゲートに対応しない段（unit・未知の名前）では承認なしに走ってしまうので拒否する
+        raise typer.BadParameter(
+            f"--mode record は live の段（pilot・opcheck<N>・corpus）だけ。段 {stage!r} はゲートに対応しない"
+        )
     if mode in ("record", "replay"):
         # live の段をコーパスのゲートの外から始められないようにする（1 run でも段の run_id と seed が使われるため）
         try:
@@ -272,7 +283,9 @@ def coding_run(
 @coding_app.command("corpus")
 def coding_corpus(
     plan: Annotated[Path, typer.Option("--plan")] = CODING_PLAN_DEFAULT,
-    stage: Annotated[str, typer.Option("--stage", help="pilot | opcheck | corpus")] = "pilot",
+    stage: Annotated[
+        str, typer.Option("--stage", help="pilot | opcheck | opcheck<N> | corpus")
+    ] = "pilot",
     dry_run: Annotated[
         bool | None,
         typer.Option("--dry-run/--no-dry-run", help="見積りだけ（既定。--live とは併用できない）"),
@@ -286,7 +299,7 @@ def coding_corpus(
         str,
         typer.Option(
             "--approved",
-            help="--live のとき必須。pilot・opcheck は G1、corpus は G2（段と対応しなければ拒否）",
+            help="--live のとき必須。pilot・opcheck<N> は G1、corpus は G2（段と対応しなければ拒否）",
         ),
     ] = "",
 ) -> None:
@@ -350,22 +363,27 @@ def coding_corpus(
 
 @coding_app.command("report")
 def coding_report(
-    stage: Annotated[str, typer.Option("--stage", help="pilot | opcheck")] = "pilot",
+    stage: Annotated[str, typer.Option("--stage", help="pilot | opcheck | opcheck<N>")] = "pilot",
     only: Annotated[
         str, typer.Option("--only", help="spec: 特殊化検出の発火数・発火率だけを出す（操作確認）")
     ] = "",
     plan: Annotated[Path, typer.Option("--plan")] = CODING_PLAN_DEFAULT,
 ) -> None:
-    """パイロット・操作確認の集計。`--stage opcheck --only spec` は合格率・W 率を出さない（ADR-037）。"""
-    from agenteval.reports.coding_corpus import PlanError, load_plan, stage_report
+    """パイロット・操作確認の集計。`--stage opcheck<N> --only spec` は合格率・W 率を出さない（ADR-037）。"""
+    from agenteval.reports.coding_corpus import (
+        PlanError,
+        is_opcheck_stage,
+        load_plan,
+        stage_report,
+    )
 
-    if stage not in ("pilot", "opcheck"):
+    if stage != "pilot" and not is_opcheck_stage(stage):
         raise typer.BadParameter(
-            "--stage は pilot | opcheck だけ（corpus の集計は実験スクリプトが行う）"
+            "--stage は pilot | opcheck | opcheck<N> だけ（corpus の集計は実験スクリプトが行う）"
         )
     if only not in ("", "spec"):
         raise typer.BadParameter("--only は spec だけ")
-    if stage == "opcheck" and only != "spec":
+    if is_opcheck_stage(stage) and only != "spec":
         raise typer.BadParameter(
             "opcheck では合格率・W 率を見ない（ADR-037 判断 2）。--only spec を付ける"
         )

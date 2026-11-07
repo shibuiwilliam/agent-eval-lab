@@ -1,13 +1,13 @@
 # EC-B2 コンテキスト・コスト帰属 — ツール出力の生涯コストと履歴キャッシュの事前予測
 
-状態: 5 項目と方法を W0-D3（2026-11-07）で記述し、W0 の突き合わせ（同日）で SPEC.md・CONTENT.md と揃えた。G0 項目 13（同日承認）を W0-Y で反映し、c01 系を `history_cache: on`、H3 の植込みを off にした版 `c01o_no_history_cache` に入れ替えた（旧案は on にした版 `c01h_history_cache` で節約を予測していた。ADR-035 判断 4 の改訂）。データを見る前の変更である。W0-Z（同日、データを見る前）で、W1-I1 のレビューの決定に従い、H3 の接頭辞のトークン数 $P$ を off の版 c01o から求めることを方法に書いた（定義の訂正であり基準は変えていない）。**基準は暫定**（恒等式の 2 つは今確定してよい。G0 の判断事項）。パイロット（W3）の後、W3-A2 で下記「パイロットで計算する量」から確定し、`registry.yaml` に固定する（ADR-033）。結果と判定は空欄。
+状態: 5 項目と方法を W0-D3（2026-11-07）で記述し、W0 の突き合わせ（同日）で SPEC.md・CONTENT.md と揃えた。G0 項目 13（同日承認）を W0-Y で反映し、c01 系を `history_cache: on`、H3 の植込みを off にした版 `c01o_no_history_cache` に入れ替えた（旧案は on にした版 `c01h_history_cache` で節約を予測していた。ADR-035 判断 4 の改訂）。データを見る前の変更である。W0-Z（同日、データを見る前）で、W1-I1 のレビューの決定に従い、H3 の接頭辞のトークン数 $P$ を off の版 c01o から求めることを方法に書いた（定義の訂正であり基準は変えていない）。**W3-A2（2026-11-07）で H2 以外の基準を確定した**（下の「W3-A2 の計算」、ADR-033 の確定記録）。**H2 の `verbose_attribution_to_run_tests` は保留**（`sub10` × 1 では検出力が足りない。G2 で ADR を書いて決める）。パイロット（W3）の後、W3-A2 で下記「パイロットで計算する量」から確定し、`registry.yaml` に固定する（ADR-033）。結果と判定は空欄。
 原典: `docs/NEW_IDEA.md` 6 章 EC-B2（理論・方法 2・検証計画）、3.4 節 `history_cache`、TASK.md M4。割り振りの実装と台帳の照合は EC-B2P と共通。
 
 ## 5項目
 - 仮説: (H1) 割り振った成分の和は台帳に一致する（コーディング環境の新しい live run でも）。(H2) 詳細出力の版のコスト増の大部分は `run_tests` の出力に帰属する。(H3) `history_cache` を off にしたときのコスト増（on と off の費用の差）は、軌跡のトークン量だけから位置モデルで**事前に**予測でき、課金の実測と一致する（on の版では履歴のブロックが初回 $p_w$・以降 $p_r$ で、off の版では接頭辞より後ろがすべて $p_{in}$ で課金される）
 - 植込み条件: `c04_verbose_ctx`（`test_output_limit: null`・`test_verbosity: verbose`。`history_cache: true` は c01 と同じ。コスト増）、`c01o_no_history_cache`（c01 の YAML から `history_cache: true` を除いた版。`harness` は既定値だけ。予測可能なコスト増）。どちらもプロンプトは c01 と同一（CONTENT.md 8.5 節）。各 10 タスク（`coding/task_sets.yaml` の `sub10`。CONTENT.md 5.7 節）× 1 反復（コーパス W4、段 `corpus`）。H3 の on 側は植込みではなくベースライン `c01_baseline` の run（コーパスの `core24` × 6 反復）を使う（方法の H3）
 - 対照: (a) 同じ詳細出力を**最後のツールステップでだけ**出すスクリプト化エージェント（再送 1 回なので帰属は小さいはず。simulated）、(b) `c12_null`（記録のみ。理由は方法）
-- 合格基準（暫定）: `allocation_identity_error <= 1e-9`、`ledger_identity_error <= 0.001`、`verbose_attribution_to_run_tests >= 0.8`、`history_cache_prediction_error <= 0.10`（定義は方法の H3。G0 項目 13 で「節約の予測誤差」から「on と off の差の予測誤差」$\lvert e_{\text{off}} - e_{\text{on}} \rvert$ に改めた。閾値は変えていない）、`control_attribution <= 0.10`
+- 合格基準（W3-A2 で H2 以外を確定。H2 は保留）: `allocation_identity_error <= 1e-9`、`ledger_identity_error <= 0.001`、`verbose_attribution_to_run_tests >= 0.8`、`history_cache_prediction_error <= 0.10`（定義は方法の H3。G0 項目 13 で「節約の予測誤差」から「on と off の差の予測誤差」$\lvert e_{\text{off}} - e_{\text{on}} \rvert$ に改めた。閾値は変えていない）、`control_attribution <= 0.10`
 - 来歴: c01・c04・c01o の usage と台帳は live。対照 (a) のスクリプト化 run は simulated（usage は sim の計数、単価は `pricing.yaml`）。事前予測の計算そのものは live の軌跡に式を当てたもの（live）。表では列を分ける
 
 ## 方法
@@ -74,6 +74,34 @@ c12 − c01 の `run_tests` 帰属の差を 95% 区間付きで記録する。�
 
 - 恒等式の基準は EC-B2P と同じ根拠（台帳は丸めない、浮動小数点の誤差のみ）で、**今の時点で確定してよい**。暫定なのは H2・H3・対照 (a) の閾値である
 - 到達上限: `allocation_identity_error` と `ledger_identity_error` は 0、`history_cache_prediction_error` はキャッシュが位置モデルどおりなら 0（$e_{\text{on}} = e_{\text{off}} = 0$）、`control_attribution` は 1/11。`verbose_attribution_to_run_tests` は上限が定まらない（振る舞いの変化で 1 を超えうる）
+
+### W3-A2 の計算（2026-11-07。入力は c01 のパイロットだけ。H3 の残差 $r_j$・$e_{\text{on}}$ は計算していない）
+| 量 | 値 | 来歴 |
+|---|---|---|
+| 1 run の費用の反復間 SD $\sigma_c$ | 0.01056 USD（平均 0.0529 USD の約 20%） | live |
+| 1 run のステップ数 | bugfix で平均 13.2、中央値 12 | live |
+| 1 run の `run_tests` の呼び出し回数（`sub10` の c01 20 run） | 平均 3.8 | live |
+| `run_tests` の簡潔な出力が 80 行の上限で切り詰められた回数 | **0**（切り詰め前後の差 raw − shown は全呼び出しで 0） | live |
+| `run_tests` の出力の文字/トークン比 | 2.86（ツール結果全体では 2.06） | live |
+| c04 の詳細出力による予測コスト増 $\sum_t \hat D_t$（`sub10`。下の注） | 下限（切り詰めの差）0、詳細出力の大きさのモデルで約 0.04 USD（0.03〜0.06） | live の軌跡にモデルを当てた概算 |
+| H2 の検出力の条件の右辺 $2.8\,\sigma_c\sqrt{10(1/r + 1/6)}$ | r = 1: **0.101**、r = 2: 0.076、r = 3: 0.066、r → ∞: 0.038 USD | 式 |
+| 予測増加 $\hat S_j = \hat C^{\text{off}}_j - \hat C^{\text{on}}_j$（接頭辞 P = 8,814 トークン。パイロットの段の 1 ステップ目の `cache_read` の最頻値） | 1 run 平均 0.084 USD、最小 0.016 USD、0.005 USD 未満の run は 0/96 | live の軌跡に式を当てたもの（実費とは比べていない） |
+| **事前予測の増加率** $\sum \hat S / \sum \hat C^{\text{on}}$（記録のみの版間比較と並べる値。ここで固定） | **1.586**（off は on の約 2.6 倍） | 同上 |
+| 1 ステップ目の総入力の最小値 | 9,214 トークン（Haiku 4.5 の最小キャッシュ長を上回る） | live |
+| 履歴キャッシュの作動（2 ステップ目以降で履歴部分の `cache_read` が 0 の run） | 0/96（`coding report --stage pilot` の `history_cache_inactive_runs`） | live |
+
+注: c01 の簡潔な出力は一度も切り詰められていないので、c04 との差は詳細度（`-vv --tb=long -rA`）だけで生じる。$\hat D_t$ の概算は、c01 の各 `run_tests` の呼び出し（合格・失敗の件数）に、詳細出力の増分を「1 テストあたり約 129 字（`-vv` の 1 行と `-rA` の 1 行）＋ヘッダ約 300 字＋失敗 1 件あたり約 1,000 字（長いトレースバック）」と置き、
+文字/トークン比 2.86 でトークンに直し、再送回数 $n_i$ に応じて $p_w + p_r(n_i - 1)$ を掛けた（`history_cache: on`）。モデルの係数は実測ではないので幅を持たせた。P の値は c01o の run が無いので c01 の段の値で代えた（c01 と c01o は system とツール定義が同一）。コーパスでは c01o から求め直す（W0-Z の決定）
+
+- **H2 は `sub10` × 1 では検出力が足りない**: 予測コスト増（約 0.04 USD）が必要量 0.101 USD の半分以下で、c04 の反復を増やしても `sub10` の 10 件のままでは届かない（c01 の 6 反復が分散を残すので、反復を無限にしても 0.038 USD が要る）。
+  原因は (i) G0 項目 13 で c04 も `history_cache: on` になり、再送される出力が初回 $p_w$・以降 $p_r$ で課金される（off の約 0.21 倍）、(ii) c01 の出力が短く、詳細出力でも 1 回あたり数千字にとどまる、(iii) $\sigma_c$ がステップ数の揺れで大きい、の 3 つ
+- **G2 で ADR を書いて決める案**（基準 0.8 の値は変えない）:
+  - (A) c04 を `core24` × 3 反復（72 run）に広げる。必要量 $2.8\,\sigma_c\sqrt{24(1/3 + 1/6)}$ = 0.102 USD に対し予測コスト増は約 0.10 USD（`sub10` の 1 タスクあたりの値 × 24。モデルの幅で 0.07〜0.14）で、検出力は中央の見込みで約 0.8、幅の両端で 0.5〜0.98。追加 62 run × 約 0.06 USD ≈ 3.7 USD（名目）
+  - (B) H2 の `verbose_attribution_to_run_tests` を記録のみにし、EC-B2 の判定を恒等式・H3・対照 (a) で行う。c04 は `sub10` × 1 のまま記録を取る（費用は変わらない）
+  - 推奨: 先に**オフラインで詳細出力の実際の大きさを測る**（runner、Docker、LLM 不使用、費用 0: `sub10` の各タスクの変異コードと正解コードの作業ツリーで、`run_tests` を簡潔・詳細の両方で全体と失敗テストだけについて走らせ、出力の文字数を記録する）。測った $\sum_t \hat D_t$ が (A) の必要量に届く見込みがあれば (A)、届かなければ (B) を G2 に出す
+- `history_cache_prediction_error <= 0.10` は確定: 分母の予測増加は 1 run 平均 0.084 USD と大きく、相対誤差が分母の小ささで不安定になる心配はない。到達上限は位置モデルどおりなら 0
+- `control_attribution <= 0.10` は確定: 予測 1/11 はパイロットに依存しない算術の値
+- コーパスの見積りへの影響: off の版 c01o の 1 run は、予測増加率から約 0.0476 × 2.59 ≈ 0.12 USD（6.2 節の仮定 0.097 USD より高い）。G2 の `--dry-run` は実測の単価で見積る
 
 ### FAIL と NEGATIVE の区別（判定時の指針）
 - 割り振り・照合の実装の誤り、`history_cache` が版に正しく入っていない（W4-OB で c01 系の run の履歴部分の `cache_read` が 0、または c01o の run の接頭辞より後ろに `cache_creation` / `cache_read` がある。$e_{\text{off}}$ が 0 から外れるのは主にこの場合）は FAIL

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
@@ -61,11 +62,23 @@ CORPUS_TASKS = 24
 
 
 # live の段と、それを始めてよい承認済みのゲート（TASK.md 6.1 節: G1 = パイロット・操作確認、G2 = コーパス）
-STAGE_GATES = {"pilot": "G1", "opcheck": "G1", "corpus": "G2"}
+STAGE_GATES = {"pilot": "G1", "corpus": "G2"}
+# 操作確認の段。`opcheck`（1 回目）と、c13 の立て直しごとに足す `opcheck<N>`（SPEC.md 2.3・2.4 節）。どれも G1
+OPCHECK_STAGE = re.compile(r"^opcheck[0-9]*$")
+
+
+def is_opcheck_stage(stage: str) -> bool:
+    """操作確認の段（opcheck・opcheck2・opcheck3 ...）か。集計は `--only spec` だけを許す（ADR-037 判断 2）。"""
+    return OPCHECK_STAGE.fullmatch(stage) is not None
 
 
 def required_gate(stage: str) -> str | None:
-    """live の段なら、始めるのに要る承認済みのゲート（G1 | G2）。live でない段（unit・offline など）は None。"""
+    """live の段なら、始めるのに要る承認済みのゲート（G1 | G2）。live でない段（unit・offline など）は None。
+
+    `opcheck<N>` は計画（coding/corpus.yaml）に足される前でも G1 に対応させる（足し忘れで承認なしに走らせない）。
+    """
+    if is_opcheck_stage(stage):
+        return "G1"
     return STAGE_GATES.get(stage)
 
 

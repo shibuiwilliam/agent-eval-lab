@@ -574,12 +574,12 @@
   planted_text: "c04_verbose_ctx（test_output_limit 無効＋詳細出力）、c01o_no_history_cache（c01 から history_cache: true を除いた版。予測可能なコスト増）。各 10 タスク（sub10）× 1。H3 の on 側は c01_baseline のコーパス全 run（core24 × 6）"
   control: {scripted: verbose_early_vs_late, versions: [c12_null]}
   control_text: "同じ詳細出力をステップ 1 で出す版と最後のツールステップで出す版のスクリプト化エージェントの対（simulated、history_cache off。c01o_no_history_cache のハーネスを借りる）。c12_null は記録のみ"
-  criteria:   # 暫定（W3-A2 で確定）
+  criteria:   # W3-A2（2026-11-07）で H2 以外を確定（ADR-033 の確定記録）。H2 は G2 で ADR を書いて決める
     - {metric: allocation_identity_error, op: "<=", value: 1.0e-9}  # TASK からの変更: 0.03 → 1e-9（EC-B2P と同じ理由）
     - {metric: ledger_identity_error, op: "<=", value: 0.001}       # TASK からの変更: 追加（EC-B2P と同じ根拠。今確定してよい）
-    - {metric: verbose_attribution_to_run_tests, op: ">=", value: 0.8, provisional: true}
-    - {metric: history_cache_prediction_error, op: "<=", value: 0.10, provisional: true}  # |e_off − e_on|（G0 項目 13 で on/off の差の予測誤差に改めた）。run 内の反実仮想。キャッシュ関係の usage を予測に使わない
-    - {metric: control_attribution, op: "<=", value: 0.10, provisional: true}           # CCA_L / CCA_E。予測 1/11
+    - {metric: verbose_attribution_to_run_tests, op: ">=", value: 0.8, provisional: true}   # 保留: sub10 × 1 では検出力不足（予測コスト増 約 0.04 USD < 必要 0.101 USD）。G2 で c04 の拡大か記録のみへの変更を ADR で決める
+    - {metric: history_cache_prediction_error, op: "<=", value: 0.10}  # 確定（予測増加 1 run 平均 0.084 USD、事前予測の増加率 1.586）。|e_off − e_on|（G0 項目 13 で on/off の差の予測誤差に改めた）。run 内の反実仮想。キャッシュ関係の usage を予測に使わない
+    - {metric: control_attribution, op: "<=", value: 0.10}           # 確定。CCA_L / CCA_E。予測 1/11
   # 記録のみ: verbose_attribution の区間, e_on と e_off（個別）, sub10 に限った e_on と版ごとの e_on, history_cache_increase_between_versions と事前予測, c12 の帰属の差と区間
   provenance: live   # 対照のスクリプト化 run は simulated と数値ごとに付ける
   budget_usd: 0
@@ -593,11 +593,11 @@
   planted_text: "c13_minimal_fix（失敗しているテストを通す最小の変更）。コーパス 24 タスク × 6。Θ は docs/plan/coding/THETA.md"
   control: {versions: [c12_null], tasks: 24, repeats: 2}
   control_text: "c12_null（無関係な段落を足しただけ）。c01 との優劣を確信できる θ がほとんど無いこと"
-  criteria:   # 暫定（W3-A2 で確定）
-    - {metric: w_rate_diff_ci_low, op: ">", value: 0, provisional: true}
-    - {metric: visible_vs_nv_rank_reversal, op: "==", value: 1, provisional: true}  # (a) 可視合格率の差の 95% 上限 >= 0 かつ (b) Rob(c01≻c13) > 0.5
-    - {metric: rob_c01_over_c13, op: ">=", value: 0.9, provisional: true}            # 到達上限は c13 の W の出どころに依存（純粋な F→W で 0.887）
-    - {metric: null_confident_fraction_c12, op: "<=", value: 0.1, provisional: true} # TASK からの変更（G0 の推奨案）: rob_c12_vs_c01 ∈ [0.2, 0.8] を置き換え（真の差 0 でも通る確率 約 0.27）
+  criteria:   # W3-A2（2026-11-07）で確定（ADR-033 の確定記録）
+    - {metric: w_rate_diff_ci_low, op: ">", value: 0}                     # 確定。MDE 0.131〜0.143（σ_d 0.230〜0.250、W の増分 0.10〜0.20）
+    - {metric: visible_vs_nv_rank_reversal, op: "==", value: 1}  # (a) 可視合格率の差の 95% 上限 >= 0 かつ (b) Rob(c01≻c13) > 0.5
+    - {metric: rob_c01_over_c13, op: ">=", value: 0.9}            # 確定。c01 の F が 0.036 なので W はほぼ S から来るしかなく、到達上限は 0.9996 以上（純粋な F→W の 0.887 は起こりえない）
+    - {metric: null_confident_fraction_c12, op: "<=", value: 0.05} # 確定（W3-A2）: 実装の confident_fraction で真の差 0 の合格確率 0.95〜0.97（閾値 0 では 0.91〜0.93）。G0 の推奨案で rob_c12_vs_c01 ∈ [0.2, 0.8] を置き換えた
   # 記録のみ: rob_c12_vs_c01, confident_fraction_c01_over_c13, rob_c01_over_c13_boot_q05, π_S* の分布,
   #           Θ_narrow / Θ_wide での Rob, パラメータ別の条件付き Rob, vis_fail_hidden_pass, 隠しテストの変異スコア
   provenance: live   # Θ の掃引と Rob は simulated と数値ごとに付ける
@@ -612,12 +612,12 @@
   planted_text: "c13_minimal_fix（w を上げる）。試行プールは EC-R1 と共用"
   control: {identity: w0_tasks_and_synthetic_grid, versions: [c12_null]}
   control_text: "観測上 w = 0 のタスクと合成の格子での恒等式 P_k(成功) = pass@k。c12_null と c01 の G_3 の差は記録のみ"
-  criteria:   # 暫定（W3-A2 で確定）
-    - {metric: closed_form_mae_k1to4, op: "<=", value: 0.05, provisional: true}          # 仮置き。G0 の推奨案: W3-A2 でパイロットから模擬した帰無分布の 95% 点に置き換える（推定誤差の床 0.05〜0.07 で 0.05 は硬貨投げ）
-    - {metric: g3_diff_ci_low, op: ">", value: 0, provisional: true}
-    - {metric: silent_wrong_monotone_c13, op: "==", value: 1, provisional: true}         # 定義上ほぼ必ず 1。実装の自己検査
-    - {metric: silent_wrong_gain_c13_ci_low, op: ">", value: 0, provisional: true}       # TASK からの変更: 追加（H3 の量的な主張）
-    - {metric: identity_error_w0, op: "<=", value: 1.0e-9, provisional: true}            # 自己検査。合成の格子を常に含める
+  criteria:   # W3-A2（2026-11-07）で確定（ADR-033 の確定記録）
+    - {metric: closed_form_mae_k1to4, op: "<=", value: 0.11}          # 確定（W3-A2）: 実装の closed_form_vs_empirical で模擬した帰無分布の 95% 点（格子 27 点の最大 0.109）を切り上げ。旧仮置き 0.05
+    - {metric: g3_diff_ci_low, op: ">", value: 0}   # 確定。検出力 0.8 には W の増分 約 0.2 が要る（κ = 2〜4）
+    - {metric: silent_wrong_monotone_c13, op: "==", value: 1}         # 確定。定義上ほぼ必ず 1。実装の自己検査
+    - {metric: silent_wrong_gain_c13_ci_low, op: ">", value: 0}       # 確定。検出力は c13 の F の率に依存（f = 0.036 なら 0.01〜0.40、0.15 なら 0.43〜1.00）
+    - {metric: identity_error_w0, op: "<=", value: 1.0e-9}            # 確定。自己検査。合成の格子を常に含める
   # 記録のみ: pass@k / P_k(成功) / P_k(W) / 期待試行数の表, c12 − c01 の G_3 の差, 最適な k の分布,
   #           identical_trial_rate, 前半・後半の類頻度の差, identity_cases_w0
   provenance: live   # 並べ替え・再標本化と合成の格子は simulated と数値ごとに付ける
