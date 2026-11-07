@@ -96,7 +96,7 @@
   script: experiments/ec_r1_roi.py
   hypothesis: "可視合格率では c13 は c01 より悪くないが、隠しテストに基づく正味価値では c13 < c01 で、W 率は c13 が高く、その決定は Θ の大部分で変わらない"
   planted: {versions: [c13_minimal_fix], tasks: 24, repeats: 6}
-  planted_text: "c13_minimal_fix（失敗しているテストを通す最小の変更）。コーパス 24 タスク × 6。Θ は docs/plan/coding/THETA.md"
+  planted_text: "c13_minimal_fix（版は U1 に固定、ADR-046。操作確認は 3 回とも特殊化 0/10 で不発。機構は特殊化ではなく局所回避と指示違反）。コーパス 24 タスク × 6。Θ は docs/plan/coding/THETA.md"
   control: {versions: [c12_null], tasks: 24, repeats: 2}
   control_text: "c12_null（無関係な段落を足しただけ）。c01 との優劣を確信できる θ がほとんど無いこと"
   criteria:   # 暫定（W3-A2 で確定）
@@ -115,7 +115,7 @@
   script: experiments/ec_r2_retry.py
   hypothesis: "可視テストで選ぶ再試行の成功率と静かな誤りの率は閉形式で表せ、W の多い版ほど pass@k との差 G_k が大きく、再試行は W を増やす"
   planted: {versions: [c13_minimal_fix], tasks: 24, repeats: 6}
-  planted_text: "c13_minimal_fix（w を上げる）。試行プールは EC-R1 と共用"
+  planted_text: "c13_minimal_fix（w を上げることを狙った版。U1 に固定、操作確認は不発、ADR-046）。試行プールは EC-R1 と共用"
   control: {identity: w0_tasks_and_synthetic_grid, versions: [c12_null]}
   control_text: "観測上 w = 0 のタスクと合成の格子での恒等式 P_k(成功) = pass@k。c12_null と c01 の G_3 の差は記録のみ"
   criteria:   # 暫定（W3-A2 で確定）
