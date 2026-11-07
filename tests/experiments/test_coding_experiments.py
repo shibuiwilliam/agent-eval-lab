@@ -2503,13 +2503,31 @@ R1_PASSING = {
 }
 
 
+def _set_findings(page: Path, body: str) -> None:
+    """一時ページの「## 気づき・限界」節の中身を `body` に置き換える（見出しと、他の節・フッターは変えない）。
+
+    実ページの現在の中身（未実施・自動注記・手書き）に依存しないよう、テストが既知の状態を自分で作るのに使う。
+    """
+    common = _load_script("_coding_common")
+    text = page.read_text(encoding="utf-8")
+    span = common._section_span(text, "気づき・限界")
+    assert span is not None
+    heading = text[span[0] : span[1]].split("\n", 1)[0]
+    page.write_text(text[: span[0]] + f"{heading}\n{body}\n" + text[span[1] :], encoding="utf-8")
+
+
 @pytest.fixture
 def results_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """finalize が書く結果ページの置き場を tmp に向け、設計者のページ（EC-R1）を写しておく。"""
+    """finalize が書く結果ページの置き場を tmp に向け、設計者のページ（EC-R1）を写しておく。
+
+    「## 気づき・限界」は未記入（「（未実施）」）にそろえる。実ページは実験の実行後に自動注記で埋まるため、
+    その有無に依らず各テストが同じ入力から始まるようにする。
+    """
     directory = tmp_path / "pages"
     directory.mkdir()
     shutil_copy = __import__("shutil").copy
     shutil_copy(REPO_ROOT / "docs" / "results" / "EC-R1.md", directory / "EC-R1.md")
+    _set_findings(directory / "EC-R1.md", "（未実施）")
     monkeypatch.setattr(pages, "RESULTS_DIR", directory)
     for key in ("AGENTEVAL_FAILURE_TYPE", "AGENTEVAL_FAILURE_REASON"):
         monkeypatch.delenv(key, raising=False)
@@ -2646,11 +2664,9 @@ def test_finalize_keeps_filled_findings_and_puts_notes_under_auto_heading(
 ) -> None:
     common = _load_script("_coding_common")
     page = results_dir / "EC-R1.md"
-    text = page.read_text(encoding="utf-8")
-    text = text.replace(
-        "## 気づき・限界\n（未実施）", "## 気づき・限界\n- 手書きの気づき（設計者）"
-    )
-    page.write_text(text, encoding="utf-8")
+    # 実ページの「気づき・限界」に依存しない: 一時ページの節を手書きの行だけにしてから始める
+    _set_findings(page, "- 手書きの気づき（設計者）")
+    assert "（未実施）" not in page.read_text(encoding="utf-8").split("## 気づき・限界")[1]
     for _ in range(2):  # 2 回実行しても手書きは消えず、自動注記は 1 つだけ
         common.finalize_coding("EC-R1", dict(R1_PASSING), ["自動注記 A"], seed=1, provenance="live")
     out = page.read_text(encoding="utf-8")

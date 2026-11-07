@@ -1,6 +1,6 @@
 """EC-B2 コンテキスト・コスト帰属 — ツール出力の生涯コストと履歴キャッシュの事前予測。
 
-仮説・植込み・対照・基準は `docs/results/EC-B2.md`（正本）と registry.yaml の EC-B2（基準は暫定。W3-A2 が確定する）。
+仮説・植込み・対照・基準は `docs/results/EC-B2.md`（正本）と registry.yaml の EC-B2（基準は W3-A2 で確定。ADR-033）。
 
 入力:
 - 段 `corpus` の live の run だけ（c01_baseline・c04_verbose_ctx・c01o_no_history_cache・c12_null。パイロットの run は

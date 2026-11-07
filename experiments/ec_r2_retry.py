@@ -1,6 +1,6 @@
 """EC-R2 実現可能な pass@k — 「緑になるまで再試行」は静かな誤りを増幅する。
 
-仮説・植込み・対照・基準は `docs/results/EC-R2.md`（正本）と registry.yaml の EC-R2（基準は暫定。W3-A2 が確定する）。
+仮説・植込み・対照・基準は `docs/results/EC-R2.md`（正本）と registry.yaml の EC-R2（基準は W3-A2 で確定。ADR-033）。
 試行プールは EC-R1 と共用する（段 `corpus` の live の run だけ。c01・c13 は 24 タスク × 6 反復、c12 は 24 × 2）。
 **run を作らない**。run が欠けていれば案内付きで止まり、予算停止（.partial）の run があれば止まる（PENDING のまま）。
 
@@ -52,6 +52,7 @@ from agenteval.econ.roi import (
 )
 from agenteval.llm.cassette import CASSETTE_ROOT
 from agenteval.reports.coding_corpus import load_plan, plan_units, require_stage_runs, unit_states
+from agenteval.reports.verify import load_registry
 
 EXPERIMENT_ID = "EC-R2"
 STAGE = "corpus"
@@ -65,6 +66,12 @@ METHOD_FALLBACK = (
     "段 corpus の live の試行の S / W / F から、可視テストが緑になった最初の試行を採用する再試行方策の成功率と"
     "静かな誤りの率を閉形式と経験値で比べる。詳細は docs/results/EC-R2.md。"
 )
+
+
+def _criterion_threshold(metric: str) -> float:
+    """registry.yaml の EC-R2 の基準 `metric` の閾値（注記にハードコードしないために読む）。"""
+    entry = next(e for e in load_registry() if e["id"] == EXPERIMENT_ID)
+    return float(next(c["value"] for c in entry["criteria"] if c["metric"] == metric))
 
 
 def dry_run(seed: int = 20260913) -> dict[str, Any]:  # Any: 表示用
@@ -435,8 +442,8 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
     )
     notes = [
         (
-            "closed_form_mae_k1to4 の閾値 0.05 は仮置きで、推定誤差の床（0.05〜0.07）と同程度のため、閉形式が正しくても"
-            "約半分の確率でしか満たされない（EC-R2.md）。不合格は基準設計の問題で、手法の否定的結果としては扱わない。"
+            f"closed_form_mae_k1to4 の閾値 {_criterion_threshold('closed_form_mae_k1to4')} は W3-A2 で c01 のパイロットから"
+            "確定した（ADR-033。registry.yaml の EC-R2 が正）。"
             f"版別の MAE: c01 {mae[BASE]:.3f}、c13 {mae[TREATED]:.3f}。"
         ),
         (
