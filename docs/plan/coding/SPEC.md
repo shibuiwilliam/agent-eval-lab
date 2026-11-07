@@ -1185,6 +1185,13 @@ def history_cache_prediction_error(
     on の run は L − Ĉon、off の run は L − Ĉoff を残差とし、それぞれ Σ Ŝ で割って e_on・e_off を出す。
     G0 項目 13 の前の定義 |Σ S − Σ Ŝ| / Σ Ŝ（S_j = Ĉoff_j − L_j、on の run だけ）は |e_on| に等しい。"""
 
+# 改訂（2026-11-07、W1-I1 のレビュー中 1）: history_cache: on の run では user0 の末尾にも区切りが付き、
+# ステップ 0 の input_tokens がほぼ 0 になるので、T0 − in0 は「system＋tools＋user0」になる。
+# そのため counterfactual_cost・allocate・history_cache_prediction_error はキーワード引数 prefix_tokens
+# （system＋ツール定義だけのトークン数）を受け取る。None のときは T0 − in0（off の run でだけ正しい）。
+# history_cache_prediction_error は None のとき off_runs のステップ 0 から P を求め、off_runs の間で
+# 一致しなければ ValueError。CachePredictionError に prefix_tokens: int を足す。
+
 def predicted_resend_ratio(n: int, prices: UnitPrices) -> float:
     """n 回再送される出力の費用比 on / off = (p_w + p_r (n−1)) / (p_in n)。NEW_IDEA の例 n=10 で約 0.215。"""
 
