@@ -246,16 +246,22 @@ def na_criteria(
     return out
 
 
-def _with_na_note(reason: str, na: list[tuple[str, dict[str, Any]]], lang: str = "ja") -> str:
-    """N/A の基準があるときだけ、判定理由の末尾に「N/A は合格ではない」と一覧を足す（ADR-045）。"""
+def na_sentence(na: list[tuple[str, dict[str, Any]]], lang: str = "ja") -> str:
+    """判定理由に入れる N/A の文（例: `x は N/A（検出力不足: f = 0.04 < 0.15）。N/A は合格ではない。`）。N/A が無ければ空。"""
     if not na:
+        return ""
+    if lang == "en":
+        listed = " ".join(f"{m}: {na_text(n, 'en')}." for m, n in na)
+        return f"{listed} N/A is not a pass; it is excluded from the verdict."
+    listed = " ".join(f"{m} は {na_text(n)}。" for m, n in na)
+    return f"{listed}N/A は合格ではない（判定から外した）。"
+
+
+def _with_na_note(reason: str, na: list[tuple[str, dict[str, Any]]], lang: str = "ja") -> str:
+    """N/A の基準があるときだけ、判定理由に N/A の文を足す（ADR-045）。実験が書いた理由に既にあれば足さない。"""
+    note = na_sentence(na, lang)
+    if not note or "N/A" in reason:
         return reason
-    listed = ", ".join(f"{m} = {na_text(n, lang)}" for m, n in na)
-    note = (
-        f"N/A criteria (excluded from the verdict; N/A is not a pass): {listed}"
-        if lang == "en"
-        else f"N/A の基準（判定から外した。N/A は合格ではない）: {listed}"
-    )
     return f"{reason}\n\n{note}" if reason else note
 
 

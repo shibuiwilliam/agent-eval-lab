@@ -73,13 +73,31 @@ def json_safe(value: Any) -> Any:  # Any: JSON にする任意の値
 
 
 def failing_metrics(experiment_id: str, metrics: Mapping[str, Any]) -> list[str]:
-    """registry の criteria のうち満たしていない指標名。値が無い（None）ものも含む。"""
+    """registry の criteria のうち満たしていない指標名。値が無い（None）ものも含む。
+
+    `applies_if` が偽の基準（N/A）は含めない。適用条件を評価できない基準（条件の指標が無い・来歴が無い）は含める。
+    適用される基準が 1 つも無いときは、その旨の見出し 1 件を返す（空虚な合格を作らない。ADR-045）。
+    """
     out: list[str] = []
-    for criterion in meta_of(experiment_id).get("criteria", []):
-        value = metrics.get(criterion["metric"])
-        if value is None or not pages.check_criterion(value, criterion):
+    criteria = meta_of(experiment_id).get("criteria", [])
+    statuses = []
+    for criterion in criteria:
+        status = pages.evaluate_criterion(criterion, dict(metrics))["status"]
+        statuses.append(status)
+        if status in ("fail", "error"):
             out.append(str(criterion["metric"]))
+    if criteria and all(s == "na" for s in statuses):
+        out.append("（適用される基準が無い）")
     return out
+
+
+def unevaluable_criteria(experiment_id: str, metrics: Mapping[str, Any]) -> bool:
+    """適用条件を評価できない基準がある、または適用される基準が 1 つも無い（判定は failure_type に依らず FAIL）。"""
+    statuses = [
+        pages.evaluate_criterion(c, dict(metrics))["status"]
+        for c in meta_of(experiment_id).get("criteria", [])
+    ]
+    return "error" in statuses or (bool(statuses) and all(s == "na" for s in statuses))
 
 
 AUTO_NOTES_MARK = "<!-- agenteval:auto-notes -->"
@@ -281,7 +299,12 @@ def finalize_coding(
     if failed and negative_if_only and set(failed) <= set(negative_if_only):
         failure_type = "negative"
     override = failure_override()
-    if override is not None:
+    if unevaluable_criteria(experiment_id, metrics):
+        # 適用条件の指標の欠落・適用基準 0 件は実装の不備。NEGATIVE の指定より FAIL を優先する
+        failure_type = "fail"
+        if override is not None:
+            extra.append("（--failure-type の指定は、適用条件を評価できないので使われなかった）")
+    elif override is not None:
         kind, why = override
         if failed and not forced_failure:
             failure_type = kind
