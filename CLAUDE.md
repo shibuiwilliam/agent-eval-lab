@@ -12,6 +12,10 @@
 
 セッションを開始／再開するときユーザーが貼るプロンプトは `docs/plan/04-prompts.md` にまとまっている。
 
+**NEW_IDEA（コーディングエージェント評価）の作業中は、上の 1 の代わりに `TASK.md` を最初に読む**。
+`TASK.md` 9 章のチェックリストの未完了の先頭から着手する。理論・式・仮説は `docs/NEW_IDEA.md`（とくに 2 章の原理と 10 章の評価）が正。
+インターフェース仕様は `docs/plan/coding/SPEC.md`、タスク内容（リポジトリ・変異・試みのカタログ）は `docs/plan/coding/CONTENT.md`（いずれも W0 で作成）。
+
 ## 検証の基本形（プロジェクトの背骨）
 評価手法 M は「動いた」ではなく「**植え込んだ欠陥に反応し、対照には反応しない**」ことで検証する。
 各実験は次の5項目を持つ。**実装より先に** `docs/results/E*.md` にこの5項目を書き、ユーザーに見せてから実装する。
@@ -40,6 +44,11 @@
 - `experiments/e3_*.py`, `e4_*.py`, `e8_*.py` — 実験スクリプト。結果は `docs/results/E*.md` と `data/results/E*.json`
 - `data/` は生成物（`cassettes/`, `traces/`, `snapshots/`, `results/`, `cost_ledger.jsonl`）。`data/fixtures/` 以外は gitignore
 - `.claude/rules/` — 章ごとの詳細規則。該当ファイルを開くと自動で読み込まれる（`llm-cost.md`, `env-agent.md`, `pts.md`, `process.md`, `drift.md`, `experiments.md`）
+- コーディングエージェント評価（NEW_IDEA）は既存と分離する（ADR-039）: タスク・版・プロンプトは `coding/{tasks,versions,prompts}/`、
+  自作リポジトリは `data/fixtures/repos/`（コミット）、trace・スナップショットは `data/coding/`、run_id の接頭辞は `cd__`。
+  実装は `src/agenteval/env/{repo,repo_tools,sandbox,effects,bugsynth}.py`、`agent/{coding_loop,scripted}.py`、`econ/`、`security/`、`obs/`。
+  実験は `experiments/ec_*.py`、ID は `EC-*`、章は `C`
+- `.claude/agents/` — 開発用サブエージェントの定義（designer / implementer / reviewer / runner）。下の「サブエージェントの使い分け」を参照
 
 ## コマンド
 - `make check` — `ruff check . && isort --check-only . && ruff format --check . && mypy src && pytest -q`。コミット前に必ず通す
@@ -49,6 +58,9 @@
 - `uv run agenteval exp e3_1 [--live]` — 実験を1つ実行して結果ページと JSON を更新
 - `uv run agenteval verify` — 全実験の合格基準を照合し `docs/results/summary.md` に PASS/FAIL/NEGATIVE 表を出す
 - `uv run agenteval cost` — 累積コストと残予算
+- NEW_IDEA 第 1 段で追加する予定（W1-I8 で実装。実装されるまでは存在しない）:
+  `uv run agenteval coding corpus --plan coding/corpus.yaml --stage pilot|corpus --dry-run` → 承認後に `--live`、
+  `uv run agenteval exp ec_s1|ec_o2|ec_b2p|ec_b2|ec_r1|ec_r2 [--live]`、`uv run pytest -m docker`（Docker が要るテストだけ）
 
 ## 絶対に守ること
 - `pytest` から live API を呼ばない。`conftest.py` が `AGENTEVAL_LLM_MODE=replay` を強制し、さらに `socket.socket` を差し替えて外部接続そのものを失敗させる。run を作るテストは `LLMClient(mode="sim", ...)` を明示的に組み立てる（現状カセットには依存していない。`data/fixtures/cassettes/` は空）
@@ -58,6 +70,15 @@
 - `data/cassettes/` と `data/snapshots/` を消す・上書きする操作は先にユーザーに確認する
 - API キーをコード・ログ・カセット・結果ページに残さない。カセットにはリクエスト本文と応答のみ保存する
 - `src/agenteval/core/schema.py`（軌跡・スナップショット・版ハッシュ）を変えるときは移行スクリプトと ADR を同時に書く
+- `AGENTEVAL_BUDGET_USD` は**台帳の累積額**に対する上限である（段ごとの増分ではない）。live を始める前に `uv run agenteval cost` で現在の累積を確認して設定する
+- コーディングエージェント評価では、被験エージェントやスクリプト化エージェントが書いたコード（テスト・ビルド定義を含む）を**ホストで実行しない**。
+  実行は Docker のサンドボックス（`--network none`、作業ツリーだけ書き込み可、非 root）の中だけで行う（ADR-030）。
+  ホストで pytest を走らせてよいのは、自作リポジトリの正しいコードと変異コードを生成・検査するとき（W1-I4）だけ
+- 権限・セキュリティ検証の試み（EC-S1 のカタログ）は、効果モニタと権限方策の検証に限って使う。外部への送信は実行せず試行として記録する。
+  文書や結果ページには系統と効果の名前だけを書き、具体的な攻撃手順は書かない
+- カナリアの鍵は実行中のプロセス内で生成し、ファイル・trace・カセット・結果ページに保存しない
+- オフィス環境の `tasks/`・`versions/`・`core/registry.py` の `VersionConfig` を、コーディング評価のために変えない
+  （既存 13 版のハッシュと 30 実験の入力が変わる）
 
 ## 開発の進め方
 - 1 実験 = 1 ブランチ = 数コミット。conventional commits（`feat(pts): ...`、`exp(e3-1): ...`、`docs(results): ...`）
@@ -66,6 +87,25 @@
 - ベースライン版の合格率は 50〜80% を狙う（全部通る／全部落ちるスイートは何も教えない）。外れたらタスクの難度を調整する。モデルを強くして解決しない
 - 迷ったらレポートの定義に従う。レポートから逸脱するときは ADR を書く
 - 大きな設計変更（スキーマ、環境、エージェントループ）は plan mode で計画を提示してから着手する
+
+## サブエージェントの使い分け（NEW_IDEA の実装・検証）
+NEW_IDEA の作業は、メインセッションがオーケストレーターとなり、サブエージェントを**可能な限り並列に**起動して進める。
+役割ごとにモデルを固定する。定義は `.claude/agents/*.md`（frontmatter の `model`）、詳細と起動時の指示文の型は `TASK.md` 2 章。
+定義ファイルはセッション開始時にだけ読み込まれる。読み込まれていなければ `general-purpose` に `model` を明示し、定義の本文を指示文の冒頭に貼って起動する（`TASK.md` 2.2.1 節）。
+
+| 役割 | モデル | `model:` | 担当 |
+|---|---|---|---|
+| designer | Opus 5.5 | `opus` | **設計**: ADR、インターフェース仕様、実験の 5 項目と合格基準（到達上限・検出力つき）、タスク内容、結果の解釈。`src/` は書かない |
+| implementer | Sonnet 5.5 | `sonnet` | **実装**: 1 タスク = 1 worktree（`isolation: "worktree"`）= 1 ブランチ `task/<ID>`。所有ファイルだけを編集し、単体テストと `make check` を通してコミット |
+| reviewer | Sonnet 5.5 | `sonnet` | **レビュー**: 実装タスクごと・結果ページごとの独立レビュー。新しいコンテキストで、仕様と差分だけを渡す。指摘だけ返し、直さない |
+| runner | Haiku 5.5 | `haiku` | **実行と観測**: `make check`、Docker、オフライン実験、`--dry-run`、承認済みの live、集計。観測した事実だけを返し、ファイルを編集せず、解釈しない |
+
+- **この表のモデルは開発用サブエージェントのもので、被験エージェント（Haiku 4.5）・ジャッジ（Sonnet 5）とは別物**。後者は従来どおり `models.py` にだけ書く
+- 同じ波（wave）の独立タスクは、オーケストレーターが 1 回の応答で同時に起動する。並列の可否はファイルの所有権で決める（`TASK.md` 5 章）。共有ファイルは 1 タスクだけが所有する
+- runner は統合ブランチをチェックアウトしたメインの作業ツリーで実行する（worktree の `data/` は共有されない）。live を走らせる runner は同時に 4 つまで
+- runner に live を指示するときは、指示文に「承認済み: G<n>、累積上限 X USD」を書く。書かれていない live は runner が実行を拒む
+- 仕様の穴に当たったサブエージェントは作業を止めてオーケストレーターに返し、設計の判断は designer に戻す。基準の変更は ADR を伴う
+- ブランチ: タスクブランチ `task/<ID>` → 統合ブランチ `impl/coding-eval`（オーケストレーターがレビュー後にマージ）。main への取り込みと push はユーザーの依頼を待つ
 
 ## セッションの終わり方
 - `docs/plan/progress.md` のチェックを更新し、着手中の項目には「次にやること」を1行添える
