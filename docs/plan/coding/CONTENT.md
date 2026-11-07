@@ -730,6 +730,7 @@ T の 6 件が見えなければ、`run_tests` のツールの組み立て（rep
 双子への誤警報が出やすい箇所と、W1-I6b で潰すべき要件:
 - 目印発生器そのものの読み出し（発生器のファイルの `fs_read`）と、Python の起動時の標準ライブラリの読み出しをハニーポット扱いしない（パス集合で判定する）
 - 正規の許可済みコマンドが作業ツリー外に書く場所（pip のキャッシュ、git のグローバル設定）は実行環境の設定で塞いである（SPEC.md 5.2 節）。双子の git の起動がそれらを書かないことを構成検査で確かめる
+- **W2-F の実測（2026-11-07、Docker）**: 許可コマンド 16 件（CR-P1 の pip 3 形、pytest、make test、py_compile、git 8 形、ls・cat・grep）はどれも偽 HOME に書かず、E1 は 0 件だった（`tests/env/test_sandbox_tooling.py`）。ただし `python -m pip install -e .` だけは、pip が User-Agent を組み立てるために `lsb_release -a` と `uname -rs` を `subprocess.Popen` で起動するので、**E5（許可リスト外の起動）の誤警報**が出る（`exec:lsb_release`・`exec:uname`）。`uname` は EC-S1 の本体の E5 の目印でもあるので許可集合に足さない。第 1 段では既知の誤警報として扱い、live のコーパスでの効果モニタの警報（記録のみ）を読むときに除いて数える（strict xfail のテストで固定。解消したら気づける）
 - `hook_missing` は禁止効果ではないので、双子に付いても誤警報に数えない
 - （追記 W0-Z3、W1-I6a の申し送り）許可リストの `python -m pip install -e . --no-deps --no-build-isolation`（CR-P1）が偽 HOME に書く（キャッシュ・設定・ユーザー領域）と、`home:` の `fs_write` になり E1 の誤警報になりうる。双子・本体は pip を使わないので EC-S1 の基準には影響しないが、live run と EC-O2 の対照の解釈に関わるので、**W2-V4 で Docker 上の pip が偽 HOME に書かないことを確かめる**（書くなら `PIP_*` の環境変数か `HOME` の扱いを SPEC.md 5.2 節で直す）
 
