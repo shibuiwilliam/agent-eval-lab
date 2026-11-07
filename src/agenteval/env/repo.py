@@ -98,6 +98,8 @@ HIDDEN_DIR = "tests_hidden"
 HIDDEN_PYTEST_INI = "[pytest]\naddopts =\npythonpath = ../src\n"
 SYSTEM_PYTHON = "/usr/local/bin/python"
 EXPECTED_NODEIDS_FILE = "expected_nodeids.json"
+# xunit1 にすると testcase に rootdir 相対の file 属性が付く（node id の復元に要る。-o は ini より優先）
+XUNIT1 = ("-o", "junit_family=xunit1")
 
 GIT_FIXED_DATE = "2026-01-01T00:00:00Z"
 GIT_AUTHOR_NAME = "agenteval"
@@ -819,23 +821,30 @@ def _load_expected_nodeids(
 
 
 # --- JUnit XML → PytestReport（SPEC 6.6 節） --------------------------------------
-def _junit_nodeid(testcase: ET.Element) -> str:
-    """JUnit の classname/name から node id を復元する（近似）。
+def _junit_nodeid(testcase: ET.Element) -> tuple[str, str | None]:
+    """JUnit の testcase から node id を組み立てる。(node id, 異常の説明 or None)。
 
-    xunit2 には file 属性が無いので、classname を「小文字始まりの要素 = モジュールのパス、
-    大文字始まり以降 = クラス」とみなして組み立てる。file 属性があればそれを使う。
+    pytest を `-o junit_family=xunit1` で走らせると、testcase に rootdir 相対の file 属性が付く。
+    モジュール名 mod = file の ".py" を外して "/" を "." にしたもの。classname は mod か
+    mod + "." + クラス名（入れ子は "." 区切り）でなければならない。node id は
+    "::".join([file, *クラス, name])（--collect-only の id と一致する）。
+    file 属性が無い、または classname が mod で始まらない testcase は異常（ヒューリスティックで補わない）。
+    異常のときの node id は診断用の代替（classname::name）で、評価では使わない。
     """
     name = testcase.get("name", "")
     classname = testcase.get("classname", "")
+    fallback = f"{classname}::{name}" if classname else name
     file_attr = testcase.get("file")
-    parts = classname.split(".") if classname else []
-    idx = next((i for i, p in enumerate(parts) if p[:1].isupper()), len(parts))
-    class_parts = parts[idx:]
-    if file_attr:
-        return "::".join([file_attr, *class_parts, name])
-    if not parts:
-        return name
-    return "::".join(["/".join(parts[:idx]) + ".py", *class_parts, name])
+    if not file_attr or not file_attr.endswith(".py"):
+        return fallback, f"file 属性の無い testcase がある（{fallback}）"
+    mod = file_attr[:-3].replace("/", ".")
+    if classname == mod:
+        classes: list[str] = []
+    elif classname.startswith(mod + "."):
+        classes = [c for c in classname[len(mod) + 1 :].split(".") if c]
+    else:
+        return fallback, f"classname が file と対応しない testcase がある（{fallback}）"
+    return "::".join([file_attr, *classes, name]), None
 
 
 def _parse_junit(raw: bytes) -> tuple[list[PytestCase] | None, list[str]]:
@@ -865,6 +874,9 @@ def _parse_junit(raw: bytes) -> tuple[list[PytestCase] | None, list[str]]:
     for tc in root.iter("testcase"):
         if tc.get("name") is None:
             problems.append("name 属性の無い testcase がある")
+        nodeid, id_problem = _junit_nodeid(tc)
+        if id_problem is not None and id_problem not in problems:
+            problems.append(id_problem)
         outcome: PytestOutcome = "passed"
         for child in tc:
             if child.tag == "failure":
@@ -881,7 +893,7 @@ def _parse_junit(raw: bytes) -> tuple[list[PytestCase] | None, list[str]]:
             duration_ms = max(0, int(float(tc.get("time", "0")) * 1000))
         except (ValueError, OverflowError):
             duration_ms = 0
-        cases.append(PytestCase(nodeid=_junit_nodeid(tc), outcome=outcome, duration_ms=duration_ms))
+        cases.append(PytestCase(nodeid=nodeid, outcome=outcome, duration_ms=duration_ms))
     declared = 0
     for suite in root.iter("testsuite"):
         try:
@@ -917,15 +929,16 @@ def _build_report(
     strict: bool = False,
     expected: Sequence[str] | None = None,
     expected_note: str = "",
+    require_expected: bool = False,
 ) -> tuple[PytestReport, list[str]]:
     """exec の結果と JUnit XML から PytestReport と評価メモを作る。passed の定義は SPEC 6.6 節。
 
     strict=False（エージェントに見せる可視テストの途中報告）: XML が無ければ出力の件数で代替する。
-    strict=True（評価）: 次を全部満たすときだけ passed。
+    strict=True（評価）: 次を全部満たすときだけ passed。XML が無いときは n_* を 0 にする。
     - JUnit XML があり、読めて、異常（name 無しの testcase など）が無い。XML が無い・不正なら出力の件数は
       診断用に残すだけで passed=False
     - skipped（xfail を含む）と error が 0
-    - expected があれば、その全ノードが passed で現れる
+    - expected があれば、その全ノードが passed で現れる（require_expected なら expected が無いこと自体が不合格）
     メモは output の末尾にも `[agenteval-eval]` 付きで書く（PytestReport に欄が無いため）。
     """
     raw = _read_bounded(xml_path, MAX_JUNIT_BYTES)
@@ -942,6 +955,9 @@ def _build_report(
         n_error = sum(c.outcome == "error" for c in cases)
         n_skipped = sum(c.outcome == "skipped" for c in cases)
         n_xfailed = sum(c.outcome == "xfailed" for c in cases)
+    elif strict:
+        # 評価では XML が無ければ件数を信用しない（出力は output に残るだけ）
+        n_passed = n_failed = n_error = n_skipped = n_xfailed = 0
     else:
         counts = _counts_from_output(result.stdout)
         n_passed, n_failed = counts["passed"], counts["failed"]
@@ -963,6 +979,9 @@ def _build_report(
             notes.append(f"評価は不合格: skipped/xfail が {n_skipped + n_xfailed} 件ある")
         if expected is None:
             notes.append(expected_note or "expected_nodeids: 照合なし")
+            if require_expected:
+                passed = False
+                notes.append("評価は不合格: expected_nodeids が無い（require_expected）")
         elif cases is not None:
             got = {c.nodeid for c in cases if c.outcome == "passed"}
             missing = sorted(set(expected) - got)
@@ -1104,15 +1123,21 @@ class RepoEnv:
         （data/coding/snapshots の黙った上書きを防ぐ）。
         """
         layout = WorkLayout.for_run(run_id, mode_dir, data_root)
-        if layout.root.exists():
-            raise FileExistsError(f"作業領域が既にある（上書きしない）: {layout.root}")
-        if layout.snapshot_dir.exists():
-            raise FileExistsError(
-                f"スナップショットが既にある（上書きしない）: {layout.snapshot_dir}"
-            )
         mounts = layout.mounts
         executor: Executor | None = None
+        # 自分で作ったディレクトリだけを失敗時に消す（並行 create が先行 run のものを消さない）。
+        # mkdir(exist_ok=False) で原子的に「確保」する。
+        claimed: list[Path] = []
         try:
+            for path, what in (
+                (layout.root, "作業領域"),
+                (layout.snapshot_dir, "スナップショット"),
+            ):
+                try:
+                    path.mkdir(parents=True)
+                except FileExistsError:
+                    raise FileExistsError(f"{what}が既にある（上書きしない）: {path}") from None
+                claimed.append(path)
             for directory in (
                 mounts.repo,
                 mounts.home,
@@ -1120,7 +1145,7 @@ class RepoEnv:
                 mounts.effects,
                 mounts.reports,
             ):
-                directory.mkdir(parents=True)
+                directory.mkdir()
             for rel, source in _initial_file_map(task, fixture_root).items():
                 dest = mounts.repo.joinpath(*PurePosixPath(rel).parts)
                 dest.parent.mkdir(parents=True, exist_ok=True)
@@ -1148,8 +1173,8 @@ class RepoEnv:
         except BaseException:
             if executor is not None:
                 executor.stop()
-            _rmtree(layout.root)
-            _rmtree(layout.snapshot_dir)
+            for path in claimed:
+                _rmtree(path)
             raise
 
     def _prepare(self, argv: Sequence[str], env: Mapping[str, str] | None = None) -> None:
@@ -1241,9 +1266,32 @@ class RepoEnv:
         権限で消せない・書けないものは一時的に権限を与えて直し、それでもだめなら last_unreadable に残す。
         """
         manifest = self.load_manifest(ref)
+        self._check_restorable(manifest)
         self.last_unreadable = []
         for area in AREAS:
             self._restore_area(area, manifest.areas.get(area, {}))
+
+    def _check_restorable(self, manifest: SnapshotManifest) -> None:
+        """復元できないものがあれば、何も変えずに失敗させる（中途半端な状態を作らない）。
+
+        blob が無いエントリは FileNotFoundError、oversize のファイルが現在と一致しなければ RuntimeError。
+        """
+        for area in AREAS:
+            root = self.layout.area_root(area)
+            for rel, entry in sorted(manifest.areas.get(area, {}).items()):
+                if is_oversize(entry):
+                    try:
+                        st = os.lstat(_safe_join(root, rel))
+                    except (OSError, PathEscapeError):
+                        raise RuntimeError(
+                            f"MAX_FILE_BYTES を超えるファイルは復元できない（現在は無い）: {area}:{rel}"
+                        ) from None
+                    if not stat.S_ISREG(st.st_mode) or st.st_size != entry.size:
+                        raise RuntimeError(
+                            f"MAX_FILE_BYTES を超えるファイルは復元できない（大きさが違う）: {area}:{rel}"
+                        )
+                elif not _blob_path(self.layout.blob_dir, entry.blob).exists():
+                    raise FileNotFoundError(f"blob が無い: {area}:{rel} ({entry.blob})")
 
     def _restore_area(self, area: Area, entries: Mapping[str, ManifestEntry]) -> None:
         root = self.layout.area_root(area)
@@ -1462,17 +1510,23 @@ class RepoEnv:
 
         `read_area_file` と同じく dir_fd と O_NOFOLLOW で構成要素ごとに開き、途中・末尾のリンクは
         PathEscapeError。mode は新しく作るときだけ効く（umask で絞られる）。
+        通常ファイル以外（FIFO など）には書かず OSError（FIFO は読み手がいなければ ENXIO）。
         """
         area, rel = _split_target(target)
         data = content.encode("utf-8") if isinstance(content, str) else content
+        # O_NONBLOCK: FIFO なら読み手がいないとき ENXIO で失敗する（永久に固まらない）。
+        # O_TRUNC は付けない（FIFO や特殊ファイルを切り詰めない）。通常ファイルを確かめてから切り詰める。
         fd = _open_beneath(
             self.layout.area_root(area),
             rel,
-            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            os.O_WRONLY | os.O_CREAT | os.O_NONBLOCK,
             mode,
             mkdirs=True,
         )
         try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise OSError(errno.EINVAL, f"通常ファイルでない: {target}")
+            os.ftruncate(fd, 0)
             view = memoryview(data)
             while view:
                 view = view[os.write(fd, view) :]
@@ -1505,6 +1559,7 @@ class RepoEnv:
         call_id: str | None = None,
         original_tests: bool = False,
         ref: CodingSnapshotRef | None = None,
+        require_expected: bool = False,
     ) -> PytestReport:
         """可視テストを走らせる。
 
@@ -1512,6 +1567,7 @@ class RepoEnv:
         （エージェントに見せる途中報告。XML が無ければ出力の件数で代替する）。
         original_tests=True: 最終評価。対象の状態からテスト設定を除き、初期状態のテスト設定を書き戻した
         一時コピーを、隠しテストと同じ隔離した起動（python -I -B）で走らせる。ref は True のときだけ有効。
+        require_expected=True なら expected_nodeids.json が無い評価は不合格（selector 指定の部分実行は除く）。
         評価は strict（XML 必須・skipped と error が 0・期待ノードの照合）で、限界はモジュールの docstring。
         """
         chosen = list(self.task.visible_tests if selector is None else selector)
@@ -1519,8 +1575,10 @@ class RepoEnv:
         n = self._next_report_no()
         if original_tests:
             expected: list[str] | None = None
+            required = require_expected
             if selector is not None and list(selector) != list(self.task.visible_tests):
                 note = "expected_nodeids: 照合なし（selector 指定）"
+                required = False
             else:
                 expected = _load_expected_nodeids(self.task, self._fixture_root, "visible")
                 note = "expected_nodeids: 照合なし（ファイル無し）"
@@ -1535,6 +1593,7 @@ class RepoEnv:
                 call_id=call_id,
                 expected=expected,
                 expected_note=note,
+                require_expected=required,
             )
         flags = ["-q", "--tb=short"] if verbosity == "quiet" else ["-vv", "--tb=long", "-rA"]
         argv = [
@@ -1543,6 +1602,7 @@ class RepoEnv:
             "pytest",
             "-p",
             "no:cacheprovider",
+            *XUNIT1,
             f"--junitxml={CONTAINER_REPORTS}/{n}.xml",
             *flags,
             *chosen,
@@ -1575,10 +1635,12 @@ class RepoEnv:
         ref: CodingSnapshotRef | None = None,
         *,
         timeout_s: float = 120.0,
+        require_expected: bool = False,
     ) -> PytestReport:
         """隠しテストを、対象の状態のテスト設定・.venv・.git を除いた一時コピーで走らせる。
 
         評価は strict（XML 必須・skipped と error が 0・期待ノードの照合）。限界はモジュールの docstring。
+        require_expected=True なら expected_nodeids.json（hidden）が無い評価は不合格。
         効果は PytestReport.effects に残し、Step.effects には入れない（呼び出し側の責務）。
         """
         n = self._next_report_no()
@@ -1594,6 +1656,7 @@ class RepoEnv:
             call_id=None,
             expected=expected,
             expected_note="expected_nodeids: 照合なし（ファイル無し）",
+            require_expected=require_expected,
         )
 
     def _evaluate(
@@ -1609,6 +1672,7 @@ class RepoEnv:
         call_id: str | None,
         expected: Sequence[str] | None,
         expected_note: str,
+        require_expected: bool,
     ) -> PytestReport:
         """eval/<mode>/<run_id>/<label>/ に一時コピーを作り、新しい Executor で隔離して走らせる。"""
         eval_dir = self.layout.eval_root / label
@@ -1632,6 +1696,7 @@ class RepoEnv:
                 ".",
                 "-p",
                 "no:cacheprovider",
+                *XUNIT1,
                 "-q",
                 f"--junitxml={CONTAINER_REPORTS}/{report_no}.xml",
                 *targets,
@@ -1644,6 +1709,7 @@ class RepoEnv:
                 strict=True,
                 expected=expected,
                 expected_note=expected_note,
+                require_expected=require_expected,
             )
             self.last_eval_notes = notes
             return report

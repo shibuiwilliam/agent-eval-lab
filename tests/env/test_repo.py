@@ -45,7 +45,7 @@ def _sha(data: bytes) -> str:
 
 
 def junit_xml(cases: Sequence[tuple[str, str, str]]) -> str:
-    """(classname, name, 結果) から JUnit XML を作る。結果は passed / failed / error / skipped。"""
+    """(classname, name, 結果) から xunit1 風の JUnit XML を作る（file 属性は classname から機械的に付ける）。結果は passed / failed / error / skipped。"""
     body = []
     for classname, name, outcome in cases:
         inner = {
@@ -54,8 +54,13 @@ def junit_xml(cases: Sequence[tuple[str, str, str]]) -> str:
             "error": '<error message="x">boom</error>',
             "skipped": '<skipped type="pytest.skip" message="s"/>',
         }[outcome]
+        parts = classname.split(".")
+        idx = next((i for i, p in enumerate(parts) if p[:1].isupper()), len(parts))
+        file = (
+            "/".join(parts[:idx]) + ".py"
+        )  # テストの helper 用の単純な対応（実物は下の実測 fixture）
         body.append(
-            f'<testcase classname="{classname}" name="{name}" time="0.01">{inner}</testcase>'
+            f'<testcase classname="{classname}" name="{name}" file="{file}" time="0.01">{inner}</testcase>'
         )
     return f'<?xml version="1.0"?><testsuites><testsuite tests="{len(cases)}">{"".join(body)}</testsuite></testsuites>'
 
@@ -869,6 +874,8 @@ def test_run_visible_tests_command_and_report(
         "pytest",
         "-p",
         "no:cacheprovider",
+        "-o",
+        "junit_family=xunit1",
         "--junitxml=/var/agenteval/reports/0.xml",
         "-q",
         "--tb=short",
@@ -1083,6 +1090,8 @@ def test_run_hidden_tests_builds_isolated_copy(
         ".",
         "-p",
         "no:cacheprovider",
+        "-o",
+        "junit_family=xunit1",
         "-q",
         "--junitxml=/var/agenteval/reports/0.xml",
         "tests_hidden",
@@ -1185,6 +1194,8 @@ def test_final_visible_uses_original_tests(
         ".",
         "-p",
         "no:cacheprovider",
+        "-o",
+        "junit_family=xunit1",
         "-q",
         "--junitxml=/var/agenteval/reports/0.xml",
         "tests",
@@ -1406,7 +1417,8 @@ def test_strict_rejects_forged_or_broken_xml(
     assert report.passed is False, label
     if label in ("missing", "garbage", "doctype", "not-utf8", "utf16-decl"):
         assert report.cases == []
-        assert report.n_passed == 9  # 診断用に出力の件数は残す
+        assert report.n_passed == 0  # XML が無い評価では件数を信用しない（出力は output に残る）
+        assert "9 passed" in report.output
     assert any("不合格" in n for n in env.last_eval_notes)
 
 
@@ -1757,3 +1769,222 @@ def test_honeypot_files_are_mode_0600(env: RepoEnv) -> None:
 def test_pytest_toml_names_are_test_config() -> None:
     assert is_test_config("pytest.toml") and is_test_config(".pytest.toml")
     assert is_test_config(".pytest.ini") and is_test_config("sub/pytest.toml")
+
+
+# --- node id の復元（実 pytest の出力との一致） -----------------------------------------------------
+# 次の fixture は実際の pytest 9.1.1 が出したもの。生成手順:
+#   tests/v1.2/test_dot.py, tests/Upper/test_up.py, tests/a/b/test_nested.py, tests/test_classes.py
+#   （小文字のクラス lowercase_cls、入れ子クラス TestOuter::TestInner、parametrize の "a b"・"x.y/z"・
+#   "a::b"・""・"日本語"、ids=["one.two", "three"]）を置き、そのディレクトリで
+#     python -I -B -m pytest --rootdir . -p no:cacheprovider -o python_classes="*" \
+#         -o junit_family=xunit1 --junitxml=x.xml -q tests
+#     python -I -B -m pytest --rootdir . -p no:cacheprovider -o python_classes="*" --collect-only -q tests
+#   の出力（timestamp と hostname の属性だけ除いた）。非 ASCII は pytest が "\u65e5" の形にエスケープする。
+REAL_XUNIT1 = r"""<?xml version="1.0" encoding="utf-8"?>
+<testsuites name="pytest tests">
+<testsuite name="pytest" errors="0" failures="0" skipped="0" tests="13" time="0.014">
+<testcase classname="tests.Upper.test_up" name="test_in_upper_dir" file="tests/Upper/test_up.py" line="0" time="0.000" />
+<testcase classname="tests.a.b.test_nested" name="test_nested_dir" file="tests/a/b/test_nested.py" line="0" time="0.000" />
+<testcase classname="tests.test_classes.lowercase_cls" name="test_m" file="tests/test_classes.py" line="4" time="0.000" />
+<testcase classname="tests.test_classes.TestOuter.TestInner" name="test_deep" file="tests/test_classes.py" line="10" time="0.000" />
+<testcase classname="tests.test_classes.TestOuter" name="test_outer" file="tests/test_classes.py" line="13" time="0.000" />
+<testcase classname="tests.test_classes" name="test_param[a b]" file="tests/test_classes.py" line="17" time="0.000" />
+<testcase classname="tests.test_classes" name="test_param[x.y/z]" file="tests/test_classes.py" line="17" time="0.000" />
+<testcase classname="tests.test_classes" name="test_param[a::b]" file="tests/test_classes.py" line="17" time="0.000" />
+<testcase classname="tests.test_classes" name="test_param[]" file="tests/test_classes.py" line="17" time="0.000" />
+<testcase classname="tests.test_classes" name="test_param[\u65e5\u672c\u8a9e]" file="tests/test_classes.py" line="17" time="0.000" />
+<testcase classname="tests.test_classes" name="test_ids[one.two]" file="tests/test_classes.py" line="22" time="0.000" />
+<testcase classname="tests.test_classes" name="test_ids[three]" file="tests/test_classes.py" line="22" time="0.000" />
+<testcase classname="tests.v1.2.test_dot" name="test_in_dotted_dir" file="tests/v1.2/test_dot.py" line="0" time="0.000" />
+</testsuite>
+</testsuites>"""
+REAL_COLLECT_IDS = [
+    "tests/Upper/test_up.py::test_in_upper_dir",
+    "tests/a/b/test_nested.py::test_nested_dir",
+    "tests/test_classes.py::lowercase_cls::test_m",
+    "tests/test_classes.py::TestOuter::TestInner::test_deep",
+    "tests/test_classes.py::TestOuter::test_outer",
+    "tests/test_classes.py::test_param[a b]",
+    "tests/test_classes.py::test_param[x.y/z]",
+    "tests/test_classes.py::test_param[a::b]",
+    "tests/test_classes.py::test_param[]",
+    "tests/test_classes.py::test_param[\\u65e5\\u672c\\u8a9e]",
+    "tests/test_classes.py::test_ids[one.two]",
+    "tests/test_classes.py::test_ids[three]",
+    "tests/v1.2/test_dot.py::test_in_dotted_dir",
+]
+
+
+def test_nodeids_match_real_pytest_collect_only() -> None:
+    """dotted ディレクトリ・大文字ディレクトリ・小文字クラス・入れ子クラス・parametrize の特殊文字・入れ子ディレクトリ。"""
+    import agenteval.env.repo as repo_mod
+
+    cases, problems = repo_mod._parse_junit(REAL_XUNIT1.encode())
+    assert problems == [] and cases is not None
+    assert sorted(c.nodeid for c in cases) == sorted(REAL_COLLECT_IDS)
+    assert len(cases) == 13
+    for needle in (
+        "tests/v1.2/test_dot.py::test_in_dotted_dir",
+        "tests/Upper/test_up.py::test_in_upper_dir",
+        "tests/test_classes.py::lowercase_cls::test_m",
+        "tests/test_classes.py::TestOuter::TestInner::test_deep",
+        "tests/test_classes.py::test_param[a::b]",
+        "tests/test_classes.py::test_param[]",
+        "tests/test_classes.py::test_ids[one.two]",
+        "tests/a/b/test_nested.py::test_nested_dir",
+    ):
+        assert needle in REAL_COLLECT_IDS and needle in {c.nodeid for c in cases}
+
+
+def test_nodeid_anomalies_are_reported() -> None:
+    import agenteval.env.repo as repo_mod
+
+    no_file = '<testsuite tests="1"><testcase classname="tests.test_a" name="t"/></testsuite>'
+    cases, problems = repo_mod._parse_junit(no_file.encode())
+    assert cases is not None and any("file 属性" in p for p in problems)
+    mismatch = (
+        '<testsuite tests="1"><testcase classname="other.mod" name="t" file="tests/test_a.py"/>'
+        "</testsuite>"
+    )
+    cases, problems = repo_mod._parse_junit(mismatch.encode())
+    assert any("classname" in p for p in problems)
+    prefix_only = (  # mod "tests.test_a" は "tests.test_ab" の接頭辞だが "." で区切られていない
+        '<testsuite tests="1"><testcase classname="tests.test_ab" name="t" file="tests/test_a.py"/>'
+        "</testsuite>"
+    )
+    _, problems = repo_mod._parse_junit(prefix_only.encode())
+    assert any("classname" in p for p in problems)
+
+
+def test_strict_rejects_xml_without_file_attribute(
+    task: CodingTask, fixture_root: Path, data_root: Path
+) -> None:
+    xml = '<testsuite tests="1"><testcase classname="tests_hidden.test_hidden_a" name="test_a"/></testsuite>'
+    env, _ = hidden_report(task, fixture_root, data_root, xml)
+    assert env.run_hidden_tests().passed is False
+    assert any("file 属性" in n for n in env.last_eval_notes)
+
+
+# --- restore の事前検査 ---------------------------------------------------------------------------
+def test_restore_fails_before_changing_anything(
+    env: RepoEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import agenteval.env.repo as repo_mod
+
+    write(env, "repo:a_first.txt", "A")
+    monkeypatch.setattr(repo_mod, "MAX_FILE_BYTES", 1000)
+    write(env, "repo:z_big.bin", b"x" * 1500)
+    ref = env.snapshot(1)
+    # 復元が必要な変更を入れたうえで、oversize を食い違わせる
+    write(env, "repo:a_first.txt", "CHANGED")
+    write(env, "repo:extra.txt", "extra")
+    write(env, "repo:z_big.bin", b"y" * 1200)
+    before = env.scan()
+    with pytest.raises(RuntimeError, match="復元できない"):
+        env.restore(ref)
+    assert env.scan().areas == before.areas  # 何も変わっていない
+    assert (env.layout.mounts.repo / "extra.txt").exists()
+    # oversize が消えている場合も同じ
+    (env.layout.mounts.repo / "z_big.bin").unlink()
+    before = env.scan()
+    with pytest.raises(RuntimeError, match="現在は無い"):
+        env.restore(ref)
+    assert env.scan().areas == before.areas
+
+
+def test_restore_fails_before_changing_anything_when_blob_missing(
+    env: RepoEnv, data_root: Path
+) -> None:
+    write(env, "repo:a_first.txt", "A")
+    ref = env.snapshot(1)
+    entry = env.load_manifest(ref).areas["repo"]["a_first.txt"]
+    write(env, "repo:a_first.txt", "CHANGED")
+    write(env, "repo:extra.txt", "extra")
+    (data_root / "blobs" / entry.blob[:2] / entry.blob).unlink()
+    before = env.scan()
+    with pytest.raises(FileNotFoundError, match="blob が無い"):
+        env.restore(ref)
+    assert env.scan().areas == before.areas
+
+
+# --- write_area_file と FIFO ----------------------------------------------------------------------
+def test_write_area_file_does_not_hang_on_fifo(env: RepoEnv) -> None:
+    import threading
+
+    fifo = env.layout.mounts.repo / "pipe"
+    os.mkfifo(fifo)
+    outcome: list[BaseException | None] = []
+
+    def attempt() -> None:
+        try:
+            env.write_area_file("repo:pipe", "data")
+            outcome.append(None)
+        except BaseException as exc:  # noqa: BLE001  (スレッドの結果を集める)
+            outcome.append(exc)
+
+    thread = threading.Thread(target=attempt, daemon=True)
+    thread.start()
+    thread.join(timeout=5)
+    assert not thread.is_alive(), "FIFO への書き込みで固まった"
+    assert isinstance(outcome[0], OSError)  # 読み手がいなければ ENXIO
+
+
+def test_write_area_file_truncates_regular_files_only_after_check(env: RepoEnv) -> None:
+    env.write_area_file("repo:f.txt", "long long content")
+    env.write_area_file("repo:f.txt", "short")
+    assert (env.layout.mounts.repo / "f.txt").read_text() == "short"
+    with pytest.raises(OSError):
+        env.write_area_file("repo:src", "x")  # ディレクトリ
+
+
+# --- create の後始末と require_expected --------------------------------------------------------------
+def test_failed_create_does_not_remove_other_runs_directories(
+    task: CodingTask, fixture_root: Path, data_root: Path
+) -> None:
+    layout = WorkLayout.for_run("cd__CT-demo-001__c01_baseline__unit__r0", "sim", data_root)
+    layout.root.mkdir(parents=True)  # 先行する別の create が確保した作業領域
+    (layout.root / "marker").write_text("other")
+    with pytest.raises(FileExistsError, match="作業領域"):
+        make_env(task, fixture_root, data_root)
+    assert (layout.root / "marker").read_text() == "other"
+    assert not layout.snapshot_dir.exists()  # 自分は何も確保していない
+
+
+def test_failed_create_removes_only_what_it_claimed(
+    task: CodingTask, fixture_root: Path, data_root: Path
+) -> None:
+    layout = WorkLayout.for_run("cd__CT-demo-001__c01_baseline__unit__r0", "sim", data_root)
+    layout.snapshot_dir.mkdir(parents=True)
+    (layout.snapshot_dir / "step_0.json").write_text("{}")
+    with pytest.raises(FileExistsError, match="スナップショット"):
+        make_env(task, fixture_root, data_root)
+    assert (layout.snapshot_dir / "step_0.json").exists()
+    assert not layout.root.exists()  # 自分が確保した作業領域は消える
+
+
+def test_require_expected_fails_when_file_missing(
+    task: CodingTask, fixture_root: Path, data_root: Path
+) -> None:
+    env, _ = hidden_report(task, fixture_root, data_root, GOOD)
+    assert env.run_hidden_tests().passed is True  # 既定は照合を省く
+    assert env.run_hidden_tests(require_expected=True).passed is False
+    assert any("require_expected" in n for n in env.last_eval_notes)
+    write_expected(fixture_root, {"hidden": ["tests_hidden/test_hidden_a.py::test_a"]})
+    assert env.run_hidden_tests(require_expected=True).passed is True
+
+
+def test_require_expected_for_final_visible(
+    task: CodingTask, fixture_root: Path, data_root: Path
+) -> None:
+    probe = Probe(junit_xml([("tests.test_core", "test_add", "passed")]))
+    env, _ = make_env(task, fixture_root, data_root, factory=Factory(hook=probe))
+    assert env.run_visible_tests(timeout_s=1, original_tests=True).passed is True
+    assert (
+        env.run_visible_tests(timeout_s=1, original_tests=True, require_expected=True).passed
+        is False
+    )
+    # selector 指定の部分実行は、require_expected でも照合を求めない
+    r = env.run_visible_tests(
+        ["tests/test_core.py"], timeout_s=1, original_tests=True, require_expected=True
+    )
+    assert r.passed is True
