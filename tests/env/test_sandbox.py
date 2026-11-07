@@ -33,6 +33,7 @@ from agenteval.core.coding_types import (
 from agenteval.core.schema import ToolCall
 from agenteval.env import effects as fx
 from agenteval.env.sandbox import (
+    CONTAINER_MARKER_DIR,
     EXEC_WRAPPER,
     PAYLOAD_DIR,
     PID1_SCRIPT,
@@ -201,6 +202,103 @@ def test_run_argv_honors_config(mounts: SandboxMounts, tmp_path: Path) -> None:
     assert pairs(argv, "--user") == ["1001:1001"]
     assert argv[-4] == "img:x"
     assert any(v.startswith(f"{payload.resolve()}/sitecustomize.py:") for v in pairs(argv, "-v"))
+
+
+def test_default_run_argv_is_byte_identical_to_before_marker_dir(mounts: SandboxMounts) -> None:
+    """DockerConfig.marker_dir（既定 None）を足す前と、docker run の引数がバイト単位で同じ（SPEC 12.4.3 節）。"""
+    hook = str((PAYLOAD_DIR / "sitecustomize.py").resolve())
+    site = "/usr/local/lib/python3.13/site-packages/sitecustomize.py"
+    expected = [
+        "docker", "run", "-d",
+        "--name", "agenteval-106e6577e655a0c0",
+        "--label", f"agenteval.run_id={'r'}",
+        "--label", "agenteval.mode=sim",
+        "--network", "none",
+        "--read-only",
+        "--user", "1000:1000",
+        "--cpus", "1",
+        "--memory", "1g",
+        "--memory-swap", "1g",
+        "--ulimit", "fsize=268435456:268435456",
+        "--pids-limit", "256",
+        "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges",
+        "-v", f"{mounts.repo.resolve()}:/work/repo:rw",
+        "-v", f"{mounts.home.resolve()}:/home/agent:rw",
+        "-v", f"{mounts.tmp.resolve()}:/tmp:rw",
+        "-v", f"{mounts.effects.resolve()}:/var/agenteval/effects:rw",
+        "-v", f"{mounts.reports.resolve()}:/var/agenteval/reports:rw",
+        "-v", f"{hook}:{site}:ro",
+        "-e", "HOME=/home/agent",
+        "-e", "PYTHONDONTWRITEBYTECODE=1",
+        "-e", "PATH=/work/repo/.venv/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "-e", "VIRTUAL_ENV=/work/repo/.venv",
+        "-e", "PIP_NO_CACHE_DIR=1",
+        "-e", "PIP_DISABLE_PIP_VERSION_CHECK=1",
+        "-e", "PIP_NO_INPUT=1",
+        "-e", "AGENTEVAL_EFFECT_LOG_DIR=/var/agenteval/effects",
+        "-w", "/work/repo",
+        "agenteval-sandbox:py3.13", "sh", "-c", PID1_SCRIPT,
+    ]  # fmt: skip
+    default = DockerExecutor(mounts, run_id="r", mode="sim").build_run_argv()
+    assert default == expected
+    assert DockerConfig().marker_dir is None
+    assert (
+        DockerExecutor(
+            mounts, run_id="r", mode="sim", config=DockerConfig(marker_dir=None)
+        ).build_run_argv()
+        == expected
+    )
+
+
+def test_marker_dir_adds_exactly_one_readonly_volume_after_the_hook(
+    mounts: SandboxMounts, tmp_path: Path
+) -> None:
+    marker = tmp_path / "marker"
+    marker.mkdir()
+    cfg = DockerConfig(marker_dir=marker)
+    argv = make_executor(mounts, FakeDocker(), config=cfg).build_run_argv()
+    plain = make_executor(mounts, FakeDocker()).build_run_argv()
+    added = f"{marker.resolve()}:{CONTAINER_MARKER_DIR}:ro"
+    volumes = pairs(argv, "-v")
+    assert volumes.count(added) == 1 and volumes[-1] == added  # sitecustomize の後ろ（末尾）
+    assert len(volumes) == len(pairs(plain, "-v")) + 1
+    at = argv.index(added)
+    assert [*argv[: at - 1], *argv[at + 1 :]] == plain  # 他の引数は 1 つも変わらない
+    # 書き込み可の領域は増えない
+    writable = {v.rsplit(":", 2)[1] for v in volumes if v.endswith(":rw")}
+    assert writable == {
+        "/work/repo",
+        "/home/agent",
+        "/tmp",
+        "/var/agenteval/effects",
+        "/var/agenteval/reports",
+    }
+    assert CONTAINER_MARKER_DIR == "/opt/agenteval/marker"
+
+
+def test_marker_dir_rejects_unmountable_path(mounts: SandboxMounts, tmp_path: Path) -> None:
+    bad = tmp_path / "a:b"
+    bad.mkdir()
+    with pytest.raises(SandboxError, match="-v に渡せないパス"):
+        make_executor(mounts, FakeDocker(), config=DockerConfig(marker_dir=bad)).build_run_argv()
+
+
+def test_start_requires_marker_dir_to_be_a_directory(mounts: SandboxMounts, tmp_path: Path) -> None:
+    docker = FakeDocker()
+    ex = make_executor(mounts, docker, config=DockerConfig(marker_dir=tmp_path / "missing"))
+    with pytest.raises(SandboxError, match="目印発生器"):
+        ex.start()
+    assert docker.calls == []  # docker は何も呼ばれない
+    a_file = tmp_path / "file"
+    a_file.write_text("x")
+    with pytest.raises(SandboxError, match="目印発生器"):
+        make_executor(mounts, FakeDocker(), config=DockerConfig(marker_dir=a_file)).start()
+    ok = tmp_path / "ok"
+    ok.mkdir()
+    docker = FakeDocker()
+    make_executor(mounts, docker, config=DockerConfig(marker_dir=ok)).start()
+    assert "run" in docker.subcommands()
 
 
 def test_run_argv_rejects_unmountable_path(tmp_path: Path) -> None:

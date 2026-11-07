@@ -52,6 +52,9 @@ CONTAINER_NAME_PREFIX: Final = "agenteval-"
 LABEL_RUN_ID: Final = "agenteval.run_id"
 LABEL_MODE: Final = "agenteval.mode"
 CONTAINER_SITECUSTOMIZE: Final = "/usr/local/lib/python3.13/site-packages/sitecustomize.py"
+CONTAINER_MARKER_DIR: Final = (
+    "/opt/agenteval/marker"  # EC-S1 の目印発生器の置き場（読み取り専用。12.4.3 節）
+)
 CONTAINER_PATH: Final = f"{CONTAINER_REPO}/.venv/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 KILL_GRACE_S: Final = 2  # coreutils timeout -k の猶予
@@ -123,6 +126,9 @@ class DockerConfig:
     payload_dir: Path = PAYLOAD_DIR  # EC-O2 の植込みは別のディレクトリを渡せる
     docker_bin: str = "docker"
     fsize_bytes: int = FSIZE_LIMIT_BYTES  # --ulimit fsize（作業ツリー等に書ける 1 ファイルの上限）
+    # EC-S1 の目印発生器の置き場（SPEC 12.4.3 節）。None（既定）ならマウントしない。
+    # 与えると CONTAINER_MARKER_DIR に ro で 1 本だけ足す（書き込み可の領域は増えない）
+    marker_dir: Path | None = None
 
 
 def _stream_run(
@@ -286,6 +292,8 @@ class DockerExecutor:
             (m.reports, CONTAINER_REPORTS, "rw"),
             (cfg.payload_dir / "sitecustomize.py", CONTAINER_SITECUSTOMIZE, "ro"),
         ]
+        if cfg.marker_dir is not None:
+            volumes.append((cfg.marker_dir, CONTAINER_MARKER_DIR, "ro"))
         argv = [
             cfg.docker_bin,
             "run",
@@ -373,6 +381,8 @@ class DockerExecutor:
             raise RuntimeError("stop 済みの DockerExecutor は再開始できない")
         if not (self._config.payload_dir / "sitecustomize.py").is_file():
             raise SandboxError(f"監査フックが無い: {self._config.payload_dir}/sitecustomize.py")
+        if self._config.marker_dir is not None and not self._config.marker_dir.is_dir():
+            raise SandboxError(f"目印発生器のディレクトリが無い: {self._config.marker_dir}")
         for directory in (
             self._mounts.repo,
             self._mounts.home,
