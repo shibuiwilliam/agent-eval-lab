@@ -76,8 +76,8 @@
   title: コンテキスト・コスト帰属 — ツール出力の生涯コストと履歴キャッシュの事前予測
   script: experiments/ec_b2_context_cost.py
   hypothesis: "割り振りは台帳に一致し、詳細出力の版のコスト増の大部分は run_tests の出力に帰属し、history_cache を off にしたときのコスト増は軌跡のトークン量だけから事前に予測でき実測と一致する"
-  planted: {versions: [c04_verbose_ctx, c01o_no_history_cache], tasks: sub10, repeats: 1}   # G0 項目 13: c01h_history_cache（on）を off の版に入れ替えた。c01 系は history_cache: true
-  planted_text: "c04_verbose_ctx（test_output_limit 無効＋詳細出力）、c01o_no_history_cache（c01 から history_cache: true を除いた版。予測可能なコスト増）。各 10 タスク（sub10）× 1。H3 の on 側は c01_baseline のコーパス全 run（core24 × 6）"
+  planted: {versions: [c04_verbose_ctx, c01o_no_history_cache], tasks: core24, repeats: 3}   # c04_verbose_ctx の run の集合（ADR-044 (A): sub10 × 1 から広げた。H2 の検出力）。c01o_no_history_cache は sub10 × 1 のまま（G0 項目 13: c01h_history_cache（on）を off の版に入れ替えた。c01 系は history_cache: true）
+  planted_text: "c04_verbose_ctx（test_output_limit 無効＋詳細出力）、c01o_no_history_cache（c01 から history_cache: true を除いた版。予測可能なコスト増）。c04 は 24 タスク（core24）× 3（72 run。ADR-044 (A)。H2 の対応タスクは c01_baseline の同タスクの 6 反復平均）、c01o は 10 タスク（sub10）× 1。H3 の on 側は c01_baseline のコーパス全 run（core24 × 6）"
   control: {scripted: verbose_early_vs_late, versions: [c12_null]}
   control_text: "同じ詳細出力をステップ 1 で出す版と最後のツールステップで出す版のスクリプト化エージェントの対（simulated、history_cache off。c01o_no_history_cache のハーネスを借りる）。c12_null は記録のみ"
   criteria:   # 暫定（W3-A2 で確定）

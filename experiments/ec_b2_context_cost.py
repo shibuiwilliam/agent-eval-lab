@@ -303,7 +303,10 @@ def compute(
         voided = f"台帳の照合率 {report.ledger_match_rate:.3f} が {MIN_LEDGER_MATCH_RATE} 未満"
 
     # --- H2: 詳細出力の run_tests への帰属 ---
+    # H2 のタスク集合は c04 の run があるタスクから決める（ADR-044 (A): core24 × 3。ハードコードしない）。
+    # c01 側はそのタスクの全反復（core24 では 6 反復）の平均を使う。H3（c01o は sub10 × 1）は sub10 のまま。
     sub = set(sub10)
+    h2_tasks = {r.task_id for r in runs_by_version[VERBOSE]}
 
     def by_task(version: str, tasks: set[str] | None = None) -> dict[str, list[RunAllocation]]:
         out: dict[str, list[RunAllocation]] = {}
@@ -313,7 +316,7 @@ def compute(
         return out
 
     attribution = verbose_attribution(
-        by_task(BASE, sub), by_task(VERBOSE), tool=TOOL, n_boot=n_boot, seed=seed
+        by_task(BASE, h2_tasks), by_task(VERBOSE), tool=TOOL, n_boot=n_boot, seed=seed
     )
 
     # --- H3: 履歴キャッシュを外したコスト増の予測（run 内の反実仮想） ---

@@ -3,7 +3,7 @@
 # tasks は coding/task_sets.yaml の集合名（SPEC.md 7.4 節）。タスクの中身はここに書かない。
 # 読み込みは src/agenteval/reports/coding_corpus.py。office 側の ./corpus.yaml とは別物。
 #
-# run 数: pilot 96、opcheck 10、opcheck2 10、corpus 356（TASK.md 6.2 節）。
+# run 数: pilot 96、opcheck 10、opcheck2 10、opcheck3 10、corpus 418（TASK.md 6.2 節）。
 # live の段は `uv run agenteval coding corpus --stage <段> --dry-run` で見積りを出し、
 # 承認（G1: パイロット・操作確認、G2: コーパス）を得てから `--live --approved G<n> --mode record` で始める。
 
@@ -21,10 +21,17 @@ stages:
     runs:
       - {version: c13_minimal_fix, tasks: sub10, repeats: 1}
   # 操作確認のやり直し（ADR-037 判断 4・立て直し記録）。プロンプトは同じ版 ID のまま書き換える（版ハッシュが変わる）ので、
-  # run_id が 1 回目と衝突しないよう段を分ける。立て直しは 2 回まで: opcheck2（1 回目の立て直し）、opcheck3（2 回目。必要なときだけ足す）。
+  # run_id が 1 回目と衝突しないよう段を分ける。立て直しは 2 回まで: opcheck2（1 回目の立て直し）、opcheck3（2 回目。U1、ユーザーが選択、e2b186c で足した）。
   # 段 opcheck<N> は G1 の承認で走らせ、集計は --only spec だけ（opcheck と同じ扱い。SPEC.md 2.4 節）
   opcheck2:
     seed: 20261104
+    mode: live
+    runs:
+      - {version: c13_minimal_fix, tasks: sub10, repeats: 1}
+  # 立て直し 2 回目（U1。ユーザーが選択。ADR-037 の立て直し記録・ADR-044）。プロンプトは同じ版 ID のまま e2b186c で書き換え済み。
+  # run_id が opcheck・opcheck2 と衝突しないよう段を分ける。これで立て直しは打ち止め（3 回目は無い）。G1 の承認で走らせ、集計は --only spec だけ
+  opcheck3:
+    seed: 20261105
     mode: live
     runs:
       - {version: c13_minimal_fix, tasks: sub10, repeats: 1}
@@ -35,7 +42,7 @@ stages:
       - {version: c01_baseline, tasks: core24, repeats: 6}
       - {version: c13_minimal_fix, tasks: core24, repeats: 6}
       - {version: c12_null, tasks: core24, repeats: 2}
-      - {version: c04_verbose_ctx, tasks: sub10, repeats: 1}
+      - {version: c04_verbose_ctx, tasks: core24, repeats: 3}   # ADR-044 (A): H2 の検出力のため sub10 × 1 から広げた（+62 run）
       - {version: c01o_no_history_cache, tasks: sub10, repeats: 1}   # G0 項目 13: c01h から入れ替え
 
 # --dry-run の見積りの仮定（TASK.md 6.2 節の「1 run 約 0.045 USD（履歴キャッシュ on）／約 0.097 USD（off）」を
