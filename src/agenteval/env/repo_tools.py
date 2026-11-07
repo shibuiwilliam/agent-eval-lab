@@ -14,11 +14,14 @@
 from __future__ import annotations
 
 import fnmatch
+import json
 import posixpath
 import re
+import subprocess
+import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Final, Literal
 from urllib.parse import urlparse
 
@@ -32,7 +35,7 @@ from agenteval.core.coding_types import (
 )
 from agenteval.core.normalize import canonical_json
 from agenteval.core.schema import Effect
-from agenteval.env.repo import PathEscapeError, RepoEnv
+from agenteval.env.repo import MAX_FILE_BYTES, PathEscapeError, RepoEnv
 
 Toolset = Literal["c1"]
 
@@ -42,6 +45,11 @@ SEARCH_MAX_MATCHES: Final = 50
 SEARCH_TEXT_CHARS: Final = 200
 SEARCH_LINE_CHARS: Final = 1000  # 正規表現に渡す 1 行の長さの上限（暴走する正規表現の被害を抑える）
 SEARCH_FILE_BYTES: Final = 1024 * 1024  # これを超えるファイルは走査しない
+SEARCH_TOTAL_CHARS: Final = 16 * 1024 * 1024  # 1 回の検索でワーカーに渡す内容の合計の上限
+SEARCH_TIMEOUT_S: Final = (
+    5.0  # 1 回の search_code 全体の壁時計の上限（超えたらワーカーを kill する）
+)
+WORKER_PATH: Final = Path(__file__).with_name("search_worker.py")
 EXCLUDED_TOP_DIRS: Final = frozenset({".git", ".venv"})
 
 
@@ -64,7 +72,7 @@ class ReadFileArgs(BaseModel):
 class SearchCodeArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    pattern: str = Field(description="Python の正規表現")
+    pattern: str = Field(max_length=200, description="Python の正規表現（200 文字まで）")
     path: str = Field(default=".", description="探す範囲（作業ツリー相対）")
 
 
@@ -130,7 +138,7 @@ DESCRIPTIONS: Final[dict[str, str]] = {
     ),
     "search_code": (
         "作業ツリーのテキストファイルを正規表現で検索し、一致した行を返す。関数の呼び出し元や定数の使われ方を探すときに使う。"
-        "pattern は Python の正規表現、path は探す範囲（既定は作業ツリー全体）。一致は最大 50 件で、各行は 200 文字までに切る。"
+        "pattern は Python の正規表現、path は探す範囲（既定は作業ツリー全体）。一致は最大 50 件で、各行は 200 文字までに切り、検索は時間で打ち切られる。"
         "ファイルの全体は返さないので、周辺を見るには read_file を使う。.git と .venv、秘密の名前のファイルは検索しない。"
     ),
     "edit_file": (
@@ -394,7 +402,7 @@ def _run_read_file(raw: BaseModel, ctx: ToolContext) -> ToolOutput:
 def _run_search_code(raw: BaseModel, ctx: ToolContext) -> ToolOutput:
     args = _args_of(raw, SearchCodeArgs)
     try:
-        rx = re.compile(args.pattern)
+        re.compile(args.pattern)  # 構文の検査だけ。実行は別プロセス
     except re.error as exc:
         return _error("invalid_pattern", detail=str(exc)[:200])
     base = lexical_path(args.path)
@@ -411,8 +419,9 @@ def _run_search_code(raw: BaseModel, ctx: ToolContext) -> ToolOutput:
     else:
         prefix = "" if base == "." else f"{base}/"
         candidates = [r for r in ctx.env.list_repo_files() if r.startswith(prefix)]
-    matches: list[dict[str, Any]] = []  # Any: line は int、path と text は str
-    truncated = False
+    files: list[tuple[str, str]] = []
+    total = 0
+    read_cut = False
     for rel in candidates:
         if _excluded_from_listing(rel):
             continue
@@ -424,18 +433,58 @@ def _run_search_code(raw: BaseModel, ctx: ToolContext) -> ToolOutput:
             continue
         if text is None or "\x00" in text:
             continue
-        for lineno, line in enumerate(text.split("\n"), 1):
-            if rx.search(line[:SEARCH_LINE_CHARS]):
-                if len(matches) >= SEARCH_MAX_MATCHES:
-                    truncated = True
-                    break
-                matches.append({"path": rel, "line": lineno, "text": line[:SEARCH_TEXT_CHARS]})
-        if truncated:
+        if total + len(text) > SEARCH_TOTAL_CHARS:
+            read_cut = True
             break
+        total += len(text)
+        files.append((rel, text))
+    found = _search_in_worker(args.pattern, files)
+    if isinstance(found, ToolOutput):
+        return found
+    matches, truncated = found
     return ToolOutput(
-        payload={"matches": matches, "truncated": truncated},
+        payload={"matches": matches, "truncated": truncated or read_cut},
         effects=[_read_effect(ctx, base)],
     )
+
+
+def _search_in_worker(
+    pattern: str, files: list[tuple[str, str]]
+) -> tuple[list[dict[str, Any]], bool] | ToolOutput:  # Any: line は int、path と text は str
+    """別プロセス（`python -I search_worker.py`）で検索する。壁時計の SEARCH_TIMEOUT_S で kill する。
+
+    ワーカーにはパターンとファイルの相対パス・内容だけを渡す（ワーカーはファイルシステムに触れない）。
+    時間切れは `search_timeout`、ワーカーの異常終了は `search_failed`（どちらも is_error）。
+    """
+    request = json.dumps(
+        {
+            "pattern": pattern,
+            "files": files,
+            "max_matches": SEARCH_MAX_MATCHES,
+            "text_chars": SEARCH_TEXT_CHARS,
+            "line_chars": SEARCH_LINE_CHARS,
+        },
+        ensure_ascii=False,
+    )
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-I", str(WORKER_PATH)],
+            input=request,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=SEARCH_TIMEOUT_S,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return _error("search_timeout", timeout_s=SEARCH_TIMEOUT_S)
+    if proc.returncode != 0:
+        return _error("search_failed", detail=proc.stderr[-200:])
+    try:
+        result = json.loads(proc.stdout)
+        return list(result["matches"]), bool(result["truncated"])
+    except (ValueError, KeyError, TypeError):
+        return _error("search_failed", detail="ワーカーの出力を解釈できない")
 
 
 # --- 書き込み系（効果はループがファイル差分で作る） --------------------------------
@@ -444,10 +493,17 @@ def _run_edit_file(raw: BaseModel, ctx: ToolContext) -> ToolOutput:
     path = lexical_path(args.path)
     if path is None:
         return _error("path_outside_workspace", path=args.path)
+    try:
+        size = (ctx.env.layout.mounts.repo / path).lstat().st_size
+    except OSError:
+        size = 0  # 無い・読めないものは下の読み取りが not_found などを返す
+    if size > MAX_FILE_BYTES:
+        # read_area_file は上限までしか読まない。書き戻すと上限より後ろの内容を失うので編集させない
+        return _error("file_too_large", path=path, limit=MAX_FILE_BYTES)
     content = _read_text(ctx, path)
     if isinstance(content, ToolOutput):
         return content
-    if "�" in content:
+    if "\ufffd" in content:
         return _error("binary_file", path=path, detail="UTF-8 として読めない部分がある")
     count = content.count(args.old) if args.old else 0
     if count == 0:

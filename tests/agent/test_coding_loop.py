@@ -11,17 +11,22 @@ import dataclasses
 import json
 import os
 import shutil
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from agenteval.agent import coding_loop
 from agenteval.agent.coding_loop import (
+    REPORTS_READ_LIMIT,
     CodingRunOptions,
     PathScopeBroker,
+    RunDirectoryExistsError,
     broker_for,
+    read_nofollow,
     run_coding_task,
 )
 from agenteval.agent.scripted import (
@@ -31,6 +36,7 @@ from agenteval.agent.scripted import (
     ScriptedToolUse,
     ScriptStep,
     SyntheticCacheState,
+    _patch_edits,
     gold_script,
     specialization_script,
     synthetic_token_count,
@@ -53,6 +59,7 @@ from agenteval.core.coding_store import (
     load_coding_runs,
     load_fingerprints,
     partial_trace_path,
+    partial_trace_paths,
     save_coding_run,
     save_fingerprints,
 )
@@ -72,7 +79,7 @@ from agenteval.core.coding_types import (
 from agenteval.core.schema import Effect, PolicyDecision, Run, ToolCall
 from agenteval.env import repo_tools
 from agenteval.env.injectors import FaultInjector
-from agenteval.env.repo import RepoEnv
+from agenteval.env.repo import MAX_FILE_BYTES, RepoEnv
 from agenteval.env.repo_tools import ToolContext, build_toolset
 from agenteval.env.sandbox import FakeCall, FakeExecutor, SandboxError
 from agenteval.llm.client import LLMClient, MessageRequest, MessageResult
@@ -602,6 +609,39 @@ def test_search_code(env: RepoEnv, versions: dict[str, CodingVersion]) -> None:
     assert len(many.payload["matches"]) == 50 and many.payload["truncated"] is True
 
 
+def test_search_code_regex_runs_in_a_killable_worker(
+    env: RepoEnv, versions: dict[str, CodingVersion]
+) -> None:
+    """破滅的な正規表現でハーネスが止まらない。別プロセスを壁時計で kill して search_timeout を返す。"""
+    version = versions["c01_baseline"]
+    (env.layout.mounts.repo / "evil.txt").write_text("a" * 40 + "!\n", encoding="utf-8")
+    started = time.monotonic()
+    out = call_tool(env, version, "search_code", {"pattern": "(a+)+$"})
+    assert time.monotonic() - started < 10
+    assert out.is_error and out.payload["error"] == "search_timeout"
+    # ワーカーを kill した後も普通の検索は動く
+    ok = call_tool(env, version, "search_code", {"pattern": "LIMIT", "path": "src"})
+    assert [m["path"] for m in ok.payload["matches"]] == ["src/demo/util.py"] * 2
+    with pytest.raises(ValidationError):
+        repo_tools.SearchCodeArgs.model_validate({"pattern": "a" * 201})
+    assert repo_tools.SearchCodeArgs.model_validate({"pattern": "a" * 200})
+
+
+def test_edit_file_refuses_files_over_the_read_limit(
+    env: RepoEnv, versions: dict[str, CodingVersion]
+) -> None:
+    """read_area_file の上限を超えるファイルは、書き戻すと後ろを失うので編集させない。"""
+    big = env.layout.mounts.repo / "big.txt"
+    with big.open("wb") as fh:
+        fh.write(b"head\n")
+        fh.truncate(MAX_FILE_BYTES + 1)  # スパースファイル
+    out = call_tool(
+        env, versions["c01_baseline"], "edit_file", {"path": "big.txt", "old": "head", "new": "x"}
+    )
+    assert out.payload["error"] == "file_too_large" and out.is_error
+    assert big.read_bytes()[:5] == b"head\n"
+
+
 def test_edit_and_write_file(env: RepoEnv, versions: dict[str, CodingVersion]) -> None:
     version = versions["c01_baseline"]
     core = env.layout.mounts.repo / "src/demo/core.py"
@@ -813,6 +853,34 @@ def test_synthetic_usage_position_model_with_history_cache() -> None:
         # 前のリクエストの全体が読み出され、増分だけが書き込まれる
         assert usages[m].cache_read_input_tokens == totals[m - 1]
         assert usages[m].cache_creation_input_tokens == totals[m] - totals[m - 1]
+
+
+def test_patch_edits_count_hunk_body_by_header() -> None:
+    """ハンクの本文は行数で数える。`--- ` / `+++ ` で始まる内容の行をファイルの見出しと取り違えない。"""
+    patch = (
+        "diff --git a/f.py b/f.py\n"
+        "--- a/f.py\n"
+        "+++ b/f.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " a\n"
+        "--- b\n"
+        "+++ c\n"
+        " d\n"
+        "diff --git a/g.py b/g.py\n"
+        "--- a/g.py\n"
+        "+++ b/g.py\n"
+        "@@ -1 +1 @@\n"
+        "-x\n"
+        "\\ No newline at end of file\n"
+        "+y\n"
+        "\\ No newline at end of file\n"
+    )
+    assert _patch_edits(patch) == [
+        ("f.py", "a\n-- b\nd\n", "a\n++ c\nd\n"),
+        ("g.py", "x", "y"),
+    ]
+    two = "+++ b/h.py\n@@ -1,2 +1,2 @@\n a\n-b\n+c\n@@ -10,2 +10,2 @@\n e\n-f\n+g\n"
+    assert _patch_edits(two) == [("h.py", "a\nb\n", "a\nc\n"), ("h.py", "e\nf\n", "e\ng\n")]
 
 
 def test_gold_and_specialization_scripts(fixture_root: Path) -> None:
@@ -1055,10 +1123,38 @@ def test_cassette_salt_and_mode_are_passed_to_llm_client(
     )
 
 
+def test_auto_mode_and_client_mode_mismatch_are_rejected(
+    tmp_path: Path, versions: dict[str, CodingVersion]
+) -> None:
+    """来歴の混在を防ぐ。auto は拒否し、client.mode と opts.mode の食い違いも拒否する。"""
+    script = Script(script_id="sc-x", steps=[finish_step()])
+    version = versions["c01_baseline"]
+    with pytest.raises(ValueError, match="auto"):
+        run_script(tmp_path, None, version=version, mode="auto")
+    for client_mode, opts_mode in (("sim", "replay"), ("replay", "sim"), ("auto", "record")):
+        client = LLMClient(mode=client_mode, simulator=ScriptedAgent(script))  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="食い違う"):
+            run_script(tmp_path, None, version=version, mode=opts_mode, client=client)
+    assert not (tmp_path / "data_coding").exists() or not list(
+        (tmp_path / "data_coding").rglob("*.json")
+    )
+
+
+def test_record_mode_is_live_provenance(tmp_path: Path, versions: dict[str, CodingVersion]) -> None:
+    """live の実行は record（常に live）。API キーが無ければ予算停止になるが、Run は mode=live・provenance=live。"""
+    client = LLMClient(mode="record", run_id="x")
+    with pytest.raises(BudgetExceeded):
+        run_script(tmp_path, None, version=versions["c01_baseline"], mode="record", client=client)
+    paths = partial_trace_paths(RUN_ID_BASE, "live", data_root=tmp_path / "data_coding")
+    assert len(paths) == 1
+    saved = Run.model_validate_json(paths[0].read_text(encoding="utf-8"))
+    assert (saved.mode, saved.provenance) == ("live", "live")
+
+
 def test_script_and_client_constraints(tmp_path: Path, versions: dict[str, CodingVersion]) -> None:
     script = Script(script_id="sc-x", steps=[finish_step()])
-    with pytest.raises(ValueError, match="sim"):
-        run_script(tmp_path, script, version=versions["c01_baseline"], mode="auto")
+    with pytest.raises(ValueError, match="mode='sim'"):
+        run_script(tmp_path, script, version=versions["c01_baseline"], mode="record")
     with pytest.raises(ValueError, match="同時"):
         run_script(
             tmp_path,
@@ -1404,6 +1500,57 @@ def test_reports_effects_are_scanned_without_crashing(
     assert sinks["abs:/var/agenteval/reports/gone.txt; content_not_scanned"].canary_hits == []
 
 
+def test_large_reports_file_is_marked_scan_truncated(
+    tmp_path: Path, versions: dict[str, CodingVersion]
+) -> None:
+    """reports の読み取り上限（1 MiB）で走査が切れたら、sink の detail に scan_truncated が付く。"""
+    canary = CanaryVault(key=VAULT_KEY).value(f"{RUN_ID_BASE}__sc-x", "repo_env")
+    base = make_responder()
+
+    def big(call: FakeCall, mounts: SandboxMounts) -> ExecResult:
+        result = base(call, mounts)
+        if call.argv[:2] == ["/bin/sh", "-c"]:
+            (mounts.reports / "big.txt").write_text(
+                canary + "x" * REPORTS_READ_LIMIT, encoding="utf-8"
+            )
+            (mounts.reports / "small.txt").write_text(canary, encoding="utf-8")
+            extra = [
+                Effect(
+                    kind="fs_write",
+                    target=f"abs:/var/agenteval/reports/{n}",
+                    source="fs_diff",
+                    via_call_id=call.call_id,
+                    detail="added",
+                )
+                for n in ("big.txt", "small.txt")
+            ]
+            result = result.model_copy(update={"effects": [*result.effects, *extra]})
+        return result
+
+    factory = Factory()
+    factory.responder = big
+    script = Script(script_id="sc-x", steps=[single(("run_shell", {"cmd": "go"})), finish_step()])
+    run, _, _ = run_script(tmp_path, script, version=versions["c01_baseline"], factory=factory)
+    sinks = {e.detail: e for e in run.steps[0].effects if e.target == "sink:out_of_scope_file"}
+    assert sinks["abs:/var/agenteval/reports/big.txt; scan_truncated"].canary_hits == ["repo_env"]
+    assert sinks["abs:/var/agenteval/reports/small.txt"].canary_hits == ["repo_env"]
+
+
+def test_read_nofollow_reports_truncation(tmp_path: Path) -> None:
+    (tmp_path / "a.txt").write_bytes(b"x" * 10)
+    (tmp_path / "d").mkdir()
+    (tmp_path / "d" / "b.txt").write_bytes(b"y" * 3)
+    os.symlink(tmp_path / "a.txt", tmp_path / "link")
+    os.symlink(tmp_path / "d", tmp_path / "dlink")
+    assert read_nofollow(tmp_path, ("a.txt",), 10) == (b"x" * 10, False)
+    assert read_nofollow(tmp_path, ("a.txt",), 4) == (b"xxxx", True)
+    assert read_nofollow(tmp_path, ("d", "b.txt"), 10) == (b"yyy", False)
+    assert read_nofollow(tmp_path, ("link",), 10) is None
+    assert read_nofollow(tmp_path, ("dlink", "b.txt"), 10) is None
+    assert read_nofollow(tmp_path, ("nope",), 10) is None
+    assert read_nofollow(tmp_path, ("d",), 10) is None
+
+
 def test_exec_hook_missing_survives_in_step_effects(
     tmp_path: Path, versions: dict[str, CodingVersion]
 ) -> None:
@@ -1431,6 +1578,50 @@ def test_exec_hook_missing_survives_in_step_effects(
     details = [(e.target, e.detail) for e in run.steps[0].effects if e.kind == "exec"]
     assert ("exec:python", "hook_missing") in details
     assert any(t == "exec:python" and d == "" for t, d in details)
+
+
+def test_calls_after_finish_in_the_same_step_are_not_executed(
+    tmp_path: Path, versions: dict[str, CodingVersion]
+) -> None:
+    script = Script(
+        script_id="sc-x",
+        steps=[
+            single(
+                ("finish", {"summary": "最初", "claims": ["a"]}),
+                ("read_file", {"path": "README.md"}),
+                ("finish", {"summary": "二度目", "claims": ["b"]}),
+                ("write_file", {"path": 1}),
+            )
+        ],
+    )
+    run, outcome, _ = run_script(tmp_path, script, version=versions["c01_baseline"])
+    step = run.steps[0]
+    assert outcome.finished and run.final_text == "最初" and run.claims == ["a"]
+    decisions = step.policy_decisions
+    assert [(d.decision, d.rule_id) for d in decisions[1:]] == [
+        ("deny", "harness.after_finish")
+    ] * 3
+    assert (
+        decisions[1].capability == "fs:read:repo:README.md"
+        and decisions[3].capability == "invalid:write_file"
+    )
+    assert [json.loads(r.content).get("error") for r in step.tool_results] == [
+        None,
+        "not_executed",
+        "not_executed",
+        "not_executed",
+    ]
+    assert not any(e.kind == "fs_read" for e in step.effects)  # 実行されていない
+    assert [e.via_call_id for e in step.effects if e.target == "sink:finish"] == [
+        step.tool_calls[0].id,
+        step.tool_calls[2].id,
+    ]
+    second_sink = next(
+        e
+        for e in step.effects
+        if e.target == "sink:finish" and e.via_call_id == step.tool_calls[2].id
+    )
+    assert not second_sink.executed  # 実行されなかった呼び出しの試みの記録
 
 
 def test_custom_snapshotter_is_used(
@@ -1525,13 +1716,17 @@ def test_budget_exceeded_propagates_and_leaves_partial(
         fixture_root=tmp_path / "fixtures",
         vault=CanaryVault(key=VAULT_KEY),
     )
-    with pytest.raises(FileExistsError):
+    with pytest.raises(RunDirectoryExistsError, match="ユーザーの承認") as info:
         run_coding_task(bugfix_task(), version, options)
+    assert isinstance(info.value, FileExistsError) and run_id in str(info.value)
     shutil.rmtree(data_root / "snapshots" / "sim" / run_id)
     # 同じ run_id をやり直して再び予算停止しても、BudgetExceeded が FileExistsError に化けない
     with pytest.raises(BudgetExceeded):
         run_coding_task(bugfix_task(), version, options)
     assert len(Run.model_validate_json(partial.read_text(encoding="utf-8")).steps) == 2
+    retried = partial_trace_paths(run_id, "sim", data_root=data_root)
+    assert [p.name for p in retried] == [f"{run_id}.partial.0.json", f"{run_id}.partial.1.json"]
+    assert len(Run.model_validate_json(retried[1].read_text(encoding="utf-8")).steps) == 1
 
 
 def test_budget_exceeded_on_first_call(
@@ -1574,9 +1769,17 @@ def test_store_filters_and_ignores_partial(tmp_path: Path) -> None:
             _minimal_run(rid, parse_coding_run_id(rid).version_id), None, data_root=root
         )
     partial_id = coding_run_id("CT-demo-001", "c01_baseline", "corpus", 5)
-    save_coding_run(_minimal_run(partial_id), None, partial=True, data_root=root)
-    with pytest.raises(FileExistsError):
-        save_coding_run(_minimal_run(partial_id), None, partial=True, data_root=root)
+    first = save_coding_run(_minimal_run(partial_id), None, partial=True, data_root=root)
+    later = _minimal_run(partial_id)
+    later.final_text = "やり直し"
+    second = save_coding_run(later, None, partial=True, data_root=root)
+    # やり直しても前回の partial を失わない（連番）。読み込みの対象外
+    assert (first.name, second.name) == (
+        f"{partial_id}.partial.0.json",
+        f"{partial_id}.partial.1.json",
+    )
+    assert Run.model_validate_json(first.read_text(encoding="utf-8")).final_text == ""
+    assert partial_trace_paths(partial_id, "sim", data_root=root) == [first, second]
     assert [r.run_id for r in load_coding_runs("sim", data_root=root)] == sorted(ids)
     assert [r.run_id for r in load_coding_runs("sim", stages={"corpus"}, data_root=root)] == sorted(
         ids[1:]
@@ -1592,6 +1795,19 @@ def test_store_filters_and_ignores_partial(tmp_path: Path) -> None:
     save_coding_run(_minimal_run(ids[0]), None, data_root=root)
     save_coding_run(_minimal_run(ids[0], mode="live"), None, data_root=root)
     assert len(load_coding_runs("live", data_root=root)) == 1
+
+
+def test_exclusive_write_publishes_by_link_and_leaves_no_temp(tmp_path: Path) -> None:
+    from agenteval.core import coding_store
+
+    target = tmp_path / "x.json"
+    coding_store._atomic_write(target, "first", exclusive=True)
+    with pytest.raises(FileExistsError):
+        coding_store._atomic_write(target, "second", exclusive=True)
+    assert target.read_text() == "first"
+    assert [p.name for p in tmp_path.iterdir()] == ["x.json"]  # 一時ファイルが残らない
+    coding_store._atomic_write(target, "third")  # 排他でなければ置き換える
+    assert target.read_text() == "third"
 
 
 def test_store_rejects_bad_inputs(tmp_path: Path) -> None:

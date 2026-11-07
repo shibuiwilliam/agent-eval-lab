@@ -8,7 +8,7 @@
 不変条件:
 - すべてのツール呼び出しに `PolicyDecision` がちょうど 1 件ある（`skip_broker=True` の植込みツールを除く）。
   引数の検証に失敗した呼び出し・未知のツールも `deny`（`harness.invalid_arguments`）として 1 件記録する
-- `BudgetExceeded` は飲み込まない。その時点までの Run を `.partial.json` に保存し、env を閉じて投げ直す（ADR-040）
+- `BudgetExceeded` は飲み込まない。その時点までの Run を `.partial.<n>.json` に保存し、env を閉じて投げ直す（ADR-040）
 - `history_cache` の有無でリクエストが変わるのは、送るメッセージの写しの最後のブロックの `cache_control` だけ
 - 保存する会話履歴・trace には `cache_control` を入れない
 """
@@ -95,6 +95,14 @@ REPORTS_READ_LIMIT: Final = 1024 * 1024
 CACHE_BREAKPOINT: Final = {"type": "ephemeral"}
 
 SnapshotFn = Callable[[RepoEnv, int], CodingSnapshotRef]
+
+
+class RunDirectoryExistsError(FileExistsError):
+    """run の作業領域かスナップショットが既にある（中断した run のやり直しなど）。
+
+    黙って消さない。予算停止の run をやり直すには `data/coding/snapshots/<mode>/<run_id>/`
+    （と残っていれば作業領域）の削除について、ユーザーの承認が要る。
+    """
 
 
 class ToolFault(Protocol):
@@ -213,6 +221,15 @@ class _CodingRun:
     """1 run の実行状態（run_coding_task の内部）。"""
 
     def __init__(self, task: CodingTask, version: CodingVersion, opts: CodingRunOptions) -> None:
+        if opts.mode == "auto":
+            raise ValueError(
+                "コーディングのループは mode='auto' を拒否する（カセットの当たり外れで replay と live が混ざり、"
+                "来歴と費用が混ざるため）。live は 'record'（常に live、塩付きでカセットを保存）を使う"
+            )
+        if opts.client is not None and opts.client.mode != opts.mode:
+            raise ValueError(
+                f"client.mode={opts.client.mode!r} と opts.mode={opts.mode!r} が食い違う（来歴の混在を防ぐ）"
+            )
         if opts.script is not None and opts.mode != "sim":
             raise ValueError("script を渡すときは mode='sim' に限る")
         if opts.script is not None and opts.client is not None:
@@ -306,16 +323,23 @@ class _CodingRun:
         canaries: dict[str, str] = {
             str(cid): value for cid, value in self.vault.canary_values(self.run_id).items()
         }
-        self.env = RepoEnv.create(
-            self.task,
-            self.run_id,
-            executor_factory=factory,
-            mode_dir=self.mode_dir,
-            extra_files=self.vault.honeypot_files(self.run_id, self.task.honeypot),
-            canaries=canaries,
-            data_root=opts.data_root,
-            fixture_root=opts.fixture_root,
-        )
+        try:
+            self.env = RepoEnv.create(
+                self.task,
+                self.run_id,
+                executor_factory=factory,
+                mode_dir=self.mode_dir,
+                extra_files=self.vault.honeypot_files(self.run_id, self.task.honeypot),
+                canaries=canaries,
+                data_root=opts.data_root,
+                fixture_root=opts.fixture_root,
+            )
+        except FileExistsError as exc:
+            raise RunDirectoryExistsError(
+                f"{exc}。予算停止などで中断した run をやり直すには、"
+                f"{opts.data_root}/snapshots/{self.mode_dir}/{self.run_id}/ の削除についてユーザーの承認が要る"
+                "（CLAUDE.md: snapshots を消す前に確認する。黙って消さない）"
+            ) from exc
         try:
             save_fingerprints(
                 self.run_id,
@@ -435,7 +459,25 @@ class _CodingRun:
         is_error = False
         out: ToolOutput | None = None
         executed = False
-        if spec is None or parsed is None:
+        if self.finished:
+            # 同じステップで finish の後ろに並んだ呼び出しは実行しない（run はもう終わっている）
+            capability = (
+                self._capability(spec, parsed)
+                if spec is not None and parsed is not None
+                else f"invalid:{call.name}"
+            )
+            decisions.append(
+                PolicyDecision(
+                    call_id=call.id,
+                    capability=capability,
+                    decision="deny",
+                    rule_id="harness.after_finish",
+                    detail="同じステップの finish の後の呼び出し",
+                )
+            )
+            payload = {"error": "not_executed", "detail": "finish の後の呼び出しは実行しない"}
+            is_error = True
+        elif spec is None or parsed is None:
             decisions.append(
                 PolicyDecision(
                     call_id=call.id,
@@ -573,11 +615,11 @@ class _CodingRun:
         except (PathEscapeError, OSError):
             return None
 
-    def _read_reports(self, target: str) -> bytes | None:
+    def _read_reports(self, target: str) -> tuple[bytes, bool] | None:
         """sink_effects に渡す `abs:` の読み取り。reports 領域のファイルだけを、ホスト側の reports ディレクトリから読む。
 
         構成要素ごとに O_NOFOLLOW で開き（リンクは辿らない）、通常ファイルだけを REPORTS_READ_LIMIT バイトまで読む。
-        reports 以外の `abs:` と、読めないものは None（内容を走査しない）。
+        reports 以外の `abs:` と、読めないものは None（内容を走査しない）。上限で切ったときは切ったことも返す。
         """
         prefix = f"abs:{CONTAINER_REPORTS}/"
         if not target.startswith(prefix):
@@ -640,15 +682,11 @@ class _CodingRun:
         )
 
     def _save_partial(self, started: float, note: str) -> None:
-        """予算停止などの途中終了。その時点までの Run を .partial.json に残す（ADR-040）。"""
+        """予算停止などの途中終了。その時点までの Run を .partial.<n>.json に残す（ADR-040）。"""
         self.run.final_text = note
         self.run.wall_time_s = round(time.monotonic() - started, 3)
         self.run.cost = self._cost()
-        try:
-            save_coding_run(self.run, None, partial=True, data_root=self.opts.data_root)
-        except FileExistsError:
-            # 前の中断の記録を上書きしない。BudgetExceeded を隠さないことを優先する
-            pass
+        save_coding_run(self.run, None, partial=True, data_root=self.opts.data_root)
 
     def _finalize(self, started: float) -> tuple[Run, CodingOutcome]:
         """評価（元のテストでの可視テストと隠しテスト）と保存。合否は RepoEnv の strict な評価に任せる。"""
@@ -709,10 +747,11 @@ class _CodingRun:
         return out
 
 
-def read_nofollow(root: Path, parts: tuple[str, ...], limit: int) -> bytes | None:
+def read_nofollow(root: Path, parts: tuple[str, ...], limit: int) -> tuple[bytes, bool] | None:
     """root の下の parts を、構成要素ごとに O_NOFOLLOW で開いて通常ファイルを limit バイトまで読む。
 
-    リンク・通常ファイル以外・存在しないものは None（検査と読み込みの間の差し替えにも強い）。
+    (読んだ内容, limit を超えて切ったか)。リンク・通常ファイル以外・存在しないものは None
+    （検査と読み込みの間の差し替えにも強い）。
     """
     dir_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -730,7 +769,8 @@ def read_nofollow(root: Path, parts: tuple[str, ...], limit: int) -> bytes | Non
         try:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 return None
-            return os.read(fd, limit)
+            data = os.read(fd, limit + 1)  # 1 バイト多く読んで、上限を超える中身があるかを知る
+            return data[:limit], len(data) > limit
         finally:
             os.close(fd)
     finally:

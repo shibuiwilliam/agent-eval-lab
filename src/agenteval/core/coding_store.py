@@ -1,7 +1,7 @@
 """コーディングの run の保存と読み込み（docs/plan/coding/SPEC.md 2.2・11.1 節、ADR-039・040）。
 
 置き場は `data/coding/{traces,outcomes,canaries}/<mode>/<run_id>.json`。mode の階層で live / replay / sim を分け、
-互いの生成物を上書きしない。予算停止などで途中終了した run は `.partial.json` に書き、読み込みの対象外にする。
+互いの生成物を上書きしない。予算停止などで途中終了した run は `.partial.<n>.json` に書き、読み込みの対象外にする。
 書き込みは「一時ファイル ＋ os.replace」で、読み手が途中のファイルを見ることはない。
 """
 
@@ -20,7 +20,8 @@ from agenteval.core.coding_types import CODING_DATA_ROOT, CodingOutcome, ModeDir
 from agenteval.core.schema import Run
 from agenteval.security.canary import CanaryFingerprint
 
-PARTIAL_SUFFIX = ".partial.json"
+# 途中終了の run は `<run_id>.partial.<n>.json`（n は 0 からの連番。やり直しで前回の記録を失わない）
+PARTIAL_NAME = re.compile(r"\.partial(\.[0-9]+)?\.json$")
 
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _FINGERPRINTS = TypeAdapter(list[CanaryFingerprint])
@@ -33,14 +34,22 @@ def _check_run_id(run_id: str) -> None:
 
 
 def _atomic_write(path: Path, text: str, *, exclusive: bool = False) -> None:
-    """一時ファイルに書いて os.replace する。exclusive なら既存のファイルがあれば FileExistsError。"""
+    """一時ファイルに書いて公開する。
+
+    exclusive=False: os.replace（既存のファイルは置き換える）。
+    exclusive=True: os.link で公開する（既存のファイルがあれば FileExistsError。確認と公開の間の競合に強い）。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    if exclusive and path.exists():
-        raise FileExistsError(f"既にある（上書きしない）: {path}")
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     try:
         tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
+        if exclusive:
+            try:
+                os.link(tmp, path)
+            except FileExistsError:
+                raise FileExistsError(f"既にある（上書きしない）: {path}") from None
+        else:
+            os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -52,11 +61,27 @@ def trace_path(run_id: str, mode_dir: ModeDir, *, data_root: Path = CODING_DATA_
 
 
 def partial_trace_path(
-    run_id: str, mode_dir: ModeDir, *, data_root: Path = CODING_DATA_ROOT
+    run_id: str, mode_dir: ModeDir, n: int = 0, *, data_root: Path = CODING_DATA_ROOT
 ) -> Path:
-    """`traces/<mode>/<run_id>.partial.json`（ADR-040）。"""
+    """`traces/<mode>/<run_id>.partial.<n>.json`（ADR-040。n は連番）。"""
     _check_run_id(run_id)
-    return data_root / "traces" / mode_dir / f"{run_id}{PARTIAL_SUFFIX}"
+    if n < 0:
+        raise ValueError(f"n は 0 以上: {n}")
+    return data_root / "traces" / mode_dir / f"{run_id}.partial.{n}.json"
+
+
+def partial_trace_paths(
+    run_id: str, mode_dir: ModeDir, *, data_root: Path = CODING_DATA_ROOT
+) -> list[Path]:
+    """既にある partial の trace を連番順に。"""
+    _check_run_id(run_id)
+    directory = data_root / "traces" / mode_dir
+    found: list[tuple[int, Path]] = []
+    for path in directory.glob(f"{run_id}.partial.*.json"):
+        middle = path.name.removeprefix(f"{run_id}.partial.").removesuffix(".json")
+        if middle.isdigit():
+            found.append((int(middle), path))
+    return [path for _, path in sorted(found)]
 
 
 def outcome_path(run_id: str, mode_dir: ModeDir, *, data_root: Path = CODING_DATA_ROOT) -> Path:
@@ -82,16 +107,25 @@ def save_coding_run(
 
     partial=False: traces/<mode>/<run_id>.json と（outcome があれば）outcomes/<mode>/<run_id>.json を書く。
       同じ run_id の再実行は上書きする（mode の階層が違えば別のファイル）。
-    partial=True: traces/<mode>/<run_id>.partial.json に書く（ADR-040。予算停止などの途中終了）。
-      既存のファイルがあれば FileExistsError（上書きしない）。outcome は渡せない（途中の run に結果は無い）。
+    partial=True: traces/<mode>/<run_id>.partial.<n>.json に書く（ADR-040。予算停止などの途中終了）。
+      n は既存の partial の次の連番で、やり直しても前回の記録を上書きしない。outcome は渡せない（途中の run に結果は無い）。
     """
     mode_dir = mode_dir_of(run.mode)
     if partial:
         if outcome is not None:
             raise ValueError("partial の run に outcome は保存しない")
-        path = partial_trace_path(run.run_id, mode_dir, data_root=data_root)
-        _atomic_write(path, run.model_dump_json(indent=2), exclusive=True)
-        return path
+        existing = partial_trace_paths(run.run_id, mode_dir, data_root=data_root)
+        n = 0
+        if existing:
+            n = int(existing[-1].name.removeprefix(f"{run.run_id}.partial.").split(".")[0]) + 1
+        while True:
+            path = partial_trace_path(run.run_id, mode_dir, n, data_root=data_root)
+            try:
+                _atomic_write(path, run.model_dump_json(indent=2), exclusive=True)
+            except FileExistsError:
+                n += 1  # 並行して同じ run_id の partial を書いた別プロセスがいても上書きしない
+                continue
+            return path
     if outcome is not None and outcome.run_id != run.run_id:
         raise ValueError(f"outcome の run_id が違う: {outcome.run_id} != {run.run_id}")
     path = trace_path(run.run_id, mode_dir, data_root=data_root)
@@ -111,7 +145,7 @@ def load_coding_runs(
     stages: Collection[str] | None = None,
     data_root: Path = CODING_DATA_ROOT,
 ) -> list[Run]:
-    """`traces/<mode>/*.json` を run_id 順に読む。`.partial.json` は読まない（ADR-040）。
+    """`traces/<mode>/*.json` を run_id 順に読む。`.partial.<n>.json` は読まない（ADR-040）。
 
     version_ids / stages を渡せば run_id の部品で絞る（パイロットとコーパスを混ぜない）。
     絞り込みを指定したとき、run_id がコーディングの形式でないファイルは除く。
@@ -121,7 +155,7 @@ def load_coding_runs(
         return []
     runs: list[Run] = []
     for path in sorted(directory.glob("*.json")):
-        if path.name.endswith(PARTIAL_SUFFIX):
+        if PARTIAL_NAME.search(path.name):
             continue
         if version_ids is not None or stages is not None:
             try:

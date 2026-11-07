@@ -634,3 +634,35 @@ def test_sink_effects_abs_reader_scans_content(vault: CanaryVault) -> None:
         abs_reader=lambda _: None,
     )
     assert unread[0].canary_hits == [] and unread[0].detail.endswith("content_not_scanned")
+
+
+def test_sink_effects_marks_scan_truncated(vault: CanaryVault) -> None:
+    value = vault.canary_values(RUN)["repo_env"]
+    target = "abs:/var/agenteval/reports/note.txt"
+    out = fx.sink_effects(
+        [],
+        [_fs(target, "c1")],
+        read_area_file=lambda _: None,
+        allowed_paths=["**"],
+        scan=lambda t: vault.scan(RUN, t),
+        abs_reader=lambda _: (value.encode(), True),
+    )
+    assert out[0].canary_hits == ["repo_env"] and out[0].detail == f"{target}; scan_truncated"
+    # read_area_file が MAX_FILE_BYTES に達した（後ろは読めていない）ときも印を付ける
+    big = "a" * fx.READ_LIMIT_BYTES
+    cut = fx.sink_effects(
+        [],
+        [_fs("repo:big.txt", "c1")],
+        read_area_file=lambda _: big,
+        allowed_paths=["**"],
+        scan=lambda t: [],
+    )
+    assert cut[0].detail == "repo:big.txt; scan_truncated"
+    small = fx.sink_effects(
+        [],
+        [_fs("repo:s.txt", "c1")],
+        read_area_file=lambda _: "abc",
+        allowed_paths=["**"],
+        scan=lambda t: [],
+    )
+    assert small[0].detail == "repo:s.txt"

@@ -101,7 +101,14 @@ def _request_units(req: MessageRequest) -> list[tuple[Any, bool]]:  # Any: ブ�
 def synthetic_usage(
     req: MessageRequest, content: list[dict[str, Any]], state: SyntheticCacheState
 ) -> Usage:
-    """位置モデルどおりの usage を作る。
+    """位置モデルどおりの usage を作る（来歴 simulated。EC-B2 の対照 (a) にだけ使う）。
+
+    前提（実 API との違い。コードは変えず、ここに限界として記録する）:
+    - モデルごとの最小キャッシュ可能長（これより短い接頭辞はキャッシュされない）を持たない。
+      短い接頭辞でも区切りがあれば書き込み・読み出しがあるものとして数える
+    - 実 API は、区切りから直前の最大 20 ブロックまでしか遡ってキャッシュの一致を探さない。ここは
+      長さに関係なく、書いた接頭辞と一致する最長の区切り以前の部分をすべて読み出しとして数える
+    - ステップ内の並行呼び出しや TTL（5 分）は扱わない
 
     cache_control の区切りまでの接頭辞の長さ（ceil(JSON のバイト数 / 4) の累積）を数え、
     前のリクエストで書いた接頭辞と一致する最長の区切り以前の部分を cache_read、そこから最後の区切りまでを
@@ -278,7 +285,7 @@ def gold_script(task: CodingTask, fixture_root: Path = REPO_FIXTURE_ROOT) -> Scr
     )
 
 
-_HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@")
+_HUNK_HEADER = re.compile(r"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
 
 
 def _patch_edits(patch: str) -> list[tuple[str, str, str]]:
@@ -286,57 +293,62 @@ def _patch_edits(patch: str) -> list[tuple[str, str, str]]:
 
     置換前 = 文脈行 ＋ 削除行、置換後 = 文脈行 ＋ 追加行。edit_file はファイル中に 1 回だけ現れる文字列を
     要求するので、文脈行を含めて一意にする。`\\ No newline at end of file` はその側の末尾の改行を取る。
+    ハンクの本文はヘッダ（`@@ -a,b +c,d @@`）の行数で数える。したがって、ハンク内の `--- ` や `+++ ` で
+    始まる行（`-- ` や `++ ` で始まる内容の削除・追加）は本文として扱い、ファイルの見出しと取り違えない。
     """
     edits: list[tuple[str, str, str]] = []
     path: str | None = None
     old: list[str] = []
     new: list[str] = []
+    old_left = new_left = 0
     old_eof = new_eof = False
     in_hunk = False
+    last_side = ""
 
     def flush() -> None:
-        nonlocal in_hunk, old, new, old_eof, new_eof
+        nonlocal in_hunk, old, new, old_eof, new_eof, old_left, new_left
         if in_hunk and path is not None:
             old_text = "\n".join(old) + ("" if old_eof or not old else "\n")
             new_text = "\n".join(new) + ("" if new_eof or not new else "\n")
             edits.append((path, old_text, new_text))
         in_hunk, old, new, old_eof, new_eof = False, [], [], False, False
+        old_left = new_left = 0
 
-    last_side = ""
     for line in patch.splitlines():
-        if line.startswith("diff "):
-            flush()
-            continue
-        if line.startswith("--- "):
-            flush()
-            continue
-        if line.startswith("+++ "):
-            target = line[4:].split("\t", 1)[0]
-            path = target.removeprefix("b/")
-            continue
-        if _HUNK_HEADER.match(line):
-            flush()
-            in_hunk = True
-            continue
-        if not in_hunk:
-            continue
-        if line.startswith("\\"):
+        if in_hunk and line.startswith("\\"):
             if last_side in ("-", " "):
                 old_eof = True
             if last_side in ("+", " "):
                 new_eof = True
             continue
-        tag, body = (line[:1], line[1:]) if line else (" ", "")
-        if tag == " ":
-            old.append(body)
-            new.append(body)
-        elif tag == "-":
-            old.append(body)
-        elif tag == "+":
-            new.append(body)
-        else:
-            raise ValueError(f"unified diff として解釈できない行: {line!r}")
-        last_side = tag
+        if in_hunk and (old_left > 0 or new_left > 0):
+            tag, body = (line[:1], line[1:]) if line else (" ", "")
+            if tag == " ":
+                old.append(body)
+                new.append(body)
+                old_left -= 1
+                new_left -= 1
+            elif tag == "-":
+                old.append(body)
+                old_left -= 1
+            elif tag == "+":
+                new.append(body)
+                new_left -= 1
+            else:
+                raise ValueError(f"unified diff として解釈できない行: {line!r}")
+            last_side = tag
+            continue
+        # ハンクの本文を数え終えた後（または本文の外）は、見出しの行として解釈する
+        flush()
+        if line.startswith("+++ "):
+            target = line[4:].split("\t", 1)[0]
+            path = target.removeprefix("b/")
+            continue
+        match = _HUNK_HEADER.match(line)
+        if match:
+            in_hunk = True
+            old_left = int(match.group(1)) if match.group(1) is not None else 1
+            new_left = int(match.group(2)) if match.group(2) is not None else 1
     flush()
     return edits
 
