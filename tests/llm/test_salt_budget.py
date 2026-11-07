@@ -321,9 +321,68 @@ def test_experiment_budget_without_env_keeps_unset_semantics(
         guard.check()
 
 
-def test_experiment_budget_rejects_negative(tmp_path: Path) -> None:
+@pytest.mark.parametrize("bad", [-1, float("nan"), float("inf"), float("-inf"), None])
+def test_experiment_budget_rejects_invalid(tmp_path: Path, bad: float | None) -> None:
     with pytest.raises(ValueError):
-        experiment_budget({"budget_usd": -1}, ledger_path=tmp_path / "l.jsonl")
+        experiment_budget({"budget_usd": bad}, ledger_path=tmp_path / "l.jsonl")
+
+
+def test_experiment_budget_uses_guard_spent_as_spent0(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger = tmp_path / "l.jsonl"
+    append_ledger(_entry(2.0), ledger)
+    monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100")
+    guard = experiment_budget({"budget_usd": 1.0}, ledger_path=ledger)
+    assert guard.budget == pytest.approx(guard.spent + 1.0)
+
+
+# --- BudgetGuard.check は台帳を読み直す（並列プロセス） --------------------------
+def test_check_sees_other_process_appends(tmp_path: Path) -> None:
+    ledger = tmp_path / "l.jsonl"
+    guard = BudgetGuard(budget_usd=1.0, ledger_path=ledger)
+    guard.check()  # spent 0 + 0.01 <= 1.0
+    for _ in range(5):  # 別プロセスの追記を模す（guard の record は通らない）
+        append_ledger(_entry(0.2), ledger)
+    with pytest.raises(BudgetExceeded):
+        guard.check()
+
+
+def test_check_does_not_double_count_own_records(tmp_path: Path) -> None:
+    """自プロセスの分は record と台帳追記の両方に現れるが、max なので二重に数えない。"""
+    ledger = tmp_path / "l.jsonl"
+    guard = BudgetGuard(budget_usd=1.0, ledger_path=ledger)
+    for _ in range(4):
+        guard.check()
+        guard.record(0.2)
+        append_ledger(_entry(0.2), ledger)  # LLMClient._ledger 相当
+    # 二重なら 1.6 で止まるが、実際は 0.8 + 平均 0.2 <= 1.0 で通る
+    guard.check()
+    assert guard.spent == pytest.approx(0.8)
+
+
+def test_check_overshoot_bounded_by_concurrent_calls(tmp_path: Path) -> None:
+    """4 プロセス相当が 1 回 0.3 の呼び出しを繰り返しても、超過は同時実行数 × 1 回分以内。"""
+    ledger = tmp_path / "l.jsonl"
+    budget, cost_per_call, workers = 1.0, 0.3, 4
+    guards = [BudgetGuard(budget_usd=budget, ledger_path=ledger) for _ in range(workers)]
+    for g in guards:
+        g._recent.append(cost_per_call)  # 見積りを 1 回分にそろえる
+    for _ in range(10):
+        # 各ラウンドで全員が check を通ってから、まとめて呼び出し完了（同時実行を模す）
+        passed = []
+        for g in guards:
+            try:
+                g.check()
+            except BudgetExceeded:
+                continue
+            passed.append(g)
+        for g in passed:
+            g.record(cost_per_call)
+            append_ledger(_entry(cost_per_call), ledger)
+    total = ledger_total_usd(ledger)
+    assert total <= budget + workers * cost_per_call + 1e-9
+    assert total > budget - cost_per_call - 1e-9  # 予算付近までは使える（過剰に止めない）
 
 
 def test_module_exports_cost_names() -> None:

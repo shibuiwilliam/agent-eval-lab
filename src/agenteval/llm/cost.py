@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+import uuid
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -144,7 +146,9 @@ def ledger_total_usd(path: Path | None = None, *, use_cache: bool = True) -> flo
     一致しなければ全件を読み直す。末尾の改行で終わらない行（書き込み途中）は集計しない。
     集計後、キャッシュを一時ファイル＋os.replace で書き戻す（並列プロセスでは最後の書き手が勝つ。どれも整合した組）。
     不正な行は ValueError（read_ledger と同じく黙って飛ばさない）。
-    不変条件: 戻り値 == sum(e.usd for e in read_ledger(path))（行の順に足すので一致する）。
+    数えるのは改行で終わる行だけ（append_ledger は必ず改行を付ける）。したがって不変条件
+    「戻り値 == sum(e.usd for e in read_ledger(path))（許容差 1e-9）」は、台帳の全行が改行で終わるとき（通常はつねに）に成り立つ。
+    書き込み途中の末尾行がある間は read_ledger の方が大きくなりうる。
 
     限界: 先頭 4096 バイトより後ろで、集計済み範囲の内容だけを同じサイズ以上のまま書き換えた場合は検出できない
     （台帳は追記専用の前提）。疑うときは use_cache=False で全件を読む。
@@ -173,7 +177,7 @@ def ledger_total_usd(path: Path | None = None, *, use_cache: bool = True) -> flo
             head_sha256=_head_sha256(ledger, offset),
         )
         cache_file = _cache_path(ledger)
-        tmp = cache_file.with_name(f"{cache_file.name}.{os.getpid()}.tmp")
+        tmp = cache_file.with_name(f"{cache_file.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
         try:
             tmp.write_text(new_cache.model_dump_json(), encoding="utf-8")
             os.replace(tmp, cache_file)
@@ -207,7 +211,16 @@ def ledger_summary(path: Path | None = None) -> dict[str, Any]:
 
 
 class BudgetGuard:
-    """呼び出し前に「累積 ＋ 直近平均コスト」が予算を超えるなら止める。"""
+    """呼び出し前に「累積 ＋ 直近平均コスト」が予算を超えるなら止める。
+
+    累積の数え方: `max(self.spent, 台帳の総額)`。
+    - `self.spent` は構築時の台帳総額 ＋ 自プロセスが `record` した額
+    - 台帳の総額は、自プロセスが追記済みの額 ＋ 他プロセスが追記した額を含む
+    自プロセスの分は両方に含まれるので、足さずに max を取れば二重に数えない。
+    `record` から台帳への追記までの間は自プロセスの分が台帳に無いが、`self.spent` が拾う。
+    並列プロセスでは、check のたびに台帳を読み直すので、超過は「同時に走っている呼び出しの数 × 1 回分」に収まる
+    （他プロセスの未追記の呼び出し中の分だけが見えない）。
+    """
 
     def __init__(self, budget_usd: float | None = None, ledger_path: Path | None = None) -> None:
         env = os.environ.get("AGENTEVAL_BUDGET_USD")
@@ -221,9 +234,10 @@ class BudgetGuard:
         if self.budget is None:
             raise BudgetExceeded("AGENTEVAL_BUDGET_USD が未設定のため live 呼び出しを行いません")
         avg = sum(self._recent) / len(self._recent) if self._recent else 0.01
-        if self.spent + avg > self.budget:
+        spent = max(self.spent, ledger_total_usd(self.ledger_path))
+        if spent + avg > self.budget:
             raise BudgetExceeded(
-                f"予算停止: spent={self.spent:.4f} + est={avg:.4f} > budget={self.budget:.2f}"
+                f"予算停止: spent={spent:.4f} + est={avg:.4f} > budget={self.budget:.2f}"
             )
 
     def record(self, usd: float) -> None:
@@ -248,14 +262,23 @@ def experiment_budget(
     budget_usd == 0 の実験は budget == 現在の累積となり、最初の live 呼び出しの前に止まる。
     返した 1 個の guard を、その実験の全 run の LLMClient(budget=...) に共有させる。
     """
-    per_experiment = float(entry.get("budget_usd", 0))
+    raw = entry.get("budget_usd", 0)
+    if raw is None:
+        raise ValueError("budget_usd が None（registry.yaml の項目に数値が要る）")
+    per_experiment = float(raw)
+    if not math.isfinite(per_experiment):
+        raise ValueError(f"budget_usd は有限の数値: {per_experiment}")
     if per_experiment < 0:
         raise ValueError(f"budget_usd は 0 以上: {per_experiment}")
     env = os.environ.get("AGENTEVAL_BUDGET_USD")
     cumulative_cap = float(env) if env else None
-    spent0 = ledger_total_usd(ledger_path)
-    budget = None if cumulative_cap is None else min(spent0 + per_experiment, cumulative_cap)
-    return BudgetGuard(budget_usd=budget, ledger_path=ledger_path)
+    # guard を先に作り、その spent を spent0 とする（spent0 と guard 生成の間の追記で取り分が目減りしない）
+    guard = BudgetGuard(budget_usd=None, ledger_path=ledger_path)
+    if cumulative_cap is None:
+        guard.budget = None
+    else:
+        guard.budget = min(guard.spent + per_experiment, cumulative_cap)
+    return guard
 
 
 def now_iso() -> str:
