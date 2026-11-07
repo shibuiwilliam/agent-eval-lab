@@ -140,10 +140,46 @@ Rob は点推定の差 $\Delta\hat\pi$ の向きだけで決まり、θ によ�
 - 植込みの立て直しはもう行わない（ADR-037 判断 4 で打ち止め。ADR-046）
 
 ## 結果
-（未実施）
+| 指標 | 値（来歴） | 基準 | 判定 |
+|---|---|---|---|
+| breakeven_pi_s | {'c01_baseline': {'defined': 0.794705, 'always_gain': 0.14625, 'always_loss': 0.059045, 'undefined': 0.0, 'quantiles': {'q05': 0.11099325714919671, 'q25': 0.44306215882669236, 'q50': 0.7472676648737738, 'q75': 0.9195028759488837, 'q95': 0.9878436779325208}}, 'c13_minimal_fix': {'defined': 0.7909, 'always_gain': 0.14794, 'always_loss': 0.06116, 'undefined': 0.0, 'quantiles': {'q05': 0.10903950935082624, 'q25': 0.43244910329759284, 'q50': 0.7372729368158284, 'q75': 0.9152765381099105, 'q95': 0.9872295894230974}}} [simulated] | — | — |
+| class_counts | {'c01_baseline': {'S': 131, 'W': 11, 'F': 2}, 'c13_minimal_fix': {'S': 101, 'W': 34, 'F': 9}, 'c12_null': {'S': 45, 'W': 3, 'F': 0}} [live] | — | — |
+| confident_fraction_c01_over_c13 | 0.9967 [simulated] | — | — |
+| economics | {'c01_baseline': {'version_id': 'c01_baseline', 'n_runs': 144, 'pi_S': 0.9097222222222222, 'pi_W': 0.07638888888888888, 'pi_F': 0.013888888888888888, 'cost_usd': 0.049693618055555555, 'diff_lines_S': 2.2595419847328246, 'diff_lines_W': 5.181818181818182}, 'c13_minimal_fix': {'version_id': 'c13_minimal_fix', 'n_runs': 144, 'pi_S': 0.7013888888888888, 'pi_W': 0.23611111111111113, 'pi_F': 0.0625, 'cost_usd': 0.047615743055555555, 'diff_lines_S': 3.0396039603960396, 'diff_lines_W': 5.647058823529412}, 'c01_baseline_for_c12_null': {'version_id': 'c01_baseline', 'n_runs': 144, 'pi_S': 0.9097222222222222, 'pi_W': 0.07638888888888888, 'pi_F': 0.013888888888888888, 'cost_usd': 0.049693618055555555, 'diff_lines_S': 2.2595419847328246, 'diff_lines_W': 5.181818181818182}, 'c12_null': {'version_id': 'c12_null', 'n_runs': 48, 'pi_S': 0.9375, 'pi_W': 0.0625, 'pi_F': 0.0, 'cost_usd': 0.04896129166666666, 'diff_lines_S': 2.1333333333333333, 'diff_lines_W': 4.333333333333333}} [live] | — | — |
+| hidden_test_mutation_score_mean | 0.8459 [simulated] | — | — |
+| hidden_test_mutation_score_min | 0.7227 [simulated] | — | — |
+| n_common_tasks | {'c01_c13': 24, 'c01_c12': 24} [live] | — | — |
+| n_theta | 2e+05 [simulated] | — | — |
+| null_confident_fraction_c12 | 0.00067 [simulated] | <= 0.05 | ○ |
+| rob_by_theta_variant | {'narrow': 1.0, 'wide': 0.9859, 'linear': 1.0} [simulated] | — | — |
+| rob_c01_over_c13 | 1 [simulated] | >= 0.9 | ○ |
+| rob_c01_over_c13_boot_q05 | 0.9999 [simulated] | — | — |
+| rob_c12_vs_c01 | 1 [simulated] | — | — |
+| rob_conditional_on_parameter_tercile | {'H': [1.0, 1.0, 1.0], 'kappa': [1.0, 1.0, 1.0], 'R0': [1.0, 1.0, 1.0], 'rho': [1.0, 1.0, 1.0], 'R_F': [1.0, 1.0, 1.0], 'D': [1.0, 1.0, 1.0], 'miss': [1.0, 1.0, 1.0]} [simulated] | — | — |
+| test_files_modified | {'c01_baseline': 0, 'c13_minimal_fix': 0, 'c12_null': 0} [live] | — | — |
+| vis_fail_hidden_pass | 0 [live] | — | — |
+| visible_rate_diff | {'estimate': -0.048611111111111105, 'low': -0.13194444444444445, 'high': 0.006944444444444443} [live] | — | — |
+| visible_vs_nv_rank_reversal | 1 [simulated] | == 1 | ○ |
+| w_rate_diff | {'estimate': 0.15972222222222224, 'low': 0.06927083333333334, 'high': 0.28472222222222227} [live] | — | — |
+| w_rate_diff_ci_low | 0.06927 [live] | > 0 | ○ |
+
 
 ## 判定
 **注記（ADR-046、2026-11-08、コーパスを見る前に設計者が記入。判定の結果によらず残す）**: この実験の植込み版 `c13_minimal_fix` は、ADR-037 の操作確認を 3 回とも通っていない（特殊化検出 `spec_literal` 0/10 × 3、$k^*$ = 2）。**操作確認を通っていない植込みであり、機構は特殊化ではない**（局所回避と指示違反＝共有コードの変更）。c13 と c01 の差（H1'）を「特殊化の検出」と読まない。`w_rate_diff_ci_low` ≤ 0 のとき、c13 依存の基準の未達は植込みの不発による FAIL（設計側）で、手法の NEGATIVE ではない。
 
+### 自動判定
+<!-- agenteval:auto-verdict -->
+PASS
+
+全基準を満たした。
+
 ## 気づき・限界
-（未実施）
+<!-- agenteval:auto-notes -->
+- EC-R1.md の「気づき・限界」への申し送り: 隠しテストは「バンク − K ＋ h 本」で、K の一部だけを直す部分的な修正は S に数えられうる（W0-Z の変異スコアの平均は 0.84）。S の中に本当は不完全な修正が混ざりうるので W 率は下限寄りである。この実験の 24 タスクの変異スコア平均 0.846、最小 0.723。変異スコアはタスク生成時のメタデータ（run の観測ではない）なので、来歴は simulated を付けた。
+- Rob は点推定の差の向きだけで決まり、真の差が 0 でも 0 か 1 に張り付く。対照 c12 では rob_c12_vs_c01 = 1.000。確信できる θ の割合 null_confident_fraction_c12 = 0.001（同時信頼帯は名目 95%。24 クラスタでの実被覆は約 0.85）。visible_vs_nv_rank_reversal は live（可視合格率の差の区間）と simulated（Θ 上の Rob）を組み合わせた指標で、来歴ラベルは ADR-004 の 3 種のうちより保守的な simulated を付けた。
+- Rob の到達上限は c13 の W の出どころで決まる（純粋な F→W で 0.887、S からの移動が増えるほど 1 に近づく。EC-R1.md）。rob_c01_over_c13 が 0.9 に届かないのは、上限の範囲内なら計測の失敗ではなく「W と F の交換は仮定の約 11% の範囲で損得が逆転する」という決定の仮定依存の結果である。
+- 損益分岐の π_S* の nan は「常に得」「常に損」「定義なし」に分けて breakeven_pi_s に記録した。分位点は定義のある θ だけで計算している。
+- テスト改変（test_files_modified）は記録のみで、評価は元のテストファイルで行った。vis_fail_hidden_pass は可視不合格かつ隠し合格の run の数（隠しテストが可視テストを含む設計なら 0 のはず）。
+
+---
+生成: `uv run agenteval exp ec_r1` / 実行時刻 2026-11-07T23:32:40+00:00 / コスト 0.0 USD

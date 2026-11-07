@@ -544,8 +544,8 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 
 ### W4〜W6
 - [x] **G2** 基準とコーパスの承認（2026-11-08、ユーザーが承認。コーパス 418 run、実測単価で名目 約 24.2・保守 約 36.3 USD、累積上限 AGENTEVAL_BUDGET_USD=47。1 run 平均が 0.08 USD を超えたら止めて相談）
-- [ ] W4-L1〜L4、W4-OB
+- [x] W4-L1〜L4、W4-OB（2026-11-08、runner ×4。corpus 418/418、欠け・partial・予算停止・Traceback なし。実費 21.27 USD（1 run 平均 0.0509 USD、シャード 0.049〜0.053）。台帳の累積 31.87 USD。W4-OB: 履歴キャッシュ on の版（c01・c04・c12・c13）で作動していない run 0、c01o は 10/10 で履歴部分の cache_read が 0（off が効いている）かつ接頭辞（8,814 トークン）より後ろの cache_read・2 ステップ目以降の cache_creation のある run 0。bugfix の π_S: c01 0.910・c13 0.701・c12 0.938・c04 0.917・c01o 0.900。c13 の特殊化検出 1/144）
 - [ ] W5-E1〜E3、W5-A3、W5-R
 - [ ] W6 総括（PENDING 0、progress.md、open-questions.md、コミット）
 
-次にやること: **W2-R**（reviewer）が EC-S1・EC-O2・EC-B2P の結果ページを独立にレビューする（基準が自明に満たされていないか、来歴の混在が無いか、W2-A1 の解釈が数値と合っているか）。その後 **G1**（パイロットの `--dry-run` 見積りの提示と承認）。G1 の前に、pip が偽 HOME に書くかの確認（open-questions.md）をユーザーに伝える。
+次にやること: **W5-E1〜E3**（runner ×3 並列で `exp ec_b2`・`exp ec_r1`・`exp ec_r2`。API は呼ばない）→ W5-A3（designer、ADR-046 に従う）→ W5-R（reviewer）。

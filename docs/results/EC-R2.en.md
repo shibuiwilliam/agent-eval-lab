@@ -1,0 +1,55 @@
+# EC-R2 Realizable pass@k: retrying until green amplifies silent errors
+
+*日本語版: [EC-R2.md](EC-R2.md)*
+
+## The five items
+- Hypothesis: The success and silent-wrong rates of the retry policy 'accept the first visibly green trial, at most k tries' follow a closed form, versions with more W have a larger gap G_k between pass@k and the realizable success rate, and retrying increases W.
+- Planted condition: c13_minimal_fix (raises w). The trial pool is shared with EC-R1.
+- Control: Observed w = 0 tasks and a synthetic grid for the identity P_k(success) = pass@k; the c12_null vs c01 gap is recorded only.
+- Pass criteria: closed_form_mae_k1to4 <= 0.11, g3_diff_ci_low > 0, silent_wrong_monotone_c13 == 1, silent_wrong_gain_c13_ci_low > 0 (applies if c13_f_hat >= 0.15), identity_error_w0 <= 1e-09
+- Provenance: live
+
+## Method
+From corpus-stage live trial classes, compare the closed form with empirical values (first half estimates, second half measures), compute G_3 differences and the silent-wrong gain by task-clustered bootstrap, and run the identity and monotonicity self-checks. Resampled and synthetic values are simulated. See docs/results/EC-R2.md.
+
+## Results
+| Metric | Value (provenance) | Criterion | OK |
+|---|---|---|---|
+| c13_f_hat | 0.0625 [live] | — | — |
+| cassette_salt_check | {'status': 'checked', 'checked': 336, 'defects': []} [live] | — | — |
+| closed_form_mae_by_version | {'c01_baseline': 0.0104306841563786, 'c13_minimal_fix': 0.014327417695473188} [simulated] | — | — |
+| closed_form_mae_k1to4 | 0.01238 [simulated] | <= 0.11 | ○ |
+| closed_form_vs_empirical | [{'version_id': 'c01_baseline', 'k': 1, 'quantity': 'success', 'predicted': 0.9027777777777777, 'empirical': 0.9166666666666666, 'abs_error': 0.01388888888888895}, {'version_id': 'c01_baseline', 'k': 1, 'quantity': 'silent_wrong', 'predicted': 0.06944444444444443, 'empirical': 0.08333333333333333, 'abs_error': 0.013888888888888895}, {'version_id': 'c01_baseline', 'k': 2, 'quantity': 'success', 'predicted': 0.9212962962962963, 'empirical': 0.9166666666666666, 'abs_error': 0.00462962962962965}, {'version_id': 'c01_baseline', 'k': 2, 'quantity': 'silent_wrong', 'predicted': 0.06944444444444443, 'empirical': 0.08333333333333333, 'abs_error': 0.013888888888888895}, {'version_id': 'c01_baseline', 'k': 3, 'quantity': 'success', 'predicted': 0.9274691358024691, 'empirical': 0.9166666666666666, 'abs_error': 0.010802469135802517}, {'version_id': 'c01_baseline', 'k': 3, 'quantity': 'silent_wrong', 'predicted': 0.06944444444444443, 'empirical': 0.08333333333333333, 'abs_error': 0.013888888888888895}, {'version_id': 'c01_baseline', 'k': 4, 'quantity': 'success', 'predicted': 0.9295267489711933, 'empirical': 0.917125, 'abs_error': 0.012401748971193283}, {'version_id': 'c01_baseline', 'k': 4, 'quantity': 'silent_wrong', 'predicted': 0.06944444444444443, 'empirical': 0.082875, 'abs_error': 0.01343055555555557}, {'version_id': 'c13_minimal_fix', 'k': 1, 'quantity': 'success', 'predicted': 0.6944444444444445, 'empirical': 0.7083333333333334, 'abs_error': 0.01388888888888884}, {'version_id': 'c13_minimal_fix', 'k': 1, 'quantity': 'silent_wrong', 'predicted': 0.26388888888888884, 'empirical': 0.20833333333333334, 'abs_error': 0.0555555555555555}, {'version_id': 'c13_minimal_fix', 'k': 2, 'quantity': 'success', 'predicted': 0.7129629629629629, 'empirical': 0.736111111111111, 'abs_error': 0.02314814814814814}, {'version_id': 'c13_minimal_fix', 'k': 2, 'quantity': 'silent_wrong', 'predicted': 0.2638888888888889, 'empirical': 0.2222222222222222, 'abs_error': 0.041666666666666685}, {'version_id': 'c13_minimal_fix', 'k': 3, 'quantity': 'success', 'predicted': 0.7222222222222223, 'empirical': 0.736111111111111, 'abs_error': 0.013888888888888729}, {'version_id': 'c13_minimal_fix', 'k': 3, 'quantity': 'silent_wrong', 'predicted': 0.2638888888888889, 'empirical': 0.2222222222222222, 'abs_error': 0.041666666666666685}, {'version_id': 'c13_minimal_fix', 'k': 4, 'quantity': 'success', 'predicted': 0.727366255144033, 'empirical': 0.73375, 'abs_error': 0.006383744855967044}, {'version_id': 'c13_minimal_fix', 'k': 4, 'quantity': 'silent_wrong', 'predicted': 0.2638888888888889, 'empirical': 0.22325000000000003, 'abs_error': 0.04063888888888886}] [simulated] | — | — |
+| first_half_vs_second_half_class_frequency | {'c01_baseline': {'S': 0.01388888888888895, 'W': 0.013888888888888895, 'F': -0.027777777777777776}, 'c13_minimal_fix': {'S': 0.01388888888888884, 'W': -0.0555555555555555, 'F': 0.041666666666666664}} [live] | — | — |
+| g2_diff_c12_minus_c01 | {'estimate': -0.005555555555555557, 'low': -0.027777777777777773, 'high': 0.01944444444444443} [simulated] | — | — |
+| g3_diff | {'estimate': 0.075, 'low': 0.020833333333333336, 'high': 0.13472222222222222} [simulated] | — | — |
+| g3_diff_ci_low | 0.02083 [simulated] | > 0 | ○ |
+| identical_trial_rate | 0 [live] | — | — |
+| identity_cases_w0 | 55 [live] | — | — |
+| identity_error_w0 | 2.22e-16 [simulated] | <= 1e-09 | ○ |
+| n_common_tasks | 24 [live] | — | — |
+| realized_table | {'c01_baseline': [{'k': 1, 'pass_at_k': 0.9097222222222223, 'p_success': 0.9097222222222223, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.0, 'gap': 0.0}, {'k': 2, 'pass_at_k': 0.9500000000000001, 'p_success': 0.9236111111111112, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.013888888888889, 'gap': 0.02638888888888889}, {'k': 3, 'pass_at_k': 0.9562499999999999, 'p_success': 0.9236111111111112, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.013888888888889, 'gap': 0.032638888888888884}, {'k': 4, 'pass_at_k': 0.9583333333333334, 'p_success': 0.9236111111111112, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.013888888888889, 'gap': 0.03472222222222222}, {'k': 5, 'pass_at_k': 0.9583333333333334, 'p_success': 0.9236111111111112, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.013888888888889, 'gap': 0.03472222222222222}, {'k': 6, 'pass_at_k': 0.9583333333333334, 'p_success': 0.9236111111111112, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.013888888888889, 'gap': 0.03472222222222222}], 'c13_minimal_fix': [{'k': 1, 'pass_at_k': 0.701388888888889, 'p_success': 0.701388888888889, 'p_silent_wrong': 0.23611111111111108, 'expected_trials': 1.0, 'gap': 8.0953762212251e-18}, {'k': 2, 'pass_at_k': 0.8027777777777777, 'p_success': 0.7291666666666666, 'p_silent_wrong': 0.24305555555555555, 'expected_trials': 1.0625, 'gap': 0.07361111111111113}, {'k': 3, 'pass_at_k': 0.84375, 'p_success': 0.7361111111111112, 'p_silent_wrong': 0.24305555555555555, 'expected_trials': 1.090277777777778, 'gap': 0.10763888888888888}, {'k': 4, 'pass_at_k': 0.8722222222222223, 'p_success': 0.7430555555555555, 'p_silent_wrong': 0.24305555555555555, 'expected_trials': 1.1111111111111112, 'gap': 0.12916666666666668}, {'k': 5, 'pass_at_k': 0.8958333333333334, 'p_success': 0.75, 'p_silent_wrong': 0.24305555555555555, 'expected_trials': 1.125, 'gap': 0.14583333333333334}, {'k': 6, 'pass_at_k': 0.9166666666666666, 'p_success': 0.7569444444444445, 'p_silent_wrong': 0.24305555555555555, 'expected_trials': 1.1319444444444444, 'gap': 0.15972222222222224}], 'c12_null': [{'k': 1, 'pass_at_k': 0.9375, 'p_success': 0.9375, 'p_silent_wrong': 0.0625, 'expected_trials': 1.0, 'gap': 0.0}, {'k': 2, 'pass_at_k': 0.9583333333333334, 'p_success': 0.9375, 'p_silent_wrong': 0.0625, 'expected_trials': 1.0, 'gap': 0.020833333333333332}]} [simulated] | — | — |
+| retry_roi_over_theta | {'c01_baseline': {'best_k_distribution': {'k1': 0.26627, 'k2': 0.0, 'k3': 0.0, 'k4': 0.0, 'k5': 0.0, 'k6': 0.73373}, 'w_over_s_threshold_quantiles': {'q05': -11.141425703441275, 'q25': 0.022858300531112763, 'q50': 0.17137946366358575, 'q75': 0.8528035457643568, 'q95': 8.28590034709687}, 'w_over_s_threshold_nan_fraction': 0.0, 'w_over_s_observed': 0.08396946564885495, 'theta_subsample': '100 点おき（2000 点）'}, 'c13_minimal_fix': {'best_k_distribution': {'k1': 0.48111, 'k2': 0.0, 'k3': 0.0, 'k4': 0.0, 'k5': 0.0, 'k6': 0.51889}, 'w_over_s_threshold_quantiles': {'q05': -11.228763544153505, 'q25': 0.02212203828024064, 'q50': 0.17092279369846464, 'q75': 0.8479574832212431, 'q95': 8.168916647963435}, 'w_over_s_threshold_nan_fraction': 0.0, 'w_over_s_observed': 0.3366336633663367, 'theta_subsample': '100 点おき（2000 点）'}} [simulated] | — | — |
+| silent_wrong_closed_form_k1to4_c13 | [0.23611111111111108, 0.24189814814814814, 0.24286265432098766, 0.24302340534979425] [simulated] | — | — |
+| silent_wrong_empirical_k1to4_c13 | [0.23611111111111108, 0.24305555555555555, 0.24305555555555555, 0.24305555555555555] [simulated] | — | — |
+| silent_wrong_gain_c13 | {'estimate': 0.006944444444444475, 'low': 0.0, 'high': 0.01805555555555549} [simulated] | — | — |
+| silent_wrong_gain_c13_ci_low | 0 [simulated] | > 0 (applies if c13_f_hat >= 0.15) | N/A (insufficient power: c13_f_hat = 0.0625 < 0.15) |
+| silent_wrong_monotone_c13 | 1 [simulated] | == 1 | ○ |
+
+
+## Verdict
+PASS
+
+See the criteria table.
+
+silent_wrong_gain_c13_ci_low: N/A (insufficient power: c13_f_hat = 0.0625 < 0.15). N/A is not a pass; it is excluded from the verdict.
+
+## Findings and limitations
+- The 0.05 threshold of closed_form_mae_k1to4 is provisional and about equal to the estimation-error floor (0.05 to 0.07), so a correct closed form passes only about half the time; a miss reflects the criterion design, not a negative result for the method.
+- silent_wrong_monotone_c13 and identity_error_w0 almost always pass by definition; they are self-checks, not evidence for H3. H3's quantitative claim rests on silent_wrong_gain_c13_ci_low.
+- Independence diagnostic: identical_trial_rate is recorded only (near 0 when cassette salts work). A salt failure is checked separately: if the step-0 salted cassette key of a repeat is missing or duplicated within a (task, version) group, the experiment is forced to FAIL regardless of the criteria; if the cassettes cannot be read it is recorded as unverifiable.
+- c12 has only 2 trials, so G_3 cannot be enumerated; the c12 vs c01 difference is recorded as G_2, and the k = 5, 6 table is given only for the 6-trial versions.
+- The closed form assumes exchangeable trials within a task and the empirical value resamples the same pool, so the comparison cannot detect violations such as collapsed repeats; the weight of the claim rests on g3_diff_ci_low and silent_wrong_gain_c13_ci_low.
+
+---
+Generated by `uv run agenteval exp ec_r2` / run at 2026-11-07T23:32:55+00:00 / cost 0.0 USD

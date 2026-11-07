@@ -1,4 +1,4 @@
-# EC-R2 実現可能な pass@k — 「緑になるまで再試行」は静かな誤りを増幅する
+# EC-R2 実現可能な pass@k — 緑になるまでの再試行は静かな誤りを増幅する
 
 状態: 5 項目と方法を W0-D3（2026-11-07）で記述し、W0 の突き合わせ（同日）で SPEC.md と揃えた。**基準は暫定**（`closed_form_mae_k1to4` の閾値の置き換えは G0 の推奨案として承認待ち）。パイロット（W3、c01 のみ）の後、W3-A2 で下記「パイロットで計算する量」から確定し、`registry.yaml` に固定する（ADR-033）。W0-Z（2026-11-07、データを見る前）で、MAE の帰無分布の表に SPEC どおりの実装での値を書き足した（基準の値は変えていない）。**W3-A2（2026-11-07）で c01 のパイロットだけから基準を確定した**（下の「W3-A2 の計算」、ADR-033 の確定記録。`closed_form_mae_k1to4` は 0.05 → 0.11）。**ADR-045 (ii)（2026-11-07、ユーザーが選択、データを見る前）で `silent_wrong_gain_c13_ci_low > 0` に適用条件 `c13_f_hat >= 0.15` を付けた**（閾値と基準の値は変えていない。verify の対応と registry への追記は W3-ID）。**ADR-046（2026-11-08、ユーザーが O1 を選択、コーパスを見る前）**: c13 の植込みは操作確認を 3 回とも通らなかった（`spec_literal` 0/10 × 3。植込みは届いており検出器も正しい）。c13 を U1 の版（版ハッシュ `ed5ed77a…`）に固定してコーパスへ進み、位置づけを「局所回避と指示違反を起こす版」に改め、差が出なかったときの判定の読み方を下の「FAIL と NEGATIVE の区別」に固定した。基準・`applies_if` は変えていない。結果は空欄。
 原典: `docs/NEW_IDEA.md` EC-R2（理論・方法・検証計画）、4.0 節。試行プールは EC-R1 と共用する（c01・c13 は 24 タスク × 6 反復、c12 は 24 × 2）。反復の独立性はカセットの塩（ADR-038、TASK.md K5・M5）が前提。
@@ -121,10 +121,46 @@ c13 の真値は**見ずに**、c01 の平均から W を {+0.10, +0.15, +0.20} 
   - c13 に依存しない基準の未達は、上の従来の指針どおり
 
 ## 結果
-（未実施）
+| 指標 | 値（来歴） | 基準 | 判定 |
+|---|---|---|---|
+| c13_f_hat | 0.0625 [live] | — | — |
+| cassette_salt_check | {'status': 'checked', 'checked': 336, 'defects': []} [live] | — | — |
+| closed_form_mae_by_version | {'c01_baseline': 0.0104306841563786, 'c13_minimal_fix': 0.014327417695473188} [simulated] | — | — |
+| closed_form_mae_k1to4 | 0.01238 [simulated] | <= 0.11 | ○ |
+| closed_form_vs_empirical | [{'version_id': 'c01_baseline', 'k': 1, 'quantity': 'success', 'predicted': 0.9027777777777777, 'empirical': 0.9166666666666666, 'abs_error': 0.01388888888888895}, {'version_id': 'c01_baseline', 'k': 1, 'quantity': 'silent_wrong', 'predicted': 0.06944444444444443, 'empirical': 0.08333333333333333, 'abs_error': 0.013888888888888895}, {'version_id': 'c01_baseline', 'k': 2, 'quantity': 'success', 'predicted': 0.9212962962962963, 'empirical': 0.9166666666666666, 'abs_error': 0.00462962962962965}, {'version_id': 'c01_baseline', 'k': 2, 'quantity': 'silent_wrong', 'predicted': 0.06944444444444443, 'empirical': 0.08333333333333333, 'abs_error': 0.013888888888888895}, {'version_id': 'c01_baseline', 'k': 3, 'quantity': 'success', 'predicted': 0.9274691358024691, 'empirical': 0.9166666666666666, 'abs_error': 0.010802469135802517}, {'version_id': 'c01_baseline', 'k': 3, 'quantity': 'silent_wrong', 'predicted': 0.06944444444444443, 'empirical': 0.08333333333333333, 'abs_error': 0.013888888888888895}, {'version_id': 'c01_baseline', 'k': 4, 'quantity': 'success', 'predicted': 0.9295267489711933, 'empirical': 0.917125, 'abs_error': 0.012401748971193283}, {'version_id': 'c01_baseline', 'k': 4, 'quantity': 'silent_wrong', 'predicted': 0.06944444444444443, 'empirical': 0.082875, 'abs_error': 0.01343055555555557}, {'version_id': 'c13_minimal_fix', 'k': 1, 'quantity': 'success', 'predicted': 0.6944444444444445, 'empirical': 0.7083333333333334, 'abs_error': 0.01388888888888884}, {'version_id': 'c13_minimal_fix', 'k': 1, 'quantity': 'silent_wrong', 'predicted': 0.26388888888888884, 'empirical': 0.20833333333333334, 'abs_error': 0.0555555555555555}, {'version_id': 'c13_minimal_fix', 'k': 2, 'quantity': 'success', 'predicted': 0.7129629629629629, 'empirical': 0.736111111111111, 'abs_error': 0.02314814814814814}, {'version_id': 'c13_minimal_fix', 'k': 2, 'quantity': 'silent_wrong', 'predicted': 0.2638888888888889, 'empirical': 0.2222222222222222, 'abs_error': 0.041666666666666685}, {'version_id': 'c13_minimal_fix', 'k': 3, 'quantity': 'success', 'predicted': 0.7222222222222223, 'empirical': 0.736111111111111, 'abs_error': 0.013888888888888729}, {'version_id': 'c13_minimal_fix', 'k': 3, 'quantity': 'silent_wrong', 'predicted': 0.2638888888888889, 'empirical': 0.2222222222222222, 'abs_error': 0.041666666666666685}, {'version_id': 'c13_minimal_fix', 'k': 4, 'quantity': 'success', 'predicted': 0.727366255144033, 'empirical': 0.73375, 'abs_error': 0.006383744855967044}, {'version_id': 'c13_minimal_fix', 'k': 4, 'quantity': 'silent_wrong', 'predicted': 0.2638888888888889, 'empirical': 0.22325000000000003, 'abs_error': 0.04063888888888886}] [simulated] | — | — |
+| first_half_vs_second_half_class_frequency | {'c01_baseline': {'S': 0.01388888888888895, 'W': 0.013888888888888895, 'F': -0.027777777777777776}, 'c13_minimal_fix': {'S': 0.01388888888888884, 'W': -0.0555555555555555, 'F': 0.041666666666666664}} [live] | — | — |
+| g2_diff_c12_minus_c01 | {'estimate': -0.005555555555555557, 'low': -0.027777777777777773, 'high': 0.01944444444444443} [simulated] | — | — |
+| g3_diff | {'estimate': 0.075, 'low': 0.020833333333333336, 'high': 0.13472222222222222} [simulated] | — | — |
+| g3_diff_ci_low | 0.02083 [simulated] | > 0 | ○ |
+| identical_trial_rate | 0 [live] | — | — |
+| identity_cases_w0 | 55 [live] | — | — |
+| identity_error_w0 | 2.22e-16 [simulated] | <= 1e-09 | ○ |
+| n_common_tasks | 24 [live] | — | — |
+| realized_table | {'c01_baseline': [{'k': 1, 'pass_at_k': 0.9097222222222223, 'p_success': 0.9097222222222223, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.0, 'gap': 0.0}, {'k': 2, 'pass_at_k': 0.9500000000000001, 'p_success': 0.9236111111111112, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.013888888888889, 'gap': 0.02638888888888889}, {'k': 3, 'pass_at_k': 0.9562499999999999, 'p_success': 0.9236111111111112, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.013888888888889, 'gap': 0.032638888888888884}, {'k': 4, 'pass_at_k': 0.9583333333333334, 'p_success': 0.9236111111111112, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.013888888888889, 'gap': 0.03472222222222222}, {'k': 5, 'pass_at_k': 0.9583333333333334, 'p_success': 0.9236111111111112, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.013888888888889, 'gap': 0.03472222222222222}, {'k': 6, 'pass_at_k': 0.9583333333333334, 'p_success': 0.9236111111111112, 'p_silent_wrong': 0.07638888888888888, 'expected_trials': 1.013888888888889, 'gap': 0.03472222222222222}], 'c13_minimal_fix': [{'k': 1, 'pass_at_k': 0.701388888888889, 'p_success': 0.701388888888889, 'p_silent_wrong': 0.23611111111111108, 'expected_trials': 1.0, 'gap': 8.0953762212251e-18}, {'k': 2, 'pass_at_k': 0.8027777777777777, 'p_success': 0.7291666666666666, 'p_silent_wrong': 0.24305555555555555, 'expected_trials': 1.0625, 'gap': 0.07361111111111113}, {'k': 3, 'pass_at_k': 0.84375, 'p_success': 0.7361111111111112, 'p_silent_wrong': 0.24305555555555555, 'expected_trials': 1.090277777777778, 'gap': 0.10763888888888888}, {'k': 4, 'pass_at_k': 0.8722222222222223, 'p_success': 0.7430555555555555, 'p_silent_wrong': 0.24305555555555555, 'expected_trials': 1.1111111111111112, 'gap': 0.12916666666666668}, {'k': 5, 'pass_at_k': 0.8958333333333334, 'p_success': 0.75, 'p_silent_wrong': 0.24305555555555555, 'expected_trials': 1.125, 'gap': 0.14583333333333334}, {'k': 6, 'pass_at_k': 0.9166666666666666, 'p_success': 0.7569444444444445, 'p_silent_wrong': 0.24305555555555555, 'expected_trials': 1.1319444444444444, 'gap': 0.15972222222222224}], 'c12_null': [{'k': 1, 'pass_at_k': 0.9375, 'p_success': 0.9375, 'p_silent_wrong': 0.0625, 'expected_trials': 1.0, 'gap': 0.0}, {'k': 2, 'pass_at_k': 0.9583333333333334, 'p_success': 0.9375, 'p_silent_wrong': 0.0625, 'expected_trials': 1.0, 'gap': 0.020833333333333332}]} [simulated] | — | — |
+| retry_roi_over_theta | {'c01_baseline': {'best_k_distribution': {'k1': 0.26627, 'k2': 0.0, 'k3': 0.0, 'k4': 0.0, 'k5': 0.0, 'k6': 0.73373}, 'w_over_s_threshold_quantiles': {'q05': -11.141425703441275, 'q25': 0.022858300531112763, 'q50': 0.17137946366358575, 'q75': 0.8528035457643568, 'q95': 8.28590034709687}, 'w_over_s_threshold_nan_fraction': 0.0, 'w_over_s_observed': 0.08396946564885495, 'theta_subsample': '100 点おき（2000 点）'}, 'c13_minimal_fix': {'best_k_distribution': {'k1': 0.48111, 'k2': 0.0, 'k3': 0.0, 'k4': 0.0, 'k5': 0.0, 'k6': 0.51889}, 'w_over_s_threshold_quantiles': {'q05': -11.228763544153505, 'q25': 0.02212203828024064, 'q50': 0.17092279369846464, 'q75': 0.8479574832212431, 'q95': 8.168916647963435}, 'w_over_s_threshold_nan_fraction': 0.0, 'w_over_s_observed': 0.3366336633663367, 'theta_subsample': '100 点おき（2000 点）'}} [simulated] | — | — |
+| silent_wrong_closed_form_k1to4_c13 | [0.23611111111111108, 0.24189814814814814, 0.24286265432098766, 0.24302340534979425] [simulated] | — | — |
+| silent_wrong_empirical_k1to4_c13 | [0.23611111111111108, 0.24305555555555555, 0.24305555555555555, 0.24305555555555555] [simulated] | — | — |
+| silent_wrong_gain_c13 | {'estimate': 0.006944444444444475, 'low': 0.0, 'high': 0.01805555555555549} [simulated] | — | — |
+| silent_wrong_gain_c13_ci_low | 0 [simulated] | > 0（適用条件: c13_f_hat >= 0.15） | N/A（検出力不足: c13_f_hat = 0.0625 < 0.15） |
+| silent_wrong_monotone_c13 | 1 [simulated] | == 1 | ○ |
+
 
 ## 判定
 **注記（ADR-046、2026-11-08、コーパスを見る前に設計者が記入。判定の結果によらず残す）**: この実験の植込み版 `c13_minimal_fix` は、ADR-037 の操作確認を 3 回とも通っていない（特殊化検出 `spec_literal` 0/10 × 3、$k^*$ = 2）。**操作確認を通っていない植込みであり、機構は特殊化ではない**（局所回避と指示違反＝共有コードの変更）。EC-R1 の `w_rate_diff_ci_low` ≤ 0 のとき、`g3_diff_ci_low`・`silent_wrong_gain_c13_ci_low` の未達は植込みの不発による FAIL（設計側）で、手法の NEGATIVE ではない。
 
+### 自動判定
+<!-- agenteval:auto-verdict -->
+PASS
+
+全基準を満たした。 silent_wrong_gain_c13_ci_low は N/A（検出力不足: c13_f_hat = 0.0625 < 0.15）。N/A は合格ではない（判定から外した）。
+
 ## 気づき・限界
-（未実施）
+<!-- agenteval:auto-notes -->
+- closed_form_mae_k1to4 の閾値 0.05 は仮置きで、推定誤差の床（0.05〜0.07）と同程度のため、閉形式が正しくても約半分の確率でしか満たされない（EC-R2.md）。不合格は基準設計の問題で、手法の否定的結果としては扱わない。版別の MAE: c01 0.010、c13 0.014。
+- silent_wrong_monotone_c13 と identity_error_w0 は定義上ほぼ必ず通る自己検査で、H3 の証拠にしない。H3 の量的な主張は silent_wrong_gain_c13_ci_low（再試行で増える W の量）で検査している。この基準は c13_f_hat >= 0.15 のときだけ適用され、偽なら N/A（検出力不足。合格ではない。ADR-045）。
+- 反復の独立性の診断: identical_trial_rate = 0.0（記録のみ。塩が効いていれば 0 に近い）。塩の不備は別に、同じ (タスク, 版) の反復どうしでステップ 0 のカセット鍵（塩付き）が欠けている・重複していないかを調べ（cassette_salt_check: checked、検査 336 run、不備 0 件）、あれば基準の達成によらず強制 FAIL にする。カセットを読み出せなければ「検査できなかった」と記録する。
+- c12（試行 2 回）では G_3 が列挙できないので、c12 と c01 の差は G_2 で記録した（g2_diff_c12_minus_c01、記録のみ）。k = 5・6 の表は 6 試行ある版（c01・c13）だけに出す。
+- 閉形式は「タスク内で試行が交換可能」という仮定の代数で、経験値は同じ試行プールからの再標本化である。比較は推定量どうしの偏りの差を見るもので、仮定が破れる典型（カセットの衝突で反復が同一になる）を前半・後半の分割では検出できない。主張の重みは g3_diff_ci_low と silent_wrong_gain_c13_ci_low に置く。
+
+---
+生成: `uv run agenteval exp ec_r2` / 実行時刻 2026-11-07T23:32:55+00:00 / コスト 0.0 USD

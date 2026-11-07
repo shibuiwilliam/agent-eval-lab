@@ -125,10 +125,46 @@ c12 − c01 の `run_tests` 帰属の差を 95% 区間付きで記録する。�
 - 実装が正しく、キャッシュが位置モデルどおりに働かない（取りこぼし、遡り範囲の上限）なら H3 は NEGATIVE（「事前予測は、この条件では当たらない」という知見）。c04 のコスト増の大半が振る舞いの変化（ステップ数の増加）によるなら H2 は NEGATIVE
 
 ## 結果
-（未実施）
+| 指標 | 値（来歴） | 基準 | 判定 |
+|---|---|---|---|
+| allocation_identity_error | 6.489e-16 [live] | <= 1e-09 | ○ |
+| c12_minus_c01_run_tests_cca_usd | {'estimate': 6.31833687743756e-06, 'low': -0.00015354641273500496, 'high': 0.0001482520869800854} [live] | — | — |
+| control_attribution | 0.09094 [simulated] | <= 0.1 | ○ |
+| control_detail | {'early_run': 'cd__CT-tillcalc-004__c01o_no_history_cache__offline__r0__sc-b2-early', 'late_run': 'cd__CT-tillcalc-004__c01o_no_history_cache__offline__r0__sc-b2-late', 'ratio': 0.09093668929734505, 'predicted': 0.09090909090909091, 'early_steps': 13, 'late_steps': 13} [simulated] | — | — |
+| e_on_c04 | -0.004719 [live] | — | — |
+| e_on_e_off | {'e_on': -0.0058418556673769115, 'e_off': -1.198607114652519e-16, 'n_on': 144, 'n_off': 10} [live] | — | — |
+| e_on_sub10_only | -0.004722 [live] | — | — |
+| history_cache_inactive_on_runs | 0 [live] | — | — |
+| history_cache_increase_between_versions | {'estimate': 1.1156129706522888, 'low': 0.7641599883117698, 'high': 1.5134410446300046} [live] | — | — |
+| history_cache_predicted_increase_rate_sub10 | 1.518 [live] | — | — |
+| history_cache_prediction_error | 0.005842 [live] | <= 0.1 | ○ |
+| ledger_identity_error | 6.489e-16 [live] | <= 0.001 | ○ |
+| ledger_identity_runs_checked | 274 [live] | — | — |
+| ledger_identity_voided_reason | None [live] | — | — |
+| ledger_match_rate | 1 [live] | — | — |
+| off_runs_with_cache_beyond_prefix | 0 [live] | — | — |
+| predicted_resend_ratio_n10 | 0.215 [simulated] | — | — |
+| prefix_tokens | 8814 [live] | — | — |
+| runs_fully_matched | 274 [live] | — | — |
+| runs_total | 274 [live] | — | — |
+| verbose_attribution_ci | {'low': -20.652077652207055, 'high': 23.040704365267374, 'n_tasks': 24} [live] | — | — |
+| verbose_attribution_to_run_tests | 2.402 [live] | >= 0.8 | ○ |
+
 
 ## 判定
-（未実施）
+### 自動判定
+<!-- agenteval:auto-verdict -->
+PASS
+
+全基準を満たした。
 
 ## 気づき・限界
-（未実施）
+<!-- agenteval:auto-notes -->
+- ledger_identity_error が検証するのは、単価表の写し・台帳の行との対応づけ・成分の総和だけで、ブロックごとの割り振り（どのツール結果にいくら掛かったか）の正しさは示さない。ブロック別の手がかりは位置モデルの前提と対照 (a) だけである（EC-B2P.md と同じ）。恒等式を検査した run は 274 本（台帳の照合率が 0.95 未満か 0 本なら値を出さず FAIL にする。理由: None）。
+- 対照 (a) は simulated（合成 usage。1 トークン = 4 バイトの近似）で、算術でほぼ決まる。確かめたのは「出力の大きさだけで帰属する実装（再送回数を見ない）は比が 1.0 になる」ことが排除されていること、つまり CCA が生涯（再送回数）を反映していること。比 0.09093668929734505（位置モデルの予測は 1/11 ≈ 0.091）。絶対額を live と並べない。
+- H2 は c04 の詳細出力が振る舞い（ステップ数）を変えうるので、コスト増 D_t に再送以外の増分も入る。比が 1 を超えることも 0.8 を下回ることもある。0.8 は「増分の大部分が run_tests 出力の生涯コスト」という操作的な定義である。区間: {'low': -20.652077652207055, 'high': 23.040704365267374, 'n_tasks': 24}。
+- H3 の主指標は run 内の反実仮想 |e_off − e_on|（キャッシュ関係の usage を予測に使わない）。情報の大半は e_on が持つ。e_on/e_off: {'e_on': -0.0058418556673769115, 'e_off': -1.198607114652519e-16, 'n_on': 144, 'n_off': 10}。キャッシュの鎖の切断（履歴部分の cache_read が 0 の on の run 0 件、接頭辞より後ろにキャッシュのある off の run 0 件）が 0 でなければ実装の誤り（FAIL）として扱う。
+- c04 と c01 のツール定義・プロンプトの同一性を確かめた（接頭辞 P を共通に使う前提）: {'toolset_identical': True, 'prompt_identical': True, 't0_equal': 72, 't0_pairs': 72}。c12・c13 は system プロンプトが c01 と違うので c01o の P は使えず、版ごとの e_on は c04 だけを記録した（c12・c13 は「該当なし」）。c12 − c01 の run_tests 帰属の差は記録のみ（同等性の幅を決めていない）。
+
+---
+生成: `uv run agenteval exp ec_b2` / 実行時刻 2026-11-07T23:32:49+00:00 / コスト 0.0 USD
