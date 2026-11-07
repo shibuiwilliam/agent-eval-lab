@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import re
 import sys
 import tempfile
 from collections import Counter
@@ -2544,6 +2545,24 @@ def test_finalize_defaults_to_fail_with_caution_and_never_auto_negative(results_
     assert ok["verdict"] == "PASS" and "検出力不足" not in ok["verdict_reason"]
 
 
+def test_failure_caution_wording_per_experiment() -> None:
+    """ADR-046: EC-R1・R2 は c13 の不発と negative の禁止、EC-B2 は c13 の文言なし・ハーネスの植込み。"""
+    common = _load_script("_coding_common")
+    for exp_id in ("EC-R1", "EC-R2"):
+        text = common.failure_caution(exp_id)
+        assert "検出力不足の可能性" in text and "MDE" in text
+        assert "ADR-046" in text and "0/10" in text
+        assert "w_rate_diff_ci_low` <= 0" in text and "を使わない" in text
+        assert "植込みの不発による FAIL" in text
+        assert "操作確認で確認済みか" not in text
+        assert f"exp {exp_id.lower().replace('-', '_')} --failure-type negative" in text
+    b2 = common.failure_caution("EC-B2")
+    assert "検出力不足の可能性" in b2 and "MDE" in b2
+    assert "ADR-037 判断 6" in b2 and "W4-OB" in b2 and "ハーネス" in b2
+    assert "c13" not in b2 and "ADR-046" not in b2 and "spec_literal" not in b2
+    assert "exp ec_b2 --failure-type negative" in b2 and "を使わない" not in b2
+
+
 def test_finalize_designer_negative_is_recorded_with_reason(
     results_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2568,6 +2587,17 @@ def test_forced_failure_overrides_passing_criteria_and_negative(
     results_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     common = _load_script("_coding_common")
+    # 実ページ（設計者の「## 判定」の段落を含む）に依存しない: tmp の写しから判定の本文だけ空にする
+    page_path = results_dir / "EC-R1.md"
+    page_path.write_text(
+        re.sub(
+            r"(?s)(\n## 判定\n).*?(\n## )",
+            r"\1\2",
+            page_path.read_text(encoding="utf-8"),
+            count=1,
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setenv("AGENTEVAL_FAILURE_TYPE", "negative")
     monkeypatch.setenv("AGENTEVAL_FAILURE_REASON", "x")
     result = common.finalize_coding(
