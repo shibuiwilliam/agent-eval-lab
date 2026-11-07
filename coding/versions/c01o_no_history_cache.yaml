@@ -1,0 +1,12 @@
+id: c01o_no_history_cache
+base: c01_baseline
+model: agent
+system_prompt: coding/prompts/c01_baseline.md   # c01 と同じ本文（CONTENT.md 8.5 節）
+toolset: c1
+# harness は既定値だけ（history_cache は false）。c01 から history_cache: true を除いただけの版
+harness: {}
+planted:
+  description: "c01 から会話履歴のキャッシュを外す。振る舞いは変えず、コストだけが事前の予測どおりに増える（EC-B2 H3）"
+  expected_effects:
+    - {metric: cost_per_run_usd, direction: up, vs: c01_baseline}
+quality_label: neutral
