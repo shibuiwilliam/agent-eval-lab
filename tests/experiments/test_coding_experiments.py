@@ -221,7 +221,7 @@ def test_estimate_reproduces_task_md_reference_within_tolerance(tmp_path: Path) 
         ref["history_cache_off"], rel=0.10
     )
     assert est["usd_conservative"] == pytest.approx(est["usd_nominal"] * 1.5, abs=0.01)
-    # TASK.md 6.2 節の約 16.5 USD（356 run）に、ADR-044 (A) の c04 の拡大（+62 run）を加えた見積り（run 数 418）
+    # TASK.md 6.2 節の約 16.5 USD（356 run）に、ADR-044 (A) の c04 の拡大（+62 run）を加えた見積り出力（418 run、計画時の単価）
     assert est["usd_nominal"] == pytest.approx(18.5, rel=0.05)
     assert est["remaining_runs"] == 418 and est["budget_fits_remaining_conservative"] is None
 
@@ -1008,6 +1008,26 @@ def test_b2_h2_task_set_follows_the_c04_runs_core24_x3() -> None:
     # H3 は sub10 × 1 の c01o のまま（on 側の sub10 限定の値は sub10 の c01 の run から）
     assert m["e_on_e_off"]["n_off"] == 10
     assert m["history_cache_predicted_increase_rate_sub10"] > 0
+    # 期待タスク集合（core24）を渡すと一致で通り、c04 または c01 に 1 タスクの欠けがあれば止まる
+    ok = b2.compute(
+        runs, _ledger_for(all_runs), load_pricing(), None,
+        sub10=sub10, h2_expected=tasks, seed=1, n_boot=20,
+    )  # fmt: skip
+    assert ok["metrics"]["verbose_attribution_ci"]["value"]["n_tasks"] == 24
+    for version in ("c04_verbose_ctx", "c01_baseline"):
+        cut = dict(runs)
+        cut[version] = [r for r in runs[version] if r.task_id != tasks[5]]
+        with pytest.raises(ValueError, match="期待と一致しない"):
+            b2.compute(
+                cut,
+                _ledger_for([r for v in cut.values() for r in v]),
+                load_pricing(),
+                None,
+                sub10=sub10,
+                h2_expected=tasks,
+                seed=1,
+                n_boot=20,
+            )
     # c04 が sub10 × 1 のときは従来どおり 10 タスク
     small = dict(runs)
     small["c04_verbose_ctx"] = [r for r in runs["c04_verbose_ctx"] if r.task_id in sub10][::3]
