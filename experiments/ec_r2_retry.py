@@ -228,6 +228,14 @@ def retry_roi_records(
     }
 
 
+def f_hat(trials: Mapping[str, Sequence[OutcomeClass]]) -> float:
+    """F（未完了、または可視テスト不合格。EC-R1 の分類）の頻度のタスク等重み平均。`c13_f_hat` の定義（ADR-045）。
+
+    分類は EC-R1 と同じ（`trials_by_task` が `classify` で S / W / F にした試行をそのまま数える。F の判定は書き直さない）。
+    """
+    return float(np.mean([seq.count("F") / len(seq) for seq in trials.values()]))
+
+
 def _nondecreasing(values: Sequence[float], tol: float = 1e-12) -> bool:
     return all(b >= a - tol for a, b in pairwise(values))
 
@@ -338,6 +346,9 @@ def compute(
         "g3_diff_ci_low": labeled(g3_ci.low, "simulated"),
         "silent_wrong_monotone_c13": labeled(monotone, "simulated"),
         "silent_wrong_gain_c13_ci_low": labeled(gain_ci.low, "simulated"),
+        # silent_wrong_gain_c13_ci_low の適用条件 applies_if（c13_f_hat >= 0.15）の指標（ADR-045）。
+        # c13 の bugfix 試行（silent_wrong_gain と同じ共通タスクのプール）の F の頻度のタスク等重み平均。来歴 live
+        "c13_f_hat": labeled(f_hat(sub13), "live"),
         "identity_error_w0": labeled(max(ident_errors), "simulated"),
         # --- 記録のみ ---
         "closed_form_mae_by_version": labeled(mae_by_version, "simulated"),
@@ -431,6 +442,7 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         (
             "silent_wrong_monotone_c13 と identity_error_w0 は定義上ほぼ必ず通る自己検査で、H3 の証拠にしない。"
             "H3 の量的な主張は silent_wrong_gain_c13_ci_low（再試行で増える W の量）で検査している。"
+            "この基準は c13_f_hat >= 0.15 のときだけ適用され、偽なら N/A（検出力不足。合格ではない。ADR-045）。"
         ),
         (
             "反復の独立性の診断: identical_trial_rate = "

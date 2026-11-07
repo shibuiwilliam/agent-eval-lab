@@ -616,7 +616,7 @@
     - {metric: closed_form_mae_k1to4, op: "<=", value: 0.11}          # 確定（W3-A2）: 実装の closed_form_vs_empirical で模擬した帰無分布の 95% 点（格子 27 点の最大 0.109）を切り上げ。旧仮置き 0.05
     - {metric: g3_diff_ci_low, op: ">", value: 0}   # 確定。検出力 0.8 には W の増分 約 0.2 が要る（κ = 2〜4）
     - {metric: silent_wrong_monotone_c13, op: "==", value: 1}         # 確定。定義上ほぼ必ず 1。実装の自己検査
-    - {metric: silent_wrong_gain_c13_ci_low, op: ">", value: 0}       # 確定。検出力は c13 の F の率に依存（f = 0.036 なら 0.01〜0.40、0.15 なら 0.43〜1.00）
+    - {metric: silent_wrong_gain_c13_ci_low, op: ">", value: 0, applies_if: {metric: c13_f_hat, op: ">=", value: 0.15}}  # ADR-045: c13_f_hat < 0.15 なら N/A（検出力不足。合格ではない）。確定。検出力は c13 の F の率に依存（f = 0.036 なら 0.01〜0.40、0.15 なら 0.43〜1.00）
     - {metric: identity_error_w0, op: "<=", value: 1.0e-9}            # 確定。自己検査。合成の格子を常に含める
   # 記録のみ: pass@k / P_k(成功) / P_k(W) / 期待試行数の表, c12 − c01 の G_3 の差, 最適な k の分布,
   #           identical_trial_rate, 前半・後半の類頻度の差, identity_cases_w0

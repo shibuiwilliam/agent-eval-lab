@@ -122,7 +122,7 @@
     - {metric: closed_form_mae_k1to4, op: "<=", value: 0.11}          # W3-A2（2026-11-07）で確定: 帰無分布の 95% 点（格子の最大 0.109）を切り上げ。旧仮置き 0.05（ADR-033 の確定記録）
     - {metric: g3_diff_ci_low, op: ">", value: 0}
     - {metric: silent_wrong_monotone_c13, op: "==", value: 1}         # 定義上ほぼ必ず 1。実装の自己検査
-    - {metric: silent_wrong_gain_c13_ci_low, op: ">", value: 0}       # TASK からの変更: 追加（H3 の量的な主張）
+    - {metric: silent_wrong_gain_c13_ci_low, op: ">", value: 0, applies_if: {metric: c13_f_hat, op: ">=", value: 0.15}}  # ADR-045: c13_f_hat < 0.15 なら N/A（検出力不足。合格ではない）。TASK からの変更: 追加（H3 の量的な主張）
     - {metric: identity_error_w0, op: "<=", value: 1.0e-9}            # 自己検査。合成の格子を常に含める
   # 記録のみ: pass@k / P_k(成功) / P_k(W) / 期待試行数の表, c12 − c01 の G_3 の差, 最適な k の分布,
   #           identical_trial_rate, 前半・後半の類頻度の差, identity_cases_w0
