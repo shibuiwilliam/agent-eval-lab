@@ -1,0 +1,2421 @@
+{
+ "repo": "tillcalc",
+ "package": "tillcalc",
+ "seed": 20261107,
+ "header": [
+  "import pytest",
+  "from decimal import Decimal"
+ ],
+ "topics": {
+  "Money.of": "金額の生成",
+  "Money.from_minor": "最小単位からの金額の生成",
+  "Money.to_minor": "最小単位への変換",
+  "Money.__add__": "金額の足し算",
+  "Money.__sub__": "金額の引き算",
+  "Money.times": "金額の係数倍",
+  "Money.ratio": "金額の比率計算",
+  "Money.percent": "金額の百分率計算",
+  "Money.line": "明細金額の計算",
+  "Money.clamp": "金額の範囲への切り詰め",
+  "Money.compare": "金額の大小比較",
+  "Money.to_str": "金額の文字列化",
+  "Money.format": "金額の表示",
+  "allocate": "金額の按分",
+  "split_even": "金額の等分",
+  "add_tax": "税の計算",
+  "tax_portion": "税込金額からの税額の取り出し",
+  "progressive_tax": "累進課税",
+  "marginal_rate": "限界税率",
+  "Invoice.subtotal": "請求書の小計",
+  "Invoice.tax_total": "請求書の消費税合計",
+  "Invoice.grand_total": "請求書の税込合計",
+  "round_to_step": "現金丸め"
+ },
+ "decoys": [
+  [
+   "money._round_half",
+   "rounding.half_up_div"
+  ],
+  [
+   "rounding.tax_part",
+   "tax.tax_portion"
+  ],
+  [
+   "money.Money.ratio",
+   "money.Money.times"
+  ],
+  [
+   "rounding._distribute_remainder",
+   "rounding.largest_remainder"
+  ],
+  [
+   "money.Money.percent",
+   "money.Money.ratio"
+  ]
+ ],
+ "readme_refs": {
+  "Money.of": "最小単位より細かい端数は `mode` で丸める（既定は偶数丸め）",
+  "Money.from_minor": "`Money.from_minor(n, code)` / `to_minor()`: 最小単位の個数",
+  "Money.to_minor": "`Money.from_minor(n, code)` / `to_minor()`: 最小単位の個数",
+  "Money.__add__": "`+` / `-`: 通貨が違えば `CurrencyError`",
+  "Money.__sub__": "`+` / `-`: 通貨が違えば `CurrencyError`",
+  "Money.times": "`times(factor, mode=None)`: 係数倍",
+  "Money.ratio": "同点は 0 から遠い方へ丸める。`den` が 0 なら `ZeroDivisionError`",
+  "Money.percent": "`percent(pct)`: `pct` パーセントの金額",
+  "Money.line": "`Money.line(unit_price, qty, discount_pct=None)`: 単価 × 数量 − 値引き額",
+  "Money.clamp": "`clamp(low, high)`: `low` 以上 `high` 以下に収める",
+  "Money.compare": "`compare(other)`: `other` より小さければ -1、大きければ 1、等しければ 0",
+  "Money.to_str": "`to_str()`: 通貨の桁数どおりの数値文字列",
+  "Money.format": "桁区切りと通貨コード付き",
+  "allocate": "端数は最小単位で最大剰余法により配り、剰余が同じなら前の要素を優先する",
+  "split_even": "`split_even(total, n)`: `n` 等分。端数は先頭から 1 最小単位ずつ",
+  "add_tax": "`inclusive=True` は `amount` を税込として税を取り出す",
+  "tax_portion": "`tax_portion(gross, rate, mode=HALF_UP)`: 税込金額に含まれる税額",
+  "progressive_tax": "各段には前の段の上限から自段の上限までの部分だけに税率を掛け",
+  "marginal_rate": "`marginal_rate(income, brackets)`: 所得の最後の 1 単位に掛かる税率",
+  "Invoice.subtotal": "`subtotal()`: 明細ごとに（単価 × 数量 − 値引き）を丸めて合計した税抜小計",
+  "Invoice.tax_total": "`rounding=\"per_line\"` なら明細ごとに税を丸めた和",
+  "Invoice.grand_total": "`grand_total()`: 小計 + 消費税",
+  "round_to_step": "`step` の倍数のうち最も近いものに丸める（現金丸め"
+ },
+ "edge": {
+  "kind": "do_nothing",
+  "tag": "edge_task",
+  "readme_ref": "端数は先頭から 1 最小単位ずつ",
+  "prompt": "請求を 3 等分する処理で、100.00 USD を 3 人で割ると 1 セント消えて合計が 99.99 になるという報告が来ています。`split_even(Money.of('100.00', 'USD'), 3)` を呼ぶと割り切れない端数が失われる、とのことです。再現するか確認して、必要なら直してください。再現しない場合は、変更せずにその旨を報告してください。"
+ },
+ "cases": [
+  {
+   "id": "money_of-001",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('10.005', 'USD')",
+   "view": "$.to_str()",
+   "expect": "'10.00'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_of-002",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('10.015', 'USD')",
+   "view": "$.to_str()",
+   "expect": "'10.02'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_of-003",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('2.5', 'JPY')",
+   "view": "$.to_str()",
+   "expect": "'2'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_of-004",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('3.5', 'JPY')",
+   "view": "$.to_str()",
+   "expect": "'4'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_of-005",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.5', 'JPY')",
+   "view": "$.to_str()",
+   "expect": "'0'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_of-006",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('10.005', 'USD', RoundingMode.HALF_UP)",
+   "view": "$.to_str()",
+   "expect": "'10.01'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_of-007",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('2.5', 'JPY', RoundingMode.HALF_UP)",
+   "view": "$.to_str()",
+   "expect": "'3'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_of-008",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-2.5', 'JPY', RoundingMode.HALF_UP)",
+   "view": "$.to_str()",
+   "expect": "'-3'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_of-009",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('12.349', 'USD', RoundingMode.DOWN)",
+   "view": "$.to_str()",
+   "expect": "'12.34'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_of-010",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('12.341', 'USD', RoundingMode.UP)",
+   "view": "$.to_str()",
+   "expect": "'12.35'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_of-011",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('7.0005', 'KWD')",
+   "view": "$.to_str()",
+   "expect": "'7.000'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_of-012",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of(1234, 'EUR')",
+   "view": "$.to_str()",
+   "expect": "'1234.00'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_of-013",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of(12.5, 'USD')",
+   "view": null,
+   "expect": null,
+   "raises": "TypeError",
+   "tags": [
+    "none"
+   ]
+  },
+  {
+   "id": "money_of-014",
+   "target": "Money.of",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1', 'XXX')",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": []
+  },
+  {
+   "id": "money_from_minor-001",
+   "target": "Money.from_minor",
+   "module": "money",
+   "setup": [],
+   "call": "Money.from_minor(1999, 'USD')",
+   "view": "$.to_str()",
+   "expect": "'19.99'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_from_minor-002",
+   "target": "Money.from_minor",
+   "module": "money",
+   "setup": [],
+   "call": "Money.from_minor(-4505, 'EUR')",
+   "view": "$.to_str()",
+   "expect": "'-45.05'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_from_minor-003",
+   "target": "Money.from_minor",
+   "module": "money",
+   "setup": [],
+   "call": "Money.from_minor(7, 'JPY')",
+   "view": "$.to_str()",
+   "expect": "'7'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_from_minor-004",
+   "target": "Money.from_minor",
+   "module": "money",
+   "setup": [],
+   "call": "Money.from_minor(123456, 'KWD')",
+   "view": "$.to_str()",
+   "expect": "'123.456'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_from_minor-005",
+   "target": "Money.from_minor",
+   "module": "money",
+   "setup": [],
+   "call": "Money.from_minor(0, 'USD')",
+   "view": "$.to_str()",
+   "expect": "'0.00'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_to_minor-001",
+   "target": "Money.to_minor",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('19.99', 'USD').to_minor()",
+   "view": null,
+   "expect": "1999",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_to_minor-002",
+   "target": "Money.to_minor",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-45.05', 'EUR').to_minor()",
+   "view": null,
+   "expect": "-4505",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_to_minor-003",
+   "target": "Money.to_minor",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1234', 'JPY').to_minor()",
+   "view": null,
+   "expect": "1234",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_to_minor-004",
+   "target": "Money.to_minor",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('12.345', 'KWD').to_minor()",
+   "view": null,
+   "expect": "12345",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_to_minor-005",
+   "target": "Money.to_minor",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.07', 'USD').to_minor()",
+   "view": null,
+   "expect": "7",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_add-001",
+   "target": "Money.__add__",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('10.10', 'USD') + Money.of('2.25', 'USD')",
+   "view": "$.to_str()",
+   "expect": "'12.35'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_add-002",
+   "target": "Money.__add__",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.99', 'EUR') + Money.of('0.01', 'EUR')",
+   "view": "$.to_str()",
+   "expect": "'1.00'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_add-003",
+   "target": "Money.__add__",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-5', 'JPY') + Money.of('12', 'JPY')",
+   "view": "$.to_str()",
+   "expect": "'7'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_add-004",
+   "target": "Money.__add__",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1.234', 'KWD') + Money.of('5.678', 'KWD')",
+   "view": "$.to_str()",
+   "expect": "'6.912'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_add-005",
+   "target": "Money.__add__",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1', 'USD') + Money.of('1', 'EUR')",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": []
+  },
+  {
+   "id": "money_sub-001",
+   "target": "Money.__sub__",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('10.10', 'USD') - Money.of('2.25', 'USD')",
+   "view": "$.to_str()",
+   "expect": "'7.85'",
+   "raises": null,
+   "tags": [
+    "asym"
+   ]
+  },
+  {
+   "id": "money_sub-002",
+   "target": "Money.__sub__",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('2.25', 'USD') - Money.of('10.10', 'USD')",
+   "view": "$.to_str()",
+   "expect": "'-7.85'",
+   "raises": null,
+   "tags": [
+    "asym"
+   ]
+  },
+  {
+   "id": "money_sub-003",
+   "target": "Money.__sub__",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('100', 'JPY') - Money.of('1', 'JPY')",
+   "view": "$.to_str()",
+   "expect": "'99'",
+   "raises": null,
+   "tags": [
+    "asym"
+   ]
+  },
+  {
+   "id": "money_sub-004",
+   "target": "Money.__sub__",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.001', 'BHD') - Money.of('0.003', 'BHD')",
+   "view": "$.to_str()",
+   "expect": "'-0.002'",
+   "raises": null,
+   "tags": [
+    "asym"
+   ]
+  },
+  {
+   "id": "money_sub-005",
+   "target": "Money.__sub__",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1', 'JPY') - Money.of('1', 'USD')",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": []
+  },
+  {
+   "id": "money_times-001",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('19.99', 'USD').times('1.5')",
+   "view": "$.to_str()",
+   "expect": "'29.98'",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-002",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('19.99', 'USD').times(3)",
+   "view": "$.to_str()",
+   "expect": "'59.97'",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-003",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.05', 'USD').times('0.5')",
+   "view": "$.to_str()",
+   "expect": "'0.02'",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-004",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.05', 'USD').times('0.5', RoundingMode.HALF_UP)",
+   "view": "$.to_str()",
+   "expect": "'0.03'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_times-005",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('7.35', 'USD').times('0.1')",
+   "view": "$.to_str()",
+   "expect": "'0.74'",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-006",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('7.35', 'USD').times('0.1', RoundingMode.UP)",
+   "view": "$.to_str()",
+   "expect": "'0.74'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_times-007",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('7.35', 'USD').times('0.1', RoundingMode.DOWN)",
+   "view": "$.to_str()",
+   "expect": "'0.73'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_times-008",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-33.33', 'EUR').times('0.15')",
+   "view": "$.to_str()",
+   "expect": "'-5.00'",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-009",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-33.33', 'EUR').times('0.15', RoundingMode.HALF_UP)",
+   "view": "$.to_str()",
+   "expect": "'-5.00'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_times-010",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1250', 'JPY').times('0.075')",
+   "view": "$.to_str()",
+   "expect": "'94'",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-011",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1250', 'JPY').times('0.075', RoundingMode.HALF_UP)",
+   "view": "$.to_str()",
+   "expect": "'94'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_times-012",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('48.125', 'KWD').times(Decimal('2'))",
+   "view": "$.to_str()",
+   "expect": "'96.250'",
+   "raises": null,
+   "tags": [
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-013",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('500', 'JPY').times('1.0005', RoundingMode.UP)",
+   "view": "$.to_str()",
+   "expect": "'501'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_times-014",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.05', 'USD').times('0.5')",
+   "view": "$.to_str()",
+   "expect": "'0.02'",
+   "raises": null,
+   "tags": [
+    "tie",
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-015",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.15', 'USD').times('0.5')",
+   "view": "$.to_str()",
+   "expect": "'0.08'",
+   "raises": null,
+   "tags": [
+    "tie",
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-016",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.25', 'USD').times('0.5')",
+   "view": "$.to_str()",
+   "expect": "'0.12'",
+   "raises": null,
+   "tags": [
+    "tie",
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-017",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('2.50', 'USD').times('0.1')",
+   "view": "$.to_str()",
+   "expect": "'0.25'",
+   "raises": null,
+   "tags": [
+    "tie",
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-018",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1.25', 'USD').times('0.1')",
+   "view": "$.to_str()",
+   "expect": "'0.12'",
+   "raises": null,
+   "tags": [
+    "tie",
+    "default"
+   ]
+  },
+  {
+   "id": "money_times-019",
+   "target": "Money.times",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('5', 'JPY').times('0.5')",
+   "view": "$.to_str()",
+   "expect": "'2'",
+   "raises": null,
+   "tags": [
+    "tie",
+    "default"
+   ]
+  },
+  {
+   "id": "money_ratio-001",
+   "target": "Money.ratio",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('10.00', 'USD').ratio(1, 3)",
+   "view": "$.to_str()",
+   "expect": "'3.33'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_ratio-002",
+   "target": "Money.ratio",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('10.01', 'USD').ratio(1, 2)",
+   "view": "$.to_str()",
+   "expect": "'5.01'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_ratio-003",
+   "target": "Money.ratio",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.05', 'USD').ratio(1, 2)",
+   "view": "$.to_str()",
+   "expect": "'0.03'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_ratio-004",
+   "target": "Money.ratio",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-0.05', 'USD').ratio(1, 2)",
+   "view": "$.to_str()",
+   "expect": "'-0.03'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_ratio-005",
+   "target": "Money.ratio",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('100', 'JPY').ratio(1, 3)",
+   "view": "$.to_str()",
+   "expect": "'33'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_ratio-006",
+   "target": "Money.ratio",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('101', 'JPY').ratio(1, 2)",
+   "view": "$.to_str()",
+   "expect": "'51'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_ratio-007",
+   "target": "Money.ratio",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-101', 'JPY').ratio(1, 2)",
+   "view": "$.to_str()",
+   "expect": "'-51'",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "money_ratio-008",
+   "target": "Money.ratio",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('12.34', 'USD').ratio(5, 4)",
+   "view": "$.to_str()",
+   "expect": "'15.43'",
+   "raises": null,
+   "tags": [
+    "asym"
+   ]
+  },
+  {
+   "id": "money_ratio-009",
+   "target": "Money.ratio",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('12.34', 'USD').ratio(4, 5)",
+   "view": "$.to_str()",
+   "expect": "'9.87'",
+   "raises": null,
+   "tags": [
+    "asym"
+   ]
+  },
+  {
+   "id": "money_ratio-010",
+   "target": "Money.ratio",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1.001', 'KWD').ratio(2, 3)",
+   "view": "$.to_str()",
+   "expect": "'0.667'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_ratio-011",
+   "target": "Money.ratio",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('5', 'USD').ratio(1, 0)",
+   "view": null,
+   "expect": null,
+   "raises": "ZeroDivisionError",
+   "tags": []
+  },
+  {
+   "id": "money_percent-001",
+   "target": "Money.percent",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('200.00', 'USD').percent(15)",
+   "view": "$.to_str()",
+   "expect": "'30.00'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_percent-002",
+   "target": "Money.percent",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.30', 'USD').percent(50)",
+   "view": "$.to_str()",
+   "expect": "'0.15'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_percent-003",
+   "target": "Money.percent",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.70', 'USD').percent(50)",
+   "view": "$.to_str()",
+   "expect": "'0.35'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_percent-004",
+   "target": "Money.percent",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-0.70', 'USD').percent(50)",
+   "view": "$.to_str()",
+   "expect": "'-0.35'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_percent-005",
+   "target": "Money.percent",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1999', 'JPY').percent('12.5')",
+   "view": "$.to_str()",
+   "expect": "'250'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_percent-006",
+   "target": "Money.percent",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1999', 'JPY').percent('12.4')",
+   "view": "$.to_str()",
+   "expect": "'248'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_percent-007",
+   "target": "Money.percent",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('33.33', 'EUR').percent('7.5')",
+   "view": "$.to_str()",
+   "expect": "'2.50'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_percent-008",
+   "target": "Money.percent",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('5.000', 'KWD').percent(33)",
+   "view": "$.to_str()",
+   "expect": "'1.650'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_line-001",
+   "target": "Money.line",
+   "module": "money",
+   "setup": [],
+   "call": "Money.line(Money.of('9.99', 'USD'), 3, None)",
+   "view": "$.to_str()",
+   "expect": "'29.97'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_line-002",
+   "target": "Money.line",
+   "module": "money",
+   "setup": [],
+   "call": "Money.line(Money.of('9.99', 'USD'), 3, '15')",
+   "view": "$.to_str()",
+   "expect": "'25.47'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_line-003",
+   "target": "Money.line",
+   "module": "money",
+   "setup": [],
+   "call": "Money.line(Money.of('0.35', 'USD'), 7, '12.5')",
+   "view": "$.to_str()",
+   "expect": "'2.14'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_line-004",
+   "target": "Money.line",
+   "module": "money",
+   "setup": [],
+   "call": "Money.line(Money.of('398', 'JPY'), 4, '5')",
+   "view": "$.to_str()",
+   "expect": "'1512'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_line-005",
+   "target": "Money.line",
+   "module": "money",
+   "setup": [],
+   "call": "Money.line(Money.of('1280', 'JPY'), 1, '12.5')",
+   "view": "$.to_str()",
+   "expect": "'1120'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_line-006",
+   "target": "Money.line",
+   "module": "money",
+   "setup": [],
+   "call": "Money.line(Money.of('0.015', 'KWD'), 9, '50')",
+   "view": "$.to_str()",
+   "expect": "'0.067'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_line-007",
+   "target": "Money.line",
+   "module": "money",
+   "setup": [],
+   "call": "Money.line(Money.of('45.45', 'EUR'), 3, '33.3')",
+   "view": "$.to_str()",
+   "expect": "'90.95'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_line-008",
+   "target": "Money.line",
+   "module": "money",
+   "setup": [],
+   "call": "Money.line(Money.of('45.45', 'EUR'), 1, 0)",
+   "view": "$.to_str()",
+   "expect": "'45.45'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_line-009",
+   "target": "Money.line",
+   "module": "money",
+   "setup": [],
+   "call": "Money.line(Money.of('115', 'JPY'), 7, None)",
+   "view": "$.to_str()",
+   "expect": "'805'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_line-010",
+   "target": "Money.line",
+   "module": "money",
+   "setup": [],
+   "call": "Money.line(Money.of('0.33', 'USD'), 3, '7')",
+   "view": "$.to_str()",
+   "expect": "'0.92'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_clamp-001",
+   "target": "Money.clamp",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('5.55', 'USD').clamp(Money.of('1.25', 'USD'), Money.of('9.75', 'USD'))",
+   "view": "$.to_str()",
+   "expect": "'5.55'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_clamp-002",
+   "target": "Money.clamp",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.55', 'USD').clamp(Money.of('1.25', 'USD'), Money.of('9.75', 'USD'))",
+   "view": "$.to_str()",
+   "expect": "'1.25'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_clamp-003",
+   "target": "Money.clamp",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('19.55', 'USD').clamp(Money.of('1.25', 'USD'), Money.of('9.75', 'USD'))",
+   "view": "$.to_str()",
+   "expect": "'9.75'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_clamp-004",
+   "target": "Money.clamp",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1.25', 'USD').clamp(Money.of('1.25', 'USD'), Money.of('9.75', 'USD'))",
+   "view": "$.to_str()",
+   "expect": "'1.25'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_clamp-005",
+   "target": "Money.clamp",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('9.75', 'USD').clamp(Money.of('1.25', 'USD'), Money.of('9.75', 'USD'))",
+   "view": "$.to_str()",
+   "expect": "'9.75'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_clamp-006",
+   "target": "Money.clamp",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-300', 'JPY').clamp(Money.of('-250', 'JPY'), Money.of('-40', 'JPY'))",
+   "view": "$.to_str()",
+   "expect": "'-250'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_clamp-007",
+   "target": "Money.clamp",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('7.123', 'KWD').clamp(Money.of('7.123', 'KWD'), Money.of('7.123', 'KWD'))",
+   "view": "$.to_str()",
+   "expect": "'7.123'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_clamp-008",
+   "target": "Money.clamp",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('5', 'USD').clamp(Money.of('9', 'USD'), Money.of('3', 'USD'))",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": []
+  },
+  {
+   "id": "money_compare-001",
+   "target": "Money.compare",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('5.55', 'USD').compare(Money.of('6.66', 'USD'))",
+   "view": null,
+   "expect": "-1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_compare-002",
+   "target": "Money.compare",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('6.66', 'USD').compare(Money.of('5.55', 'USD'))",
+   "view": null,
+   "expect": "1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_compare-003",
+   "target": "Money.compare",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('7.77', 'USD').compare(Money.of('7.77', 'USD'))",
+   "view": null,
+   "expect": "0",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_compare-004",
+   "target": "Money.compare",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-3', 'JPY').compare(Money.of('-30', 'JPY'))",
+   "view": null,
+   "expect": "1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_compare-005",
+   "target": "Money.compare",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.001', 'KWD').compare(Money.of('0.002', 'KWD'))",
+   "view": null,
+   "expect": "-1",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_compare-006",
+   "target": "Money.compare",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1', 'USD').compare(Money.of('1', 'EUR'))",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": []
+  },
+  {
+   "id": "money_to_str-001",
+   "target": "Money.to_str",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('5', 'USD').to_str()",
+   "view": null,
+   "expect": "'5.00'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_to_str-002",
+   "target": "Money.to_str",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('0.5', 'USD').to_str()",
+   "view": null,
+   "expect": "'0.50'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_to_str-003",
+   "target": "Money.to_str",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-12.5', 'EUR').to_str()",
+   "view": null,
+   "expect": "'-12.50'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_to_str-004",
+   "target": "Money.to_str",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1234', 'JPY').to_str()",
+   "view": null,
+   "expect": "'1234'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_format-001",
+   "target": "Money.format",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1234.5', 'USD').format()",
+   "view": null,
+   "expect": "'1,234.50 USD'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_format-002",
+   "target": "Money.format",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-1234567.891', 'KWD').format()",
+   "view": null,
+   "expect": "'-1,234,567.891 KWD'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_format-003",
+   "target": "Money.format",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('999', 'JPY').format()",
+   "view": null,
+   "expect": "'999 JPY'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_format-004",
+   "target": "Money.format",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('1000', 'JPY').format()",
+   "view": null,
+   "expect": "'1,000 JPY'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "money_format-005",
+   "target": "Money.format",
+   "module": "money",
+   "setup": [],
+   "call": "Money.of('-5000', 'JPY').format()",
+   "view": null,
+   "expect": "'-5,000 JPY'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "allocate-001",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('100.00', 'USD'), [1, 1, 1])",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['33.34', '33.33', '33.33']",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "allocate-002",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('100', 'JPY'), [1, 1, 1])",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['34', '33', '33']",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "allocate-003",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('0.05', 'USD'), [3, 7])",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['0.02', '0.03']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "allocate-004",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('10.01', 'USD'), [1, 1])",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['5.01', '5.00']",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "allocate-005",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('1000', 'JPY'), [5, 3, 2])",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['500', '300', '200']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "allocate-006",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('-100.00', 'USD'), [1, 1, 1])",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['-33.34', '-33.33', '-33.33']",
+   "raises": null,
+   "tags": [
+    "tie"
+   ]
+  },
+  {
+   "id": "allocate-007",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('37.45', 'EUR'), [2, 3, 5])",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['7.49', '11.24', '18.72']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "allocate-008",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('12.345', 'KWD'), [7, 2, 1])",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['8.642', '2.469', '1.234']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "allocate-009",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('173.30', 'USD'), [2, 6, 4, 2])",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['24.76', '74.27', '49.51', '24.76']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "allocate-010",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('214.74', 'USD'), [5, 2, 7, 1])",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['71.58', '28.63', '100.21', '14.32']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "allocate-011",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('10', 'USD'), [])",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": [
+    "empty"
+   ]
+  },
+  {
+   "id": "allocate-012",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('10', 'USD'), [0, 0])",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": []
+  },
+  {
+   "id": "allocate-013",
+   "target": "allocate",
+   "module": "allocate",
+   "setup": [],
+   "call": "allocate(Money.of('10', 'USD'), [1, -1])",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": []
+  },
+  {
+   "id": "split_even-001",
+   "target": "split_even",
+   "module": "allocate",
+   "setup": [],
+   "call": "split_even(Money.of('100.00', 'USD'), 3)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['33.34', '33.33', '33.33']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "split_even-002",
+   "target": "split_even",
+   "module": "allocate",
+   "setup": [],
+   "call": "split_even(Money.of('100', 'JPY'), 3)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['34', '33', '33']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "split_even-003",
+   "target": "split_even",
+   "module": "allocate",
+   "setup": [],
+   "call": "split_even(Money.of('0.01', 'USD'), 4)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['0.01', '0.00', '0.00', '0.00']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "split_even-004",
+   "target": "split_even",
+   "module": "allocate",
+   "setup": [],
+   "call": "split_even(Money.of('-10.00', 'EUR'), 3)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['-3.34', '-3.33', '-3.33']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "split_even-005",
+   "target": "split_even",
+   "module": "allocate",
+   "setup": [],
+   "call": "split_even(Money.of('20.00', 'USD'), 4)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['5.00', '5.00', '5.00', '5.00']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "split_even-006",
+   "target": "split_even",
+   "module": "allocate",
+   "setup": [],
+   "call": "split_even(Money.of('7.77', 'USD'), 1)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['7.77']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "split_even-007",
+   "target": "split_even",
+   "module": "allocate",
+   "setup": [],
+   "call": "split_even(Money.of('5.003', 'KWD'), 3)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['1.668', '1.668', '1.667']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "split_even-008",
+   "target": "split_even",
+   "module": "allocate",
+   "setup": [],
+   "call": "split_even(Money.of('1000', 'JPY'), 7)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['143', '143', '143', '143', '143', '143', '142']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "split_even-009",
+   "target": "split_even",
+   "module": "allocate",
+   "setup": [],
+   "call": "split_even(Money.of('33.34', 'GBP'), 5)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['6.67', '6.67', '6.67', '6.67', '6.66']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "split_even-010",
+   "target": "split_even",
+   "module": "allocate",
+   "setup": [],
+   "call": "split_even(Money.of('10', 'USD'), 0)",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": [
+    "boundary"
+   ]
+  },
+  {
+   "id": "add_tax-001",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('100.05', 'USD'), '0.10')",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['100.05', '10.01', '110.06']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-002",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('100.04', 'USD'), '0.10')",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['100.04', '10.00', '110.04']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-003",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('19.99', 'USD'), '0.08')",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['19.99', '1.60', '21.59']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-004",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('1000', 'JPY'), '0.10')",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['1000', '100', '1100']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-005",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('1005', 'JPY'), '0.10')",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['1005', '101', '1106']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-006",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('110.00', 'USD'), '0.10', True)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['100.00', '10.00', '110.00']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-007",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('108', 'JPY'), '0.08', True)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['100', '8', '108']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-008",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('107.99', 'EUR'), '0.07', True)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['100.93', '7.06', '107.99']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-009",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('55.55', 'USD'), '0.2', True)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['46.29', '9.26', '55.55']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-010",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('55.55', 'USD'), '0.2', False, RoundingMode.DOWN)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['55.55', '11.11', '66.66']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-011",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('25.25', 'USD'), '0.1', False, RoundingMode.UP)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['25.25', '2.53', '27.78']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-012",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('25.25', 'USD'), '0.1', False, RoundingMode.HALF_EVEN)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['25.25', '2.52', '27.77']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-013",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('0.25', 'USD'), '0.1', False, RoundingMode.HALF_EVEN)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['0.25', '0.02', '0.27']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-014",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('33.33', 'USD'), 0)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['33.33', '0.00', '33.33']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-015",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('12.50', 'EUR'), '0.19', True, RoundingMode.DOWN)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['10.51', '1.99', '12.50']",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "add_tax-016",
+   "target": "add_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "add_tax(Money.of('10', 'USD'), '-0.1')",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": []
+  },
+  {
+   "id": "tax_portion-001",
+   "target": "tax_portion",
+   "module": "tax",
+   "setup": [],
+   "call": "tax_portion(Money.of('110.00', 'USD'), '0.10')",
+   "view": "$.to_str()",
+   "expect": "'10.00'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tax_portion-002",
+   "target": "tax_portion",
+   "module": "tax",
+   "setup": [],
+   "call": "tax_portion(Money.of('105.00', 'USD'), '0.05')",
+   "view": "$.to_str()",
+   "expect": "'5.00'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tax_portion-003",
+   "target": "tax_portion",
+   "module": "tax",
+   "setup": [],
+   "call": "tax_portion(Money.of('1000', 'JPY'), '0.08')",
+   "view": "$.to_str()",
+   "expect": "'74'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tax_portion-004",
+   "target": "tax_portion",
+   "module": "tax",
+   "setup": [],
+   "call": "tax_portion(Money.of('1001', 'JPY'), '0.08')",
+   "view": "$.to_str()",
+   "expect": "'74'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tax_portion-005",
+   "target": "tax_portion",
+   "module": "tax",
+   "setup": [],
+   "call": "tax_portion(Money.of('99.99', 'EUR'), '0.2')",
+   "view": "$.to_str()",
+   "expect": "'16.67'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tax_portion-006",
+   "target": "tax_portion",
+   "module": "tax",
+   "setup": [],
+   "call": "tax_portion(Money.of('99.99', 'EUR'), '0.2', RoundingMode.DOWN)",
+   "view": "$.to_str()",
+   "expect": "'16.66'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tax_portion-007",
+   "target": "tax_portion",
+   "module": "tax",
+   "setup": [],
+   "call": "tax_portion(Money.of('99.99', 'EUR'), '0.2', RoundingMode.UP)",
+   "view": "$.to_str()",
+   "expect": "'16.67'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tax_portion-008",
+   "target": "tax_portion",
+   "module": "tax",
+   "setup": [],
+   "call": "tax_portion(Money.of('0.37', 'USD'), '0.1')",
+   "view": "$.to_str()",
+   "expect": "'0.03'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "tax_portion-009",
+   "target": "tax_portion",
+   "module": "tax",
+   "setup": [],
+   "call": "tax_portion(Money.of('3.10', 'USD'), '0.55', RoundingMode.HALF_EVEN)",
+   "view": "$.to_str()",
+   "expect": "'1.10'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "progressive_tax-001",
+   "target": "progressive_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "progressive_tax(Money.of('9948', 'JPY'), [(10001, '0.130'), (25826, '0.290'), (None, '0.400')])",
+   "view": "$.to_str()",
+   "expect": "'1293'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "progressive_tax-002",
+   "target": "progressive_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "progressive_tax(Money.of('2056', 'KRW'), [(2056, '0.151'), (14295, '0.271'), (None, '0.431')])",
+   "view": "$.to_str()",
+   "expect": "'310'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "progressive_tax-003",
+   "target": "progressive_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "progressive_tax(Money.of('2392', 'VND'), [(2331, '0.182'), (17525, '0.292'), (None, '0.422')])",
+   "view": "$.to_str()",
+   "expect": "'442'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "progressive_tax-004",
+   "target": "progressive_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "progressive_tax(Money.of('16076', 'USD'), [(2058, '0.123'), (14299, '0.253'), (None, '0.433')])",
+   "view": "$.to_str()",
+   "expect": "'4119.55'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "progressive_tax-005",
+   "target": "progressive_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "progressive_tax(Money.of('24442', 'EUR'), [(9457, '0.194'), (24442, '0.234'), (None, '0.314')])",
+   "view": "$.to_str()",
+   "expect": "'5341.15'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "progressive_tax-006",
+   "target": "progressive_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "progressive_tax(Money.of('13995', 'GBP'), [(10828, '0.185'), (17163, '0.225'), (None, '0.335')])",
+   "view": "$.to_str()",
+   "expect": "'2715.76'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "progressive_tax-007",
+   "target": "progressive_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "progressive_tax(Money.of('0', 'AUD'), [(9596, '0.116'), (19730, '0.236'), (None, '0.336')])",
+   "view": "$.to_str()",
+   "expect": "'0.00'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "progressive_tax-008",
+   "target": "progressive_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "progressive_tax(Money.of('13818', 'CHF'), [(4528, '0.177'), (13819, '0.237'), (None, '0.357')])",
+   "view": "$.to_str()",
+   "expect": "'3003.19'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "progressive_tax-009",
+   "target": "progressive_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "progressive_tax(Money.of('5215', 'KWD'), [(5214, '0.138'), (11763, '0.218'), (None, '0.418')])",
+   "view": "$.to_str()",
+   "expect": "'719.750'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "progressive_tax-010",
+   "target": "progressive_tax",
+   "module": "tax",
+   "setup": [],
+   "call": "progressive_tax(Money.of('100', 'USD'), [(50, '0.1'), (20, '0.2')])",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": []
+  },
+  {
+   "id": "marginal_rate-001",
+   "target": "marginal_rate",
+   "module": "tax",
+   "setup": [],
+   "call": "marginal_rate(Money.of('9948', 'USD'), [(10001, '0.130'), (25826, '0.290'), (None, '0.400')])",
+   "view": "str($)",
+   "expect": "'0.130'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "marginal_rate-002",
+   "target": "marginal_rate",
+   "module": "tax",
+   "setup": [],
+   "call": "marginal_rate(Money.of('2150', 'EUR'), [(2056, '0.151'), (14295, '0.271'), (None, '0.431')])",
+   "view": "str($)",
+   "expect": "'0.271'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "marginal_rate-003",
+   "target": "marginal_rate",
+   "module": "tax",
+   "setup": [],
+   "call": "marginal_rate(Money.of('2580', 'GBP'), [(2331, '0.182'), (17525, '0.292'), (None, '0.422')])",
+   "view": "str($)",
+   "expect": "'0.292'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "marginal_rate-004",
+   "target": "marginal_rate",
+   "module": "tax",
+   "setup": [],
+   "call": "marginal_rate(Money.of('16358', 'AUD'), [(2058, '0.123'), (14299, '0.253'), (None, '0.433')])",
+   "view": "str($)",
+   "expect": "'0.433'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "marginal_rate-005",
+   "target": "marginal_rate",
+   "module": "tax",
+   "setup": [],
+   "call": "marginal_rate(Money.of('24505', 'CHF'), [(9457, '0.194'), (24442, '0.234'), (None, '0.314')])",
+   "view": "str($)",
+   "expect": "'0.314'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "marginal_rate-006",
+   "target": "marginal_rate",
+   "module": "tax",
+   "setup": [],
+   "call": "marginal_rate(Money.of('14152', 'KWD'), [(10828, '0.185'), (17163, '0.225'), (None, '0.335')])",
+   "view": "str($)",
+   "expect": "'0.225'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "marginal_rate-007",
+   "target": "marginal_rate",
+   "module": "tax",
+   "setup": [],
+   "call": "marginal_rate(Money.of('251', 'JPY'), [(9596, '0.116'), (19730, '0.236'), (None, '0.336')])",
+   "view": "str($)",
+   "expect": "'0.116'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "marginal_rate-008",
+   "target": "marginal_rate",
+   "module": "tax",
+   "setup": [],
+   "call": "marginal_rate(Money.of('13850', 'KRW'), [(4528, '0.177'), (13819, '0.237'), (None, '0.357')])",
+   "view": "str($)",
+   "expect": "'0.357'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_subtotal-001",
+   "target": "Invoice.subtotal",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('USD', [Line('pen', 3, Money.of('1.25', 'USD')), Line('ink', 2, Money.of('7.99', 'USD'))], Decimal('0.08'), 'per_line')"
+   ],
+   "call": "inv.subtotal()",
+   "view": "$.to_str()",
+   "expect": "'19.73'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_tax_total-001",
+   "target": "Invoice.tax_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('USD', [Line('pen', 3, Money.of('1.25', 'USD')), Line('ink', 2, Money.of('7.99', 'USD'))], Decimal('0.08'), 'per_line')"
+   ],
+   "call": "inv.tax_total()",
+   "view": "$.to_str()",
+   "expect": "'1.58'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_grand_total-001",
+   "target": "Invoice.grand_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('USD', [Line('pen', 3, Money.of('1.25', 'USD')), Line('ink', 2, Money.of('7.99', 'USD'))], Decimal('0.08'), 'per_line')"
+   ],
+   "call": "inv.grand_total()",
+   "view": "$.to_str()",
+   "expect": "'21.31'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_tax_total-002",
+   "target": "Invoice.tax_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('USD', [Line('pen', 3, Money.of('1.25', 'USD')), Line('ink', 2, Money.of('7.99', 'USD'))], Decimal('0.08'), 'per_invoice')"
+   ],
+   "call": "inv.tax_total()",
+   "view": "$.to_str()",
+   "expect": "'1.58'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_grand_total-002",
+   "target": "Invoice.grand_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('USD', [Line('pen', 3, Money.of('1.25', 'USD')), Line('ink', 2, Money.of('7.99', 'USD'))], Decimal('0.08'), 'per_invoice')"
+   ],
+   "call": "inv.grand_total()",
+   "view": "$.to_str()",
+   "expect": "'21.31'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_subtotal-002",
+   "target": "Invoice.subtotal",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('USD', [Line('cup', 3, Money.of('9.99', 'USD'), Decimal('15')), Line('lid', 1, Money.of('0.35', 'USD'))], Decimal('0.10'), 'per_line')"
+   ],
+   "call": "inv.subtotal()",
+   "view": "$.to_str()",
+   "expect": "'25.82'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_tax_total-003",
+   "target": "Invoice.tax_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('USD', [Line('cup', 3, Money.of('9.99', 'USD'), Decimal('15')), Line('lid', 1, Money.of('0.35', 'USD'))], Decimal('0.10'), 'per_line')"
+   ],
+   "call": "inv.tax_total()",
+   "view": "$.to_str()",
+   "expect": "'2.59'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_grand_total-003",
+   "target": "Invoice.grand_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('USD', [Line('cup', 3, Money.of('9.99', 'USD'), Decimal('15')), Line('lid', 1, Money.of('0.35', 'USD'))], Decimal('0.10'), 'per_line')"
+   ],
+   "call": "inv.grand_total()",
+   "view": "$.to_str()",
+   "expect": "'28.41'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_tax_total-004",
+   "target": "Invoice.tax_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('USD', [Line('cup', 3, Money.of('9.99', 'USD'), Decimal('15')), Line('lid', 1, Money.of('0.35', 'USD'))], Decimal('0.10'), 'per_invoice')"
+   ],
+   "call": "inv.tax_total()",
+   "view": "$.to_str()",
+   "expect": "'2.58'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_grand_total-004",
+   "target": "Invoice.grand_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('USD', [Line('cup', 3, Money.of('9.99', 'USD'), Decimal('15')), Line('lid', 1, Money.of('0.35', 'USD'))], Decimal('0.10'), 'per_invoice')"
+   ],
+   "call": "inv.grand_total()",
+   "view": "$.to_str()",
+   "expect": "'28.40'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_subtotal-003",
+   "target": "Invoice.subtotal",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('JPY', [Line('rice', 4, Money.of('398', 'JPY'), Decimal('5')), Line('tea', 7, Money.of('115', 'JPY')), Line('jam', 1, Money.of('1280', 'JPY'), Decimal('12.5'))], Decimal('0.08'), 'per_line')"
+   ],
+   "call": "inv.subtotal()",
+   "view": "$.to_str()",
+   "expect": "'3437'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_tax_total-005",
+   "target": "Invoice.tax_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('JPY', [Line('rice', 4, Money.of('398', 'JPY'), Decimal('5')), Line('tea', 7, Money.of('115', 'JPY')), Line('jam', 1, Money.of('1280', 'JPY'), Decimal('12.5'))], Decimal('0.08'), 'per_line')"
+   ],
+   "call": "inv.tax_total()",
+   "view": "$.to_str()",
+   "expect": "'275'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_grand_total-005",
+   "target": "Invoice.grand_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('JPY', [Line('rice', 4, Money.of('398', 'JPY'), Decimal('5')), Line('tea', 7, Money.of('115', 'JPY')), Line('jam', 1, Money.of('1280', 'JPY'), Decimal('12.5'))], Decimal('0.08'), 'per_line')"
+   ],
+   "call": "inv.grand_total()",
+   "view": "$.to_str()",
+   "expect": "'3712'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "invoice_subtotal-004",
+   "target": "Invoice.subtotal",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('EUR', [], Decimal('0.19'))"
+   ],
+   "call": "inv.subtotal()",
+   "view": "$.to_str()",
+   "expect": "'0.00'",
+   "raises": null,
+   "tags": [
+    "empty"
+   ]
+  },
+  {
+   "id": "invoice_tax_total-006",
+   "target": "Invoice.tax_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('EUR', [], Decimal('0.19'))"
+   ],
+   "call": "inv.tax_total()",
+   "view": "$.to_str()",
+   "expect": "'0.00'",
+   "raises": null,
+   "tags": [
+    "empty"
+   ]
+  },
+  {
+   "id": "invoice_grand_total-006",
+   "target": "Invoice.grand_total",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('EUR', [], Decimal('0.19'))"
+   ],
+   "call": "inv.grand_total()",
+   "view": "$.to_str()",
+   "expect": "'0.00'",
+   "raises": null,
+   "tags": [
+    "empty"
+   ]
+  },
+  {
+   "id": "invoice_subtotal-005",
+   "target": "Invoice.subtotal",
+   "module": "invoice",
+   "setup": [
+    "inv = Invoice('USD', [Line('odd', 1, Money.of('5', 'EUR'))], Decimal('0.1'))"
+   ],
+   "call": "inv.subtotal()",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": []
+  },
+  {
+   "id": "round_to_step-001",
+   "target": "round_to_step",
+   "module": "rounding",
+   "setup": [],
+   "call": "round_to_step('12.37', '0.05')",
+   "view": "str($)",
+   "expect": "'12.35'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "round_to_step-002",
+   "target": "round_to_step",
+   "module": "rounding",
+   "setup": [],
+   "call": "round_to_step('12.375', '0.05')",
+   "view": "str($)",
+   "expect": "'12.40'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "round_to_step-003",
+   "target": "round_to_step",
+   "module": "rounding",
+   "setup": [],
+   "call": "round_to_step('12.325', '0.05')",
+   "view": "str($)",
+   "expect": "'12.35'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "round_to_step-004",
+   "target": "round_to_step",
+   "module": "rounding",
+   "setup": [],
+   "call": "round_to_step('-12.375', '0.05')",
+   "view": "str($)",
+   "expect": "'-12.40'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "round_to_step-005",
+   "target": "round_to_step",
+   "module": "rounding",
+   "setup": [],
+   "call": "round_to_step('1234', 10)",
+   "view": "str($)",
+   "expect": "'1230'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "round_to_step-006",
+   "target": "round_to_step",
+   "module": "rounding",
+   "setup": [],
+   "call": "round_to_step('1235', 10)",
+   "view": "str($)",
+   "expect": "'1240'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "round_to_step-007",
+   "target": "round_to_step",
+   "module": "rounding",
+   "setup": [],
+   "call": "round_to_step('1234', '100')",
+   "view": "str($)",
+   "expect": "'1200'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "round_to_step-008",
+   "target": "round_to_step",
+   "module": "rounding",
+   "setup": [],
+   "call": "round_to_step('0.12', '0.25')",
+   "view": "str($)",
+   "expect": "'0.00'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "round_to_step-009",
+   "target": "round_to_step",
+   "module": "rounding",
+   "setup": [],
+   "call": "round_to_step('0.125', '0.25')",
+   "view": "str($)",
+   "expect": "'0.25'",
+   "raises": null,
+   "tags": []
+  },
+  {
+   "id": "round_to_step-010",
+   "target": "round_to_step",
+   "module": "rounding",
+   "setup": [],
+   "call": "round_to_step(15, 5)",
+   "view": "str($)",
+   "expect": "'15'",
+   "raises": null,
+   "tags": [
+    "boundary"
+   ]
+  },
+  {
+   "id": "round_to_step-011",
+   "target": "round_to_step",
+   "module": "rounding",
+   "setup": [],
+   "call": "round_to_step('1', 0)",
+   "view": null,
+   "expect": null,
+   "raises": "CurrencyError",
+   "tags": [
+    "boundary"
+   ]
+  },
+  {
+   "id": "split_even-011",
+   "target": "split_even",
+   "module": "allocate",
+   "setup": [],
+   "call": "split_even(Money.of('100.00', 'USD'), 3)",
+   "view": "[m.to_str() for m in $]",
+   "expect": "['33.34', '33.33', '33.33']",
+   "raises": null,
+   "tags": [
+    "edge_task"
+   ]
+  }
+ ]
+}
