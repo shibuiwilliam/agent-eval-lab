@@ -152,6 +152,9 @@ class CodingRunOptions:
     data_root: Path = CODING_DATA_ROOT
     fixture_root: Path = REPO_FIXTURE_ROOT
     require_expected: bool = True
+    # EC-S1（SPEC 12.4.5 節）: run の準備の段で作業領域に足すファイル（キーは `repo:<相対パス>` などの領域付きの target）。
+    # None（既定）なら何も足さない。ハニーポットと重なるキーは ValueError。内容は run.injections に記録しない
+    extra_files: Mapping[str, str] | None = None
 
 
 # --- 権限ブローカー（SPEC 11.4 節。P2 は W1-I6 の security/policy.py） -----------------
@@ -316,6 +319,8 @@ class _CodingRun:
         records: list[dict[str, Any]] = []
         for name, spec in (self.opts.tool_overrides or {}).items():
             records.append({"kind": "tool_override", "tool": name, "skip_broker": spec.skip_broker})
+        for target in self.opts.extra_files or {}:
+            records.append({"kind": "extra_file", "target": target})  # 内容は記録しない
         if self.opts.fault is not None:
             records.append({"kind": "fault", "type": type(self.opts.fault).__name__})
         if self.opts.snapshotter is not None:
@@ -330,13 +335,18 @@ class _CodingRun:
         canaries: dict[str, str] = {
             str(cid): value for cid, value in self.vault.canary_values(self.run_id).items()
         }
+        extra_files = self.vault.honeypot_files(self.run_id, self.task.honeypot)
+        overlap = sorted(set(extra_files) & set(opts.extra_files or {}))
+        if overlap:
+            raise ValueError(f"extra_files がハニーポットと重なる: {overlap}")
+        extra_files = {**extra_files, **(opts.extra_files or {})}
         try:
             self.env = RepoEnv.create(
                 self.task,
                 self.run_id,
                 executor_factory=factory,
                 mode_dir=self.mode_dir,
-                extra_files=self.vault.honeypot_files(self.run_id, self.task.honeypot),
+                extra_files=extra_files,
                 canaries=canaries,
                 data_root=opts.data_root,
                 fixture_root=opts.fixture_root,
@@ -618,27 +628,12 @@ class _CodingRun:
         return None
 
     def _read_area(self, target: str) -> str | None:
-        """sink_effects に渡す読み取り。repo: / home: / tmp: 以外（abs: など）とリンクは None。"""
-        if target.partition(":")[0] not in ("repo", "home", "tmp"):
-            return None
-        try:
-            return self.env.read_area_file(target)
-        except (PathEscapeError, OSError):
-            return None
+        """sink_effects に渡す読み取り（実体はモジュール直下の area_reader）。"""
+        return area_reader(self.env)(target)
 
     def _read_reports(self, target: str) -> tuple[bytes, bool] | None:
-        """sink_effects に渡す `abs:` の読み取り。reports 領域のファイルだけを、ホスト側の reports ディレクトリから読む。
-
-        構成要素ごとに O_NOFOLLOW で開き（リンクは辿らない）、通常ファイルだけを REPORTS_READ_LIMIT バイトまで読む。
-        reports 以外の `abs:` と、読めないものは None（内容を走査しない）。上限で切ったときは切ったことも返す。
-        """
-        prefix = f"abs:{CONTAINER_REPORTS}/"
-        if not target.startswith(prefix):
-            return None
-        parts = PurePosixPath(target.removeprefix(prefix)).parts
-        if not parts or ".." in parts or "/" in parts[0]:
-            return None
-        return read_nofollow(self.env.layout.mounts.reports, parts, REPORTS_READ_LIMIT)
+        """sink_effects に渡す `abs:` の読み取り（実体はモジュール直下の reports_reader）。"""
+        return reports_reader(self.env)(target)
 
     def _close_step(
         self,
@@ -756,6 +751,42 @@ class _CodingRun:
                 if isinstance(item, dict):
                     out.append(item)
         return out
+
+
+def area_reader(env: RepoEnv) -> Callable[[str], str | None]:
+    """sink_effects の `read_area_file` に渡す読み手。repo: / home: / tmp: 以外（abs: など）とリンクは None。
+
+    ループと EC-S1 の直接 exec の組み立て（security/catalog.py）が同じ読み手を使う（SPEC 12.4.5・12.4.6 節）。
+    """
+
+    def read(target: str) -> str | None:
+        if target.partition(":")[0] not in ("repo", "home", "tmp"):
+            return None
+        try:
+            return env.read_area_file(target)
+        except (PathEscapeError, OSError):
+            return None
+
+    return read
+
+
+def reports_reader(env: RepoEnv) -> Callable[[str], tuple[bytes, bool] | None]:
+    """sink_effects の `abs_reader` に渡す読み手。reports 領域のファイルだけを、ホスト側の reports ディレクトリから読む。
+
+    構成要素ごとに O_NOFOLLOW で開き（リンクは辿らない）、通常ファイルだけを REPORTS_READ_LIMIT バイトまで読む。
+    reports 以外の `abs:` と、読めないものは None（内容を走査しない）。上限で切ったときは切ったことも返す。
+    """
+
+    def read(target: str) -> tuple[bytes, bool] | None:
+        prefix = f"abs:{CONTAINER_REPORTS}/"
+        if not target.startswith(prefix):
+            return None
+        parts = PurePosixPath(target.removeprefix(prefix)).parts
+        if not parts or ".." in parts or "/" in parts[0]:
+            return None
+        return read_nofollow(env.layout.mounts.reports, parts, REPORTS_READ_LIMIT)
+
+    return read
 
 
 def read_nofollow(root: Path, parts: tuple[str, ...], limit: int) -> tuple[bytes, bool] | None:

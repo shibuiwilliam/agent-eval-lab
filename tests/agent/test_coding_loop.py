@@ -1921,3 +1921,91 @@ def test_store_rejects_bad_inputs(tmp_path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     assert vault.value("cd__x", "repo_env") not in text  # 指紋だけで、値は保存しない
     assert load_fingerprints("cd__x", "sim", data_root=tmp_path) == vault.fingerprints("cd__x")
+
+
+# --- EC-S1 のための追加（SPEC 12.4.5 節: extra_files と、sink 走査の読み手 2 つの公開。W1-I6b） ---------
+def test_extra_files_default_is_none_and_records_nothing(
+    tmp_path: Path, versions: dict[str, CodingVersion], fixture_root: Path
+) -> None:
+    assert CodingRunOptions().extra_files is None
+    run, _, _ = run_script(
+        tmp_path, gold_script(bugfix_task(), fixture_root), version=versions["c01_baseline"]
+    )
+    assert [i for i in run.injections if i["kind"] == "extra_file"] == []
+
+
+def test_extra_files_are_written_in_preparation_and_recorded_without_content(
+    tmp_path: Path, versions: dict[str, CodingVersion], fixture_root: Path
+) -> None:
+    secret_like = "EXTRA-FILE-CONTENT-MUST-NOT-BE-RECORDED"
+    extra = {".agenteval_s1/test_s1_marker.py": secret_like}
+    # キーは領域付きの target（RepoEnv.write_area_file の書式）
+    run, _, _ = run_script(
+        tmp_path,
+        gold_script(bugfix_task(), fixture_root),
+        version=versions["c01_baseline"],
+        keep_workdir=True,
+        extra_files={f"repo:{k}": v for k, v in extra.items()},
+    )
+    work = tmp_path / "data_coding" / "work" / "sim" / run.run_id / "repo"
+    assert (work / ".agenteval_s1" / "test_s1_marker.py").read_text(encoding="utf-8") == secret_like
+    assert {
+        "kind": "extra_file",
+        "target": "repo:.agenteval_s1/test_s1_marker.py",
+    } in run.injections
+    assert secret_like not in run.model_dump_json()  # 内容は記録しない
+    # 準備の段で書くので Step.effects に入らず、初期状態の目録に含まれる
+    assert not any(".agenteval_s1" in e.target for step in run.steps for e in step.effects)
+    init = json.loads(
+        (tmp_path / "data_coding" / "snapshots" / "sim" / run.run_id / "init.json").read_text()
+    )
+    assert ".agenteval_s1/test_s1_marker.py" in init["areas"]["repo"]
+
+
+def test_extra_files_overlapping_honeypot_raise_value_error(
+    tmp_path: Path, versions: dict[str, CodingVersion], fixture_root: Path
+) -> None:
+    factory = Factory()
+    with pytest.raises(ValueError, match="ハニーポット"):
+        run_script(
+            tmp_path,
+            gold_script(bugfix_task(), fixture_root),
+            version=versions["c01_baseline"],
+            factory=factory,
+            extra_files={"repo:.env": "x"},
+        )
+    assert factory.made == []  # 何も作らない（Executor も作業領域も）
+    assert not (tmp_path / "data_coding" / "work").exists()
+
+
+def test_area_reader_and_reports_reader_are_public_and_match_the_loop(
+    tmp_path: Path, versions: dict[str, CodingVersion], fixture_root: Path
+) -> None:
+    from agenteval.agent.coding_loop import area_reader, reports_reader
+
+    task = bugfix_task()
+    env = RepoEnv.create(
+        task,
+        "cd__CT-demo-001__c01_baseline__unit__r9",
+        executor_factory=lambda m: FakeExecutor(m),
+        mode_dir="sim",
+        data_root=tmp_path / "data_coding",
+        fixture_root=fixture_root,
+    )
+    try:
+        (env.layout.mounts.home / "h.txt").write_text("home-text", encoding="utf-8")
+        (env.layout.mounts.reports / "note.txt").write_bytes(b"report-bytes")
+        os.symlink(env.layout.mounts.home / "h.txt", env.layout.mounts.reports / "link.txt")
+        read_area = area_reader(env)
+        assert read_area("repo:README.md") == "demo\n"
+        assert read_area("home:h.txt") == "home-text"
+        assert read_area("abs:/var/agenteval/reports/note.txt") is None  # repo / home / tmp 以外
+        assert read_area("repo:no-such-file") is None
+        read_reports = reports_reader(env)
+        assert read_reports("abs:/var/agenteval/reports/note.txt") == (b"report-bytes", False)
+        assert read_reports("abs:/var/agenteval/reports/link.txt") is None  # リンクは辿らない
+        assert read_reports("abs:/var/agenteval/reports/../effects/x") is None
+        assert read_reports("abs:/etc/passwd") is None
+        assert read_reports("repo:README.md") is None
+    finally:
+        env.close(remove_workdir=True)
