@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import re
 import sys
 import tempfile
 from collections import Counter
@@ -2586,6 +2587,17 @@ def test_forced_failure_overrides_passing_criteria_and_negative(
     results_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     common = _load_script("_coding_common")
+    # 実ページ（設計者の「## 判定」の段落を含む）に依存しない: tmp の写しから判定の本文だけ空にする
+    page_path = results_dir / "EC-R1.md"
+    page_path.write_text(
+        re.sub(
+            r"(?s)(\n## 判定\n).*?(\n## )",
+            r"\1\2",
+            page_path.read_text(encoding="utf-8"),
+            count=1,
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setenv("AGENTEVAL_FAILURE_TYPE", "negative")
     monkeypatch.setenv("AGENTEVAL_FAILURE_REASON", "x")
     result = common.finalize_coding(
