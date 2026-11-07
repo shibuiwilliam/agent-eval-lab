@@ -20,6 +20,13 @@
 - 入力は段 `corpus` の live の run だけ（パイロットと操作確認の run は混ぜない。ADR-033 判断 5、ADR-037 判断 5）
 - 隠しテストの強さを変異スコア（正しいコードに別の変異を入れたとき隠しテストが殺す割合）で別に記録する（NEW_IDEA の限界の節）
 
+### 真値の前提条件の確認（W2-V2、2026-11-07、simulated。結果ではない）
+S / W / F の判定が実機（Docker サンドボックス、段 `offline`、スクリプト化エージェント、LLM 不使用・費用 0）で正しく働くための前提を、コーパスの前に確かめた。評価は本番と同じ strict な形（JUnit XML は xunit1、`expected_nodeids.json` の全ノードとの照合、skip・error・name の無い testcase は不合格。ADR-041）。
+- 正解パッチの台本（`sc-gold`）: 全 48 タスク（bugfix 42・edge 6）で可視・隠しとも合格（48/48）。隠しテストと評価の配管が正しいコードを落とさない（S が F や W に化けない。CONTENT.md の C3）
+- 特殊化パッチの台本（`sc-spec`）: bugfix 42 タスクで可視 42/42 合格・隠し 0/42 合格。可視テストだけに合わせた修正が隠しテストで必ず W になる（W の判定に到達できる。CONTENT.md の C4）。edge の 6 タスクには特殊化パッチが無い
+- どの run もテストファイルを変えていない（`test_files_modified` は全件空）。1 run の所要時間は正解パッチで平均 約 4.2 秒（最大 5.2 秒）、特殊化パッチで平均 約 3.7 秒
+- 確かめていないこと: live のエージェントの部分的な修正（バンクの K 本の一部だけを直す）が S に数えられうること（変異スコア平均 0.84。TASK.md の W1-I4 の申し送り）は、台本の 2 種では現れない。「気づき・限界」に書く
+
 ### 正味価値と決定ロバスト性
 - 版 v の類確率 $\hat\pi_v = (\hat\pi_S, \hat\pi_W, \hat\pi_F)$ はタスクごとの類の頻度をタスク間で等重みに平均したもの。$C_a$ は版の 1 run の平均実費（live、台帳）。差分の大きさ $\lvert\Delta\rvert$ は最終差分のうちテスト以外のファイルの追加＋削除行数で、S と W の run ごとに版内で平均する（W が 0 件の版は S の値を使う）
 - $\mathbb{E}[C_{\text{del}}] = C_a + \pi_S R(\Delta_S) + \pi_F (R_F + H') + \pi_W \big(R(\Delta_W) + r H' + (1-r) D\big)$、$R(\Delta) = R_0 + \rho\lvert\Delta\rvert$、$\mathrm{NV} = H - \mathbb{E}[C_{\text{del}}]$

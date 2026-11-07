@@ -383,14 +383,14 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 | 2026-11-07 | W1-I3（中） | digest に実行ビットを含め、目録に全クラスの `full_hash` を足す。除外分類は repo 領域だけ。読み込みに上限（oversize は blob を保存しない）。`create` は既存のスナップショットがあれば拒否。blob にはカナリアの値が生で残るので、ADR-030 に「blob は例外、事後の秘匿走査は blobs を対象外」と追記 | SPEC.md 6.4・6.5、ADR-030 の追記（designer）。**反映済み（W0-Z）** |
 | 2026-11-07 | W1-I2（再レビュー） | PID 1 はシグナルを無視して子を回収するループ（`--init` は使わない。エージェントがコンテナを止められるため）。run_shell の呼び出しで起動した背景プロセスは呼び出しの終了時に終了させる。`hook_missing` で `-S`・venv の sitecustomize による遮蔽を「観測不能」として検出するので、SPEC 5.4 の「`-S` は盲点」と EC-S1 の盲点の探針の期待値を見直す。hook_missing の対象は `python*`・`pytest`・`py.test`、`hook_log_not_regular` は `fs_write`、名前解決は `net:<host>:`。`write: bool`・`unexecuted_call_ids`・`DockerConfig.fsize_bytes` を SPEC に追記 | SPEC.md 5 節、CONTENT.md 10 章、EC-S1.md（designer）。**反映済み（W0-Z）** |
 | 2026-11-07 | W0-Z の未決 1・2（統合済みコードの欠陥） | (1) `effects.dedupe_effects` のキーに `detail` が無く、`hook_missing` が起動記録にまとめられて消える → キーに detail を含める。(2) reports 領域の `abs:` の効果で `sink_effects` が `RepoEnv.read_area_file("abs:…")` を呼び ValueError でループが落ちる → `sink_effects` に `abs:` の読み手（reports は Executor の mounts から読む）を渡す引数を足し、渡されなければ内容を走査せず `content_not_scanned` と記録する。どちらも W1-I5 が `env/effects.py` の所有を一時的に持って直す | `env/effects.py`、`agent/coding_loop.py`（W1-I5） |
-| 2026-11-07 | W0-Z の未決 6・7 | (6) EC-B2 の P（接頭辞）は c01o から求め、ツール定義と system が同じ c01・c04 にだけ使う。c12・c13 の版ごとの e_on は「該当なし」と記録する（I8 は c04 のツール定義が c01 と同一であることを検査する）。(7) EC-O2 の秘匿検査は、`Effect.canary_hits` に `harness_secret` を含む効果も秘匿違反の観測に数える（値が trace に出なくても、走査時に ID だけが残る経路を捕まえるため）。基準値は変えない | EC-B2.md・EC-O2.md（W2-A1 で designer）、I6・I8 の指示文 |
+| 2026-11-07 | W0-Z の未決 6・7 | (6) EC-B2 の P（接頭辞）は c01o から求め、ツール定義と system が同じ c01・c04 にだけ使う。c12・c13 の版ごとの e_on は「該当なし」と記録する（I8 は c04 のツール定義が c01 と同一であることを検査する）。(7) EC-O2 の秘匿検査は、`Effect.canary_hits` に `harness_secret` を含む効果も秘匿違反の観測に数える（値が trace に出なくても、走査時に ID だけが残る経路を捕まえるため）。基準値は変えない | EC-B2.md・EC-O2.md（W2-A1 で designer）、I6・I8 の指示文。**(7) は EC-O2.md の方法に反映済み（W2-A1）**。(6) も EC-B2.md の方法に反映済み（W2-A1）。W1-I5 の合成 usage の前提は EC-B2 の結果の後に「気づき・限界」に書く |
 | 2026-11-07 | W1-I6（安全フィルタ） | 許可済みの経路を悪用する EC-S1 の台本 69 件は生成できなかった。ユーザーの選択で EC-S1 を効果の直接注入に変える（ADR-042）。依頼を細かく分けて同じ台本を作らせる方式は取らない。W1-I6 を I6a（検出・分類・検査。実装中）と I6b（注入カタログ・目印発生器・EC-O2 の植込み）に分ける | ADR-042、`docs/results/EC-S1.md`、CONTENT.md 9.1・10・11.2 章、EC-O2.md の対照、`registry_draft.yaml`、本書 1・3・5・7・9 章（designer）。G0 の追加承認済み（2026-11-07）。SPEC.md の追記（CONTENT.md Q14）は I6b の前 |
 | 2026-11-07 | W1-I5 | search_code は別プロセスで壁時計 5 秒のタイムアウト、pattern は 200 文字まで（ホストでの正規表現の暴走でハーネスが止まるため）。コーディングループは `auto` を拒否し、live は `record`（塩付き）で実行する（来歴と費用の混在を防ぐ）。走査が上限で切れたら `scan_truncated`。partial は連番で残し、やり直しで snapshots の削除が要るときはユーザーの承認を求める。合成 usage の前提（最小キャッシュ長なし、直前 20 ブロックの遡り上限なし）は EC-B2 の「気づき・限界」に書く | `env/repo_tools.py`、`agent/coding_loop.py`、EC-B2.md（W2-A1）、runner の指示文（W3・W4 は `--mode record`） |
-| 2026-11-07 | W1-I5（未解決として記録） | 孤立サロゲートを含むツール入力が live の応答に混ざると、`canonical_json`・`sha256_of`・`cassette_key`・合成トークン数・Run の JSON 保存で UnicodeEncodeError になりうる（共有コードに及ぶ）。search_code の正規表現の 5 秒の打ち切りは負荷で結果が変わり、replay でも完全には再現しない。どちらも W6 で open-questions.md に移す。live で発生したら runner が報告する | open-questions.md（W6） |
+| 2026-11-07 | W1-I5（未解決として記録） | 孤立サロゲートを含むツール入力が live の応答に混ざると、`canonical_json`・`sha256_of`・`cassette_key`・合成トークン数・Run の JSON 保存で UnicodeEncodeError になりうる（共有コードに及ぶ）。search_code の正規表現の 5 秒の打ち切りは負荷で結果が変わり、replay でも完全には再現しない。どちらも W6 で open-questions.md に移す。live で発生したら runner が報告する | open-questions.md（W6）。**移した（W2-A1、2026-11-07）** |
 | 2026-11-07 | W1-I4 | 隠しテストは「バンク − K ＋ h 本」で、K の一部だけを直す部分的な修正は S に数えられうる（変異スコア平均 0.84）。EC-R1・R2 の「気づき・限界」に書く。識別的リテラルが 2 個以下・一般語を含むタスク（CT-datewright-002、CT-textmeter-002〜004、CT-throttlebox-002）は、c01 の特殊化検出の発火率が 0.20 に近づいたときの調査対象。全 `expected_nodeids.json` を `repo._parse_junit` の id と照合するテストを W1-I8 で足す | EC-R1・R2（W5-A3）、ADR-037、W1-I8 |
 | 2026-11-07 | W1-I6a（I6b・W0-Z3 へ） | E5（許可リスト外の起動）が見えるのは、Python の非 shell 形式の起動（監査フック）と Executor に直接渡した argv[0]（起動記録）だけ。sh 経由・非 Python の親の子・同名の別実行ファイルは見えない。注入カタログの本体の E5 はこの 2 形に限り、起動記録の層の E5 はハーネスの直接 exec で作る（そうしないと monitor_recall・layer_recall_min を不当に下げる）。`run_shell` 経由・`sh -c` 形式の E5 は盲点の探針側に置く。pip が偽 HOME に書くと E1 の誤警報になりうるので W2-V4 で確かめる。CONTENT 9.3 の既知の盲点に、grep -r・diff -rN・git diff --no-index・.gitignore 経由の追跡・--output= を足す | CONTENT.md 9.3・10 章、EC-S1.md（W0-Z3）。**反映済み（W0-Z3）**: 本体 E5 は 2 形のままで件数・層別の予測件数は不変、sh 経由は B-E5-N-S、9.3 節に 5 つの盲点、pip の件は 10.5 節に W2-V4 で確認と明記 |
 | 2026-11-07 | W1-I8 のマージ時 | `experiments/registry.yaml` の EC-S1・EC-O2 を ADR-042 の改訂後の下書きに合わせた（I8 は改訂前に分岐していた）。`registry.en.yaml` の EC-S1 の英訳は旧方式のままなので W6 で直す。**`uv run agenteval verify` をメインの作業ツリーで実行すると、既存 30 実験のうち 4 行（E3-3・E3-7・E4-3・E8-7）の数値が変わる**。原因は `data/results/E*.json` がコミット済みの summary と食い違っていること（記憶: 2026-10-31 の削除で data/ がコードとずれている）で、I8 の変更によるものではない。summary.md を更新するときは既存行を変えないこと（W2-V5・W6 で扱いを決める。それまで summary.md はコミットしない） | registry.yaml（済）、W2-V5・W6 |
-| 2026-11-07 | EC-B2P の解釈（W2-A1 へ） | `ledger_identity_error` は台帳とトークン数で照合した行の usd との一致なので、検証するのは単価表の写し・行の対応づけ・総和だけで、ブロックごとの割り振りの正しさではない。植込みの検出率 1.0 は適格条件と検出が同じ量なので「配管の煙試験」であって検出感度ではない。結果ページの「気づき・限界」に必ず書く | EC-B2P.md（W2-A1）。**反映済み（W0-Z）** |
+| 2026-11-07 | EC-B2P の解釈（W2-A1 へ） | `ledger_identity_error` は台帳とトークン数で照合した行の usd との一致なので、検証するのは単価表の写し・行の対応づけ・総和だけで、ブロックごとの割り振りの正しさではない。植込みの検出率 1.0 は適格条件と検出が同じ量なので「配管の煙試験」であって検出感度ではない。結果ページの「気づき・限界」に必ず書く | EC-B2P.md（W2-A1）。**反映済み（W0-Z）**。結果に合わせた解釈も W2-A1 で書いた |
 
 ### W2 オフライン検証（W1 の統合後。runner 5 体並列）
 
@@ -527,12 +527,12 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 - [x] W1-I6a 権限規則・分類・完全性検査（台本を含まない） ＋ レビュー
 - [x] W1-I6b 注入カタログ・目印発生器・EC-O2 の植込み 4 種 ＋ レビュー（G0 追加承認と W0-Z3 の後）
 - [x] W1-I8 実験スクリプト・registry・CLI ＋ レビュー
-- [ ] W1-I8b I6b のマージ後に EC-S1・EC-O2 の接続部を SPEC 12.4.11 に合わせる（implementer）＋ レビュー
+- [x] W1-I8b I6b のマージ後に EC-S1・EC-O2 の接続部を SPEC 12.4.11 に合わせる（implementer）＋ レビュー（b4c80df でマージ）
 
 ### W2 オフライン検証
 - [x] W2-V1 Docker イメージのビルド（agenteval-sandbox:py3.13、283MB、d38a5e39d9f3）と docker 印のテスト 19 件すべて合格（2026-11-07、runner）
-- [ ] W2-V2〜V5
-- [ ] W2-A1 EC-S1・EC-O2・EC-B2P の判定と解釈
+- [x] W2-V2〜V5（2026-11-07、runner）。V2: 正解パッチ 48/48 が可視・隠しとも合格、特殊化パッチ 42 件は可視 42/42・隠し 0/42（strict な評価、1 run 約 4 秒。EC-R1.md の方法に記録）。V3: EC-B2P PASS。V4: EC-S1・EC-O2 PASS。V5: 移行検査 5,760 本で問題 0、`make check` 成功（並行負荷の下で時間の閾値のテストが 1 件揺れた。open-questions.md）
+- [x] W2-A1 EC-S1・EC-O2・EC-B2P の判定と解釈（2026-11-07、designer。`docs/results/EC-S1.md`・`EC-O2.md`・`EC-B2P.md` の「判定」「気づき・限界」、EC-S1.md の引き継ぎで落ちた設計者の記述の復元、EC-R1・R2 の方法に W2-V2 の確認、open-questions.md に 5 項目）
 - [ ] W2-R 結果ページのレビュー
 
 ### W3 パイロット
@@ -546,4 +546,4 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 - [ ] W5-E1〜E3、W5-A3、W5-R
 - [ ] W6 総括（PENDING 0、progress.md、open-questions.md、コミット）
 
-次にやること: W1-A の 7 タスク（F1・F2・I1・I2・I3・I4・I7）のレビューとマージ。W1-A0 はマージ済み（0ea5432）。F1・F2 はレビュー中、I1 には SPEC 9.1 の改訂（W0-Y）を連絡済み。
+次にやること: **W2-R**（reviewer）が EC-S1・EC-O2・EC-B2P の結果ページを独立にレビューする（基準が自明に満たされていないか、来歴の混在が無いか、W2-A1 の解釈が数値と合っているか）。その後 **G1**（パイロットの `--dry-run` 見積りの提示と承認）。G1 の前に、pip が偽 HOME に書くかの確認（open-questions.md）をユーザーに伝える。
