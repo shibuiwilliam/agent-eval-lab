@@ -107,7 +107,7 @@ data/coding/
 | リポジトリ名 | `^[a-z0-9]+$` | `tillcalc`、`throttlebox`（6 個の名前は CONTENT.md 2 章） |
 | タスク ID | `^CT-[a-z0-9]+-[a-z0-9]+$`（`CT-<repo>-<連番または種別>`） | `CT-tillcalc-003`、`CT-tillcalc-e01` |
 | 版 ID | `^c[0-9]{2}[a-z]?_[a-z0-9]+(_[a-z0-9]+)*$` | `c01_baseline`、`c01o_no_history_cache` |
-| 段（stage） | `^[a-z0-9]+$` | `unit`、`offline`、`pilot`、`opcheck`、`corpus` |
+| 段（stage） | `^[a-z0-9]+$` | `unit`、`offline`、`pilot`、`opcheck`、`opcheck2`、`corpus` |
 | 台本 ID | `^sc-[a-z0-9]+(-[a-z0-9]+)*$` | `sc-gold`、`sc-spec`、`sc-s1-f1-e1`（試み）、`sc-t1-f1-e1`（双子）、`sc-b1-f2-e2`（盲点の探針） |
 
 いずれも `__`（下線 2 つ）を含まない。run_id の区切りに使うためである。
@@ -128,9 +128,12 @@ data/coding/
   | `unit` | テストが決める | pytest の中だけ（`tmp_path` に書く。`data/` には残らない） |
   | `offline` | 20261100 | W2 のスクリプト化 run（W2-V2 の正解・特殊化パッチ、EC-S1、EC-O2、EC-B2 の対照 (a)） |
   | `pilot` | 20261101 | W3 のパイロット（c01 × 48 タスク × 2） |
-  | `opcheck` | 20261102 | W3-P5 の c13 操作確認（立て直した版も同じ段。版 ID が変わるので run_id は衝突しない） |
+  | `opcheck` | 20261102 | W3-P5 の c13 操作確認の 1 回目（初版のプロンプト。記録として残す） |
+  | `opcheck2` | 20261104 | c13 の立て直し 1 回目の操作確認（W3-A2、2026-11-07。下の注記） |
+  | `opcheck3` | 20261105 | c13 の立て直し 2 回目の操作確認（必要になったときだけ `coding/corpus.yaml` に足す） |
   | `corpus` | 20261103 | W4 のコーパス |
 
+- **改訂（W3-A2、2026-11-07）: c13 の立て直しは同じ版 ID のまま行い、段を分ける。** 旧版の表は「立て直した版は別の版 ID」と書いていたが、ADR-037 判断 4（「プロンプトを立て直し（版ハッシュが変わる）」）、EC-R1・EC-R2 の実験スクリプト・registry・コーパス計画がすべて `c13_minimal_fix` を植込み版として参照していることに合わせ、`coding/prompts/c13_minimal_fix.md` を書き換えて版ハッシュだけを変える（旧版は git と、1 回目の操作確認の trace の `version_hash` に残る）。run_id が 1 回目と衝突しない（コーパス計画の実行器は既存の trace がある run を完了済みとして飛ばす）よう、やり直しごとに段 `opcheck<N>`（N = 2, 3）を足す。段 `opcheck<N>` は `opcheck` と同じ扱いにする: 走らせるのに承認済みのゲート G1 が要り、集計 `coding report` は `--only spec` だけを許す（`reports/coding_corpus.py` の `STAGE_GATES`・`required_gate` と `cli.py` の `coding report` の段の検査。W3-A2 で implementer に依頼）。ゲートの対応表に無い live の段は承認なしで走ってしまうので、`required_gate` は `^opcheck[0-9]*$` を G1 に対応させる
 - 生成は `core/coding_registry.py` の `coding_run_id()`（I5）。分解は `parse_coding_run_id()`（同）。どちらも 11.1 節
 - カセットの塩は `coding_cassette_salt(task_id, version_id, seed, repeat)` = `f"cd:{task_id}:{version_id}:s{seed}:r{repeat}"`（ADR-038 判断 3）。
   塩は**常に**付ける（r0 も）。塩は API に送らない。`version_id` を含めるのは、ハーネスだけが違い 1 ステップ目のリクエストが同一になる版どうしで記録が上書きし合わないため、
@@ -1980,6 +1983,7 @@ def require_isolated(executor: Executor) -> None:
     offline: {seed: 20261100, mode: sim}       # スクリプト化 run（W2）。中身は各実験スクリプトが決める
     pilot:   {seed: 20261101, mode: live, runs: [{version: c01_baseline, tasks: pilot, repeats: 2}]}
     opcheck: {seed: 20261102, mode: live, runs: [{version: c13_minimal_fix, tasks: sub10, repeats: 1}]}
+    opcheck2: {seed: 20261104, mode: live, runs: [{version: c13_minimal_fix, tasks: sub10, repeats: 1}]}   # W3-A2: 立て直し 1 回目（2.4 節）
     corpus:  {seed: 20261103, mode: live, runs: [
                {version: c01_baseline, tasks: core24, repeats: 6},
                {version: c13_minimal_fix, tasks: core24, repeats: 6},
@@ -1987,10 +1991,10 @@ def require_isolated(executor: Executor) -> None:
                {version: c04_verbose_ctx, tasks: sub10, repeats: 1},
                {version: c01o_no_history_cache, tasks: sub10, repeats: 1}]}   # G0 項目 13 で c01h から入れ替え
   ```
-  run 数: pilot 96、opcheck 10、corpus 356（TASK.md 6.2 節）
+  run 数: pilot 96、opcheck 10、opcheck2 10、corpus 356（TASK.md 6.2 節）
 - CLI（I8）: `coding run`、`coding corpus --plan coding/corpus.yaml --stage <段> [--dry-run|--live] [--shard i/4]`、`exp <id> [--dry-run]`。
   W3-P5 と W3-A2 のための集計 `coding report --stage pilot`（合格率・σ_d の材料・1 run の実費・finish 未呼び出し率・タイムアウト率・`spec_literal` 発火率・2 ステップ目以降で履歴部分の `cache_read` が 0 の run の数。EC-B2 H3 の残差は出さない）と
-  `coding report --stage opcheck --only spec`（**特殊化検出の発火数・発火率だけ**を出し、合格率や W 率を出さない。ADR-037 判断 2）
+  `coding report --stage opcheck --only spec`（`opcheck<N>` も同じ。**特殊化検出の発火数・発火率だけ**を出し、合格率や W 率を出さない。ADR-037 判断 2）
 
 ### 12.4 EC-S1 の注入カタログ・目印発生器・EC-O2 の植込み（W1-I6b。ADR-042。W0-Z3 で追記）
 

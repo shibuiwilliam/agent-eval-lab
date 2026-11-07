@@ -16,7 +16,7 @@ from collections import Counter
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -122,6 +122,7 @@ def test_chapter_c_rows_are_pending_without_results_and_have_a_footnote(tmp_path
                 "title": entry.get("title", ""),
                 "verdict": judged["verdict"],
                 "detail": judged["detail"],
+                "provisional": verify.is_provisional(entry),  # verify_all の行と同じ形
                 "provenance": entry.get("provenance", ""),
                 "usd": 0.0,
                 "key_metrics": judged["criteria"],
@@ -132,8 +133,15 @@ def test_chapter_c_rows_are_pending_without_results_and_have_a_footnote(tmp_path
     ja = verify.write_summary(rows, tmp_path / "summary.md").read_text(encoding="utf-8")
     en = verify.write_summary_en(rows, tmp_path / "summary.en.md").read_text(encoding="utf-8")
     assert "| [EC-S1](EC-S1.md) | C |" in ja
-    assert "章 C = コーディングエージェント" in ja and "EC-B2、EC-R1、EC-R2" in ja
-    assert "Chapter C = coding agent" in en
+    assert (
+        "章 C = コーディングエージェント" in ja
+        and "暫定の基準を持つ実験（G2 で確定する。ADR-033）: EC-B2。" in ja
+    )
+    assert "EC-R1、" not in ja and "EC-R2。" not in ja  # R1・R2 は確定（W3-A2）
+    assert (
+        "Chapter C = coding agent" in en
+        and "provisional criterion (fixed at G2; ADR-033): EC-B2." in en
+    )
     # 章 C が無い表には注記を足さない（既存の行・体裁を変えない）
     only_old = [r for r in rows if str(r["chapter"]) != "C"]
     assert verify._chapter_c_footnote(only_old, "ja") == []
@@ -173,9 +181,14 @@ def test_corpus_plan_counts_and_seeds() -> None:
         "pilot": 20261101,
         "opcheck": 20261102,
         "corpus": 20261103,
+        "opcheck2": 20261104,  # W3-A2: c13 の立て直し 1 回目（SPEC.md 2.3・2.4 節）
     }
     assert len(cc.plan_units(plan, "pilot")) == 96
     assert len(cc.plan_units(plan, "opcheck")) == 10
+    assert len(cc.plan_units(plan, "opcheck2")) == 10
+    # 立て直しは同じ版 ID のまま段で分ける: 1 回目と run_id が衝突しない
+    first = {u.run_id for u in cc.plan_units(plan, "opcheck")}
+    assert first.isdisjoint(u.run_id for u in cc.plan_units(plan, "opcheck2"))
     corpus = cc.plan_units(plan, "corpus")
     assert len(corpus) == 356
     assert len({u.run_id for u in corpus}) == 356
@@ -281,7 +294,7 @@ def test_run_stage_skips_done_stops_on_budget_and_reports_blocked(
     from agenteval.llm.cost import BudgetExceeded
 
     plan = cc.load_plan()
-    units = cc.plan_units(plan, "opcheck")
+    units = cc.plan_units(plan, "pilot")
     save_coding_run(
         _fake_run(units[0].run_id, units[0].task_id, units[0].version_id, 0),
         None,
@@ -298,7 +311,7 @@ def test_run_stage_skips_done_stops_on_budget_and_reports_blocked(
     def fake_run(task: Any, version: Any, opts: Any) -> tuple[Run, CodingOutcome]:
         run_id = coding_registry.coding_run_id(task.id, version.id, opts.stage, opts.repeat)
         calls.append(run_id)
-        assert opts.mode == "record" and opts.seed == 20261102  # 段の seed（塩付き record）
+        assert opts.mode == "record" and opts.seed == 20261101  # 段の seed（塩付き record）
         if len(calls) == 3:
             raise BudgetExceeded("予算停止（テスト）")
         run = _fake_run(run_id, task.id, version.id, opts.repeat, cost=Cost(usd=0.05))
@@ -306,7 +319,7 @@ def test_run_stage_skips_done_stops_on_budget_and_reports_blocked(
         return run, None  # type: ignore[return-value]
 
     monkeypatch.setattr(coding_loop, "run_coding_task", fake_run)
-    summary = cc.run_stage(plan, "opcheck", data_root=tmp_path, guard=object())  # type: ignore[arg-type]
+    summary = cc.run_stage(plan, "pilot", data_root=tmp_path, guard=object())  # type: ignore[arg-type]
     assert summary["skipped_done"] == 1 and summary["blocked_partial"] == [units[1].run_id]
     assert summary["ran"] == 2 and summary["usd"] == pytest.approx(0.10)
     assert "BudgetExceeded" in summary["stopped"]
@@ -453,20 +466,24 @@ def _outcome_run(
 
 def test_stage_report_pilot_vs_only_spec(tmp_path: Path) -> None:
     plan = cc.load_plan()
-    units = cc.plan_units(plan, "opcheck")
+    # opcheck 系は only_spec なしの集計を拒否するので、全集計は同じ計画を持つ opcheck 以外の段（pilotx）で確かめる
+    plan = {**plan, "stages": {**plan["stages"], "pilotx": plan["stages"]["opcheck"]}}
     classes = ["S", "W", "F", "S", "W", "W", "S", "F", "S", "W"]
-    for unit, cls in zip(units, classes, strict=True):
-        save_coding_run(
-            _outcome_run(unit.run_id, unit.task_id, unit.version_id, unit.repeat, cls),
-            None,
-            data_root=tmp_path,
-        )
+    for stage in ("opcheck", "pilotx"):
+        for unit, cls in zip(cc.plan_units(plan, stage), classes, strict=True):
+            save_coding_run(
+                _outcome_run(unit.run_id, unit.task_id, unit.version_id, unit.repeat, cls),
+                None,
+                data_root=tmp_path,
+            )
     only = cc.stage_report(plan, "opcheck", only_spec=True, data_root=tmp_path)
     block = only["versions"]["c13_minimal_fix"]
     assert set(block) == {"n_runs", "spec"}  # 合格率・W 率・費用は出さない（ADR-037）
     assert block["spec"]["n_bugfix_runs"] == 10 and "spec_literal_rate" in block["spec"]
     assert "pi_W" not in json.dumps(only) and "usd_per_run_mean" not in json.dumps(only)
-    full = cc.stage_report(plan, "opcheck", data_root=tmp_path)
+    with pytest.raises(cc.PlanError, match="ADR-037"):  # CLI だけを関門にしない
+        cc.stage_report(plan, "opcheck", data_root=tmp_path)
+    full = cc.stage_report(plan, "pilotx", data_root=tmp_path)
     v = full["versions"]["c13_minimal_fix"]
     assert v["bugfix"]["S"] == 4 and v["bugfix"]["W"] == 4 and v["bugfix"]["F"] == 2
     assert v["finish_not_called_rate"] == 0.2 and v["timeout_run_rate"] == 0.2
@@ -2003,20 +2020,290 @@ def test_all_expected_nodeids_match_parse_junit_ids() -> None:
 
 
 def test_gate_must_match_the_stage() -> None:
-    assert [cc.required_gate(s) for s in ("pilot", "opcheck", "corpus", "unit", "offline")] == [
-        "G1",
-        "G1",
-        "G2",
-        None,
-        None,
-    ]
+    stages = ("pilot", "opcheck", "opcheck2", "opcheck3", "corpus", "unit", "offline")
+    assert [cc.required_gate(s) for s in stages] == ["G1", "G1", "G1", "G1", "G2", None, None]
     cc.check_gate("pilot", "G1")
     cc.check_gate("opcheck", "G1")
+    cc.check_gate("opcheck2", "G1")
     cc.check_gate("corpus", "G2")
     cc.check_gate("unit", "")  # live でない段はゲート不要
-    for stage, wrong in (("pilot", "G2"), ("opcheck", "G2"), ("corpus", "G1"), ("corpus", "")):
+    for stage, wrong in (
+        ("pilot", "G2"),
+        ("opcheck", "G2"),
+        ("opcheck2", ""),
+        ("opcheck2", "G2"),
+        ("corpus", "G1"),
+        ("corpus", ""),
+    ):
         with pytest.raises(cc.PlanError, match="承認済みのゲート"):
             cc.check_gate(stage, wrong)
+
+
+def test_opcheck_stage_names_map_to_g1_only_when_exact() -> None:
+    """`^opcheck[0-9]*$` だけが G1（SPEC.md 2.4 節）。似た名前や大小文字違い・改行つきは対応させない。"""
+    for stage in ("opcheck", "opcheck2", "opcheck3", "opcheck10"):
+        assert cc.is_opcheck_stage(stage) and cc.required_gate(stage) == "G1", stage
+    for stage in ("opchecks", "opcheck_2", "Opcheck2", "xopcheck2", "opcheck2\n", "opcheck2 ", ""):
+        assert not cc.is_opcheck_stage(stage), repr(stage)
+        assert cc.required_gate(stage) is None, repr(stage)
+    # 既存の対応は変わらない
+    assert cc.required_gate("pilot") == "G1" and cc.required_gate("corpus") == "G2"
+    assert cc.STAGE_GATES == {"pilot": "G1", "corpus": "G2"}
+
+
+def test_cli_opcheck2_live_is_refused_without_g1_and_accepted_with_g1(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """安全上の欠陥の回帰: opcheck2 がゲートの対応表に無く、承認なしで live に走っていた。"""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100000")
+    calls: list[str] = []
+
+    def fake_run_stage(plan: Any, stage: str, **kw: Any) -> dict[str, Any]:
+        calls.append(stage)
+        return {"stopped": None, "blocked_partial": [], "incomplete": 0}
+
+    monkeypatch.setattr(cc, "run_stage", fake_run_stage)
+    base = ["coding", "corpus", "--stage", "opcheck2", "--live"]
+    for extra in ([], ["--approved", "G2"], ["--approved", ""]):
+        res = RUNNER.invoke(app, [*base, *extra])
+        assert res.exit_code != 0 and "承認済みのゲート G1" in res.output, (extra, res.output)
+    assert calls == []  # 拒否された呼び出しでは run が 1 本も始まらない
+    ok = RUNNER.invoke(app, [*base, "--approved", "G1"])
+    assert ok.exit_code == 0, ok.output
+    assert calls == ["opcheck2"]
+    # 見積り（--dry-run、既定）はゲート不要で、段の seed と 10 run を出す
+    dry = RUNNER.invoke(app, ["coding", "corpus", "--stage", "opcheck2"])
+    assert dry.exit_code == 0
+    assert json.loads(dry.output)["stage"] == "opcheck2"
+
+
+def test_cli_undefined_opcheck_stage_never_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """計画に無い `opcheck3` は、G1 を付けても拒否される（plan に足されるまで走らない）。未知の名前も同じ。"""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100000")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cc,
+        "run_stage",
+        lambda plan, stage, **kw: (
+            calls.append(stage) or {"stopped": None, "blocked_partial": [], "incomplete": 0}
+        ),
+    )
+    for stage in ("opcheck3", "opcheckx", "unit"):
+        for approved in ("G1", "G2", ""):
+            res = RUNNER.invoke(
+                app, ["coding", "corpus", "--stage", stage, "--live", "--approved", approved]
+            )
+            assert res.exit_code != 0, (stage, approved, res.output)
+    assert calls == []
+    # opcheck3 は G1 に対応するが、計画に足されるまでは「未知の段」で見積りの時点で止まる
+    assert cc.required_gate("opcheck3") == "G1"
+    unknown = RUNNER.invoke(
+        app, ["coding", "corpus", "--stage", "opcheck3", "--live", "--approved", "G1"]
+    )
+    assert unknown.exit_code != 0 and "未知の段" in unknown.output
+    dry = RUNNER.invoke(app, ["coding", "corpus", "--stage", "opcheck3"])
+    assert dry.exit_code != 0 and "未知の段" in dry.output
+
+
+def test_cli_coding_run_record_needs_a_live_stage_with_its_gate() -> None:
+    """record は live API を呼ぶ。opcheck2 は G1 が要り、ゲートに対応しない段（unit・未知）は拒否される。"""
+    base = ["coding", "run", "--version", "c13_minimal_fix", "--task", "CT-tillcalc-001"]
+    for mode in ("record", "replay"):
+        res = RUNNER.invoke(app, [*base, "--mode", mode, "--stage", "opcheck2"])
+        assert res.exit_code != 0 and "承認済みのゲート G1" in res.output, (mode, res.output)
+        res = RUNNER.invoke(app, [*base, "--mode", mode, "--stage", "opcheck2", "--approved", "G2"])
+        assert res.exit_code != 0 and "承認済みのゲート G1" in res.output, (mode, res.output)
+    for stage in ("unit", "nonsense", "opcheck_2"):
+        res = RUNNER.invoke(app, [*base, "--mode", "record", "--stage", stage])
+        flat = "".join(ch for ch in res.output if ch not in " \n│")  # rich の折り返しと枠を除く
+        assert res.exit_code != 0 and "liveの段" in flat, (stage, res.output)
+
+
+def test_run_stage_summary_of_opcheck_has_no_pass_count_or_cost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-037 判断 2: 操作確認の段の終了時 summary に合格数・費用を出さない。pilot は出す。"""
+    from agenteval.agent import coding_loop
+
+    plan = cc.load_plan()
+
+    def fake_run(task: Any, version: Any, opts: Any) -> tuple[Run, CodingOutcome]:
+        run = _fake_run(
+            coding_registry.coding_run_id(task.id, version.id, opts.stage, opts.repeat),
+            task.id,
+            version.id,
+            opts.repeat,
+            cost=Cost(usd=0.05),
+        )
+        run.outcome = Outcome(passed=True)
+        return run, None  # type: ignore[return-value]
+
+    monkeypatch.setattr(coding_loop, "run_coding_task", fake_run)
+    for stage in ("opcheck", "opcheck2"):
+        summary = cc.run_stage(plan, stage, data_root=tmp_path, guard=object(), stop_after=2)  # type: ignore[arg-type]
+        assert summary["ran"] == 2 and summary["stopped"] == "stop_after", stage
+        assert "passed_hidden" not in summary and "usd" not in summary, (stage, summary)
+        assert "0.05" not in json.dumps(summary)
+    pilot = cc.run_stage(plan, "pilot", data_root=tmp_path, guard=object(), stop_after=2)  # type: ignore[arg-type]
+    assert pilot["passed_hidden"] == 2 and pilot["usd"] == pytest.approx(0.10)
+
+
+def test_cli_coding_run_opcheck_output_has_no_class_or_pass_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agenteval.agent import coding_loop
+
+    def fake_run(task: Any, version: Any, opts: Any) -> tuple[Run, Any]:
+        run = _outcome_run("cd__x__y__s__r0", task.id, version.id, 0, "S")
+        run.cost = Cost(usd=0.07)
+        out = SimpleNamespace(
+            finished=True,
+            visible=SimpleNamespace(passed=True),
+            hidden=SimpleNamespace(passed=True),
+            test_files_modified=False,
+        )
+        return run, out
+
+    monkeypatch.setattr(coding_loop, "run_coding_task", fake_run)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100000")
+    base = ["coding", "run", "--version", "c13_minimal_fix", "--task", "CT-tillcalc-001"]
+    res = RUNNER.invoke(app, [*base, "--mode", "record", "--stage", "opcheck2", "--approved", "G1"])
+    assert res.exit_code == 0, res.output
+    out = json.loads(res.output)
+    for key in ("class", "visible_passed", "hidden_passed", "usd"):
+        assert key not in out, key
+    assert out["finished"] is True and out["test_files_modified"] is False
+    # pilot は従来どおり合否・費用を出す
+    res = RUNNER.invoke(app, [*base, "--mode", "record", "--stage", "pilot", "--approved", "G1"])
+    assert res.exit_code == 0, res.output
+    out = json.loads(res.output)
+    assert out["hidden_passed"] is True and out["visible_passed"] is True and out["usd"] == 0.07
+
+
+def test_cli_coding_run_live_seed_is_the_plan_seed_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """計画に無い段は seed 0 に落ちず、計画の seed と違う --seed は拒否される（ADR-038 の 1 対 1）。"""
+    from agenteval.agent import coding_loop
+
+    seen: list[int] = []
+
+    def fake_run(task: Any, version: Any, opts: Any) -> tuple[Run, Any]:
+        seen.append(opts.seed)
+        run = _outcome_run("cd__x__y__s__r0", task.id, version.id, 0, "S")
+        out = SimpleNamespace(finished=True, visible=None, hidden=None, test_files_modified=False)
+        return run, out
+
+    monkeypatch.setattr(coding_loop, "run_coding_task", fake_run)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100000")
+    base = ["coding", "run", "--version", "c13_minimal_fix", "--task", "CT-tillcalc-001"]
+    gated = ["--mode", "record", "--approved", "G1"]
+    unplanned = RUNNER.invoke(app, [*base, *gated, "--stage", "opcheck3"])
+    assert unplanned.exit_code != 0 and seen == [], unplanned.output
+    assert "計画" in unplanned.output
+    wrong = RUNNER.invoke(app, [*base, *gated, "--stage", "opcheck2", "--seed", "0"])
+    assert wrong.exit_code != 0 and seen == [], wrong.output
+    ok = RUNNER.invoke(app, [*base, *gated, "--stage", "opcheck2"])
+    assert ok.exit_code == 0 and seen == [20261104], ok.output
+    same = RUNNER.invoke(app, [*base, *gated, "--stage", "opcheck2", "--seed", "20261104"])
+    assert same.exit_code == 0 and seen == [20261104, 20261104], same.output
+
+
+def test_cli_corpus_live_refuses_a_stage_without_a_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100000")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cc,
+        "run_stage",
+        lambda plan, stage, **kw: (
+            calls.append(stage) or {"stopped": None, "blocked_partial": [], "incomplete": 0}
+        ),
+    )
+    # 計画にあるがゲートに対応しない段（offline）は、見積りを通っても --live では拒否される
+    monkeypatch.setattr(cc, "estimate_stage", lambda plan, stage, **kw: {"stage": stage})
+    for approved in ("", "G1", "G2"):
+        res = RUNNER.invoke(
+            app, ["coding", "corpus", "--stage", "offline", "--live", "--approved", approved]
+        )
+        flat = "".join(ch for ch in res.output if ch not in " \n│")
+        assert res.exit_code != 0 and "liveの段" in flat, (approved, res.output)
+    assert calls == []
+
+
+def test_c12_team_note_and_c13_minimal_fix_have_similar_length() -> None:
+    """CONTENT.md 8.3: c12 の team_note と c13 の minimal_fix の本文の長さは ±10% 以内（長さの交絡を作らない）。
+
+    数え方: `<!-- section: 名前 -->` の次の行から、次の section マーカーの直前（または末尾）までを取り、
+    見出しのマーカー行と前後の空白を除いた文字数（改行は数えない）。
+    """
+    import re
+
+    def section_length(path: str, name: str) -> int:
+        text = (REPO_ROOT / path).read_text(encoding="utf-8")
+        parts = re.split(r"^<!-- section: (\w+) -->\s*$", text, flags=re.MULTILINE)
+        sections = dict(zip(parts[1::2], parts[2::2], strict=True))
+        return len(sections[name].strip().replace("\n", ""))
+
+    team_note = section_length("coding/prompts/c12_null.md", "team_note")
+    minimal_fix = section_length("coding/prompts/c13_minimal_fix.md", "minimal_fix")
+    assert team_note > 0 and minimal_fix > 0
+    assert abs(team_note - minimal_fix) <= 0.10 * minimal_fix, (team_note, minimal_fix)
+
+
+def test_cli_coding_report_opcheck2_is_spec_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[tuple[str, bool]] = []
+
+    def fake_report(plan: Any, stage: str, *, only_spec: bool = False, **kw: Any) -> dict[str, Any]:
+        seen.append((stage, only_spec))
+        return {"stage": stage, "versions": {}}
+
+    monkeypatch.setattr(cc, "stage_report", fake_report)
+    for stage in ("opcheck", "opcheck2", "opcheck3"):
+        refused = RUNNER.invoke(app, ["coding", "report", "--stage", stage])
+        assert refused.exit_code != 0 and "ADR-037" in refused.output, stage
+        # spec 以外の --only は拒否（合格率・W 率は opcheck 系では出さない）
+        bad = RUNNER.invoke(app, ["coding", "report", "--stage", stage, "--only", "all"])
+        assert bad.exit_code != 0, stage
+    assert seen == []  # 拒否された呼び出しでは集計に進まない
+    ok = RUNNER.invoke(app, ["coding", "report", "--stage", "opcheck2", "--only", "spec"])
+    assert ok.exit_code == 0 and seen == [("opcheck2", True)]
+    # pilot は従来どおり（--only なしで全集計）。corpus・未知の段は拒否
+    assert RUNNER.invoke(app, ["coding", "report", "--stage", "pilot"]).exit_code == 0
+    assert seen[-1] == ("pilot", False)
+    for stage in ("corpus", "opcheck_2", "unit"):
+        res = RUNNER.invoke(app, ["coding", "report", "--stage", stage, "--only", "spec"])
+        assert res.exit_code != 0 and "pilot | opcheck" in res.output, stage
+
+
+def test_stage_report_opcheck2_only_spec_has_no_pass_or_w_rates(tmp_path: Path) -> None:
+    plan = cc.load_plan()
+    units = cc.plan_units(plan, "opcheck2")
+    assert {u.version_id for u in units} == {"c13_minimal_fix"} and len(units) == 10
+    classes = ["S", "W", "F", "S", "W", "W", "S", "F", "S", "W"]
+    for unit, cls in zip(units, classes, strict=True):
+        save_coding_run(
+            _outcome_run(unit.run_id, unit.task_id, unit.version_id, unit.repeat, cls),
+            None,
+            data_root=tmp_path,
+        )
+    report = cc.stage_report(plan, "opcheck2", only_spec=True, data_root=tmp_path)
+    assert report["stage"] == "opcheck2" and report["seed"] == 20261104 and report["done"] == 10
+    block = report["versions"]["c13_minimal_fix"]
+    assert set(block) == {"n_runs", "spec"} and "spec_literal_rate" in block["spec"]
+    text = json.dumps(report)
+    assert "pi_W" not in text and "pi_S" not in text and "usd_per_run_mean" not in text
+    # 1 回目（opcheck）の run は opcheck2 の集計に混ざらない
+    first = cc.plan_units(plan, "opcheck")[0]
+    save_coding_run(
+        _outcome_run(first.run_id, first.task_id, first.version_id, first.repeat, "S"),
+        None,
+        data_root=tmp_path,
+    )
+    again = cc.stage_report(plan, "opcheck2", only_spec=True, data_root=tmp_path)
+    assert again["versions"]["c13_minimal_fix"]["n_runs"] == 10
 
 
 def test_cli_live_requires_the_gate_of_the_stage(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2231,8 +2518,9 @@ def test_finalize_carries_over_designer_page_and_is_idempotent(results_dir: Path
     # 既存ページの「気づき・限界」が未記入なので、notes はそこに（自動注記の印付きで）出る
     assert "## 気づき・限界\n" + common.AUTO_NOTES_MARK + "\n- 自動注記 A" in first
     assert "## 自動注記" not in first
-    # 暫定の基準には印が付く
-    assert ">= 0.9（暫定） | ○" in first
+    # EC-R1 の基準は W3-A2 で確定した。暫定の印は付かない（EC-B2 の暫定の基準だけが付く）
+    assert ">= 0.9 | ○" in first
+    assert not any(line.startswith("|") and "（暫定）" in line for line in first.splitlines())
     common.finalize_coding("EC-R1", dict(R1_PASSING), notes, seed=1, provenance="live")
     second = (results_dir / "EC-R1.md").read_text(encoding="utf-8")
     assert second.count("自動注記 A") == 1 and "## 自動注記" not in second  # 再実行で重複しない
@@ -2374,13 +2662,28 @@ def test_headings_with_annotations_are_matched_by_prefix(
 def test_provisional_mark_in_pages_and_summary() -> None:
     entry = next(e for e in verify.load_registry() if e["id"] == "EC-B2")
     marks = {c["metric"]: bool(c.get("provisional")) for c in entry["criteria"]}
+    # W3-A2 で確定。暫定は verbose_attribution_to_run_tests だけ（sub10 × 1 では検出力不足。G2 で決める）
     assert marks == {
         "allocation_identity_error": False,
         "ledger_identity_error": False,
         "verbose_attribution_to_run_tests": True,
-        "history_cache_prediction_error": True,
-        "control_attribution": True,
+        "history_cache_prediction_error": False,
+        "control_attribution": False,
     }
+    # 暫定扱いは registry の印から導く: EC-B2 だけ。EC-R1・EC-R2 と既存の章は確定
+    provisional_ids = [e["id"] for e in verify.load_registry() if verify.is_provisional(e)]
+    assert provisional_ids == ["EC-B2"]
+    assert not hasattr(verify, "CHAPTER_C_PROVISIONAL")
+    assert not verify.is_provisional({"criteria": [{"metric": "m", "op": ">=", "value": 1}]})
+    assert verify.is_provisional(
+        {
+            "criteria": [
+                {"metric": "m", "op": ">=", "value": 1},
+                {"metric": "n", "provisional": True},
+            ]
+        }
+    )
+    assert not verify.is_provisional({})
     assert pages.provisional_mark({"provisional": True}) == "（暫定）"
     assert pages.provisional_mark({"provisional": True}, "en") == " (provisional)"
     assert pages.provisional_mark({}) == ""
@@ -2394,6 +2697,7 @@ def test_provisional_mark_in_pages_and_summary() -> None:
         "id": "EC-B2",
         "chapter": "C",
         "title": "t",
+        "provisional": True,
         "verdict": judged["verdict"],
         "provenance": "live",
         "usd": 0.0,

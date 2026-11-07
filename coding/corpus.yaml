@@ -3,7 +3,7 @@
 # tasks は coding/task_sets.yaml の集合名（SPEC.md 7.4 節）。タスクの中身はここに書かない。
 # 読み込みは src/agenteval/reports/coding_corpus.py。office 側の ./corpus.yaml とは別物。
 #
-# run 数: pilot 96、opcheck 10、corpus 356（TASK.md 6.2 節）。
+# run 数: pilot 96、opcheck 10、opcheck2 10、corpus 356（TASK.md 6.2 節）。
 # live の段は `uv run agenteval coding corpus --stage <段> --dry-run` で見積りを出し、
 # 承認（G1: パイロット・操作確認、G2: コーパス）を得てから `--live --approved G<n> --mode record` で始める。
 
@@ -15,8 +15,16 @@ stages:
     mode: live
     runs:
       - {version: c01_baseline, tasks: pilot, repeats: 2}
-  opcheck:
+  opcheck:   # 操作確認の 1 回目（c13 の初版。発火 0/10 で「効いていない」。記録として残す。run を作り直さない）
     seed: 20261102
+    mode: live
+    runs:
+      - {version: c13_minimal_fix, tasks: sub10, repeats: 1}
+  # 操作確認のやり直し（ADR-037 判断 4・立て直し記録）。プロンプトは同じ版 ID のまま書き換える（版ハッシュが変わる）ので、
+  # run_id が 1 回目と衝突しないよう段を分ける。立て直しは 2 回まで: opcheck2（1 回目の立て直し）、opcheck3（2 回目。必要なときだけ足す）。
+  # 段 opcheck<N> は G1 の承認で走らせ、集計は --only spec だけ（opcheck と同じ扱い。SPEC.md 2.4 節）
+  opcheck2:
+    seed: 20261104
     mode: live
     runs:
       - {version: c13_minimal_fix, tasks: sub10, repeats: 1}
