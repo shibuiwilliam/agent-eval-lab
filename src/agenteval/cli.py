@@ -103,8 +103,51 @@ def exp(
             help="実行せず、依存する入力（段の run の有無）と費用の見込みを出す。API は呼ばない",
         ),
     ] = False,
+    failure_type: Annotated[
+        str,
+        typer.Option(
+            "--failure-type",
+            help="章 C の実験で基準が未達のときの判定の種類: fail（既定）| negative。negative は --reason が必須",
+        ),
+    ] = "",
+    reason: Annotated[
+        str,
+        typer.Option(
+            "--reason", help="--failure-type negative の理由（結果 JSON と結果ページに残る）"
+        ),
+    ] = "",
 ) -> None:
-    """実験を 1 つ実行し、結果 JSON と結果ページを更新する。"""
+    """実験を 1 つ実行し、結果 JSON と結果ページを更新する。
+
+    章 C の自動の判定は未達なら FAIL にする。NEGATIVE（実装は正しいが手法が主張どおり働かなかった）への切り替えは、
+    designer が検出力（MDE）と植込みの効果（操作確認）を確かめたうえで `--failure-type negative --reason "<理由>"` で明示する。
+    """
+    import os
+
+    if failure_type not in ("", "fail", "negative"):
+        raise typer.BadParameter("--failure-type は fail | negative")
+    if failure_type == "negative" and not reason.strip():
+        raise typer.BadParameter("--failure-type negative には --reason が要る")
+    if reason and failure_type != "negative":
+        raise typer.BadParameter("--reason は --failure-type negative のときだけ指定できる")
+    if failure_type and dry_run:
+        raise typer.BadParameter("--failure-type は --dry-run と併用できない")
+    if failure_type:
+        from agenteval.reports.runner import normalize_id
+        from agenteval.reports.verify import load_registry
+
+        entry = next(
+            (
+                e
+                for e in load_registry()
+                if normalize_id(str(e["id"])) == normalize_id(experiment_id)
+            ),
+            None,
+        )
+        if entry is None or str(entry.get("chapter")) != "C":
+            raise typer.BadParameter("--failure-type は章 C の実験だけに指定できる")
+    if live and dry_run:
+        raise typer.BadParameter("--live と --dry-run は同時に指定できない")
     if dry_run:
         from agenteval.reports.coding_corpus import experiment_dry_run
 
@@ -121,12 +164,19 @@ def exp(
     from agenteval.reports.coding_corpus import StageIncompleteError
     from agenteval.reports.runner import run_experiment
 
+    if failure_type:
+        # 実験スクリプトの main(live, seed) の形を変えないため、環境変数で渡す（章 C の finalize_coding が読む）
+        os.environ["AGENTEVAL_FAILURE_TYPE"] = failure_type
+        os.environ["AGENTEVAL_FAILURE_REASON"] = reason.strip()
     try:
         result = run_experiment(experiment_id, live=live, seed=seed)
     except StageIncompleteError as exc:
         # 章 C の live の実験は run を作らない。結果 JSON を書かずに案内して止まる（verify では PENDING のまま）
         typer.echo(f"[停止] {exc}", err=True)
         raise typer.Exit(code=1) from exc
+    finally:
+        os.environ.pop("AGENTEVAL_FAILURE_TYPE", None)
+        os.environ.pop("AGENTEVAL_FAILURE_REASON", None)
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
@@ -156,16 +206,29 @@ def coding_run(
         typer.Option("--script", help="sim の台本: gold | spec（record・replay では指定しない）"),
     ] = "",
     plan: Annotated[Path, typer.Option("--plan")] = CODING_PLAN_DEFAULT,
+    approved: Annotated[
+        str,
+        typer.Option(
+            "--approved",
+            help="record・replay で live の段（pilot・opcheck・corpus）を指定するとき必須。pilot・opcheck は G1、corpus は G2",
+        ),
+    ] = "",
 ) -> None:
     """1 run を実行して結果を表示する。live は record だけ（ANTHROPIC_API_KEY と AGENTEVAL_BUDGET_USD が要る）。"""
     from agenteval.agent.coding_loop import CodingRunOptions, run_coding_task
     from agenteval.agent.scripted import gold_script, specialization_script
     from agenteval.core.coding_registry import get_coding_task, get_coding_version
     from agenteval.econ.outcome import classify
-    from agenteval.reports.coding_corpus import PlanError, load_plan, stage_seed
+    from agenteval.reports.coding_corpus import PlanError, check_gate, load_plan, stage_seed
 
     if mode not in ("sim", "record", "replay"):
         raise typer.BadParameter("--mode は sim | record | replay（auto は拒否される）")
+    if mode in ("record", "replay"):
+        # live の段をコーパスのゲートの外から始められないようにする（1 run でも段の run_id と seed が使われるため）
+        try:
+            check_gate(stage, approved)
+        except PlanError as exc:
+            raise typer.BadParameter(str(exc)) from exc
     if seed is None:
         try:
             seed = stage_seed(load_plan(plan), stage)
@@ -210,32 +273,47 @@ def coding_run(
 def coding_corpus(
     plan: Annotated[Path, typer.Option("--plan")] = CODING_PLAN_DEFAULT,
     stage: Annotated[str, typer.Option("--stage", help="pilot | opcheck | corpus")] = "pilot",
-    dry_run: Annotated[bool, typer.Option("--dry-run/--no-dry-run")] = True,
+    dry_run: Annotated[
+        bool | None,
+        typer.Option("--dry-run/--no-dry-run", help="見積りだけ（既定。--live とは併用できない）"),
+    ] = None,
     live: Annotated[bool, typer.Option("--live/--no-live")] = False,
     mode: Annotated[str, typer.Option("--mode", help="record（live。塩付き）| replay")] = "record",
     shard: Annotated[
         str, typer.Option("--shard", help="i/n（0 <= i < n）。位置 mod n で分ける")
     ] = "",
     approved: Annotated[
-        str, typer.Option("--approved", help="--live のとき必須。承認済みのゲート（G1 | G2）")
+        str,
+        typer.Option(
+            "--approved",
+            help="--live のとき必須。pilot・opcheck は G1、corpus は G2（段と対応しなければ拒否）",
+        ),
     ] = "",
 ) -> None:
     """段（pilot・opcheck・corpus）の見積りを出す。`--live` で未完了の run を実行する（承認が要る）。
 
-    既定は見積りだけ（API を呼ばない）。`--live` は `--approved G1|G2`、ANTHROPIC_API_KEY、
-    AGENTEVAL_BUDGET_USD（累積上限）が揃い、上限が保守見積り（×1.5）の残りを賄えるときだけ始まる。
-    `auto` は使わない（コーディングのループが拒否する）。
+    既定は見積りだけ（API を呼ばない）。`--live` は段に対応する `--approved`（pilot・opcheck は G1、corpus は G2）、
+    ANTHROPIC_API_KEY、AGENTEVAL_BUDGET_USD（累積上限）が揃い、上限が保守見積り（×1.5）の残りを賄えるときだけ始まる。
+    `--live` と `--dry-run` は併用できない。`auto` は使わない（コーディングのループが拒否する）。
+    予算停止・途中終了（.partial）の run・未完了の run があれば、非 0 で終了する。
     """
     import os
 
     from agenteval.reports.coding_corpus import (
         PlanError,
+        check_gate,
         estimate_stage,
         load_plan,
         parse_shard,
         run_stage,
     )
 
+    if live and dry_run:
+        raise typer.BadParameter("--live と --dry-run は同時に指定できない")
+    if dry_run is False and not live:
+        raise typer.BadParameter(
+            "--no-dry-run だけでは何も実行しない（実行するには --live を付ける）"
+        )
     if mode not in ("record", "replay"):
         raise typer.BadParameter("--mode は record | replay（auto は拒否される）")
     try:
@@ -247,8 +325,10 @@ def coding_corpus(
     if not live:
         typer.echo(json.dumps(estimate, ensure_ascii=False, indent=2))
         return
-    if approved not in ("G1", "G2"):
-        raise typer.BadParameter("--live には --approved G1|G2（承認済みのゲート）が要る")
+    try:
+        check_gate(stage, approved)
+    except PlanError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     if mode == "record" and not os.environ.get("ANTHROPIC_API_KEY"):
         raise typer.BadParameter("--live (record) には ANTHROPIC_API_KEY が要る")
     if mode == "record" and estimate["budget_usd"] is None:
@@ -261,6 +341,11 @@ def coding_corpus(
     typer.echo(json.dumps({"estimate": estimate}, ensure_ascii=False, indent=2))
     summary = run_stage(the_plan, stage, mode=cast("Any", mode), shard=shard_pair)
     typer.echo(json.dumps(summary, ensure_ascii=False, indent=2))
+    if summary["stopped"] or summary["blocked_partial"] or summary["incomplete"] > 0:
+        typer.echo(
+            "[未完了] 予算停止・途中終了・未実行の run がある（上の summary を見る）", err=True
+        )
+        raise typer.Exit(code=1)
 
 
 @coding_app.command("report")
@@ -274,6 +359,10 @@ def coding_report(
     """パイロット・操作確認の集計。`--stage opcheck --only spec` は合格率・W 率を出さない（ADR-037）。"""
     from agenteval.reports.coding_corpus import PlanError, load_plan, stage_report
 
+    if stage not in ("pilot", "opcheck"):
+        raise typer.BadParameter(
+            "--stage は pilot | opcheck だけ（corpus の集計は実験スクリプトが行う）"
+        )
     if only not in ("", "spec"):
         raise typer.BadParameter("--only は spec だけ")
     if stage == "opcheck" and only != "spec":

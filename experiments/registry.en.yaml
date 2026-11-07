@@ -1966,7 +1966,9 @@
   verdict_reason: See the criteria table.
   notes:
   - ledger_identity_error verifies only the price-table copy, the row-to-step matching and the component
-    sum, not block-wise attribution; control (a) is the only check of attribution by lifetime.
+    sum, not block-wise attribution; control (a) is the only check of attribution by lifetime. The number
+    of runs checked for the identity is recorded; with a ledger match rate below 0.95, or zero checked runs, the
+    value is withheld and the experiment fails.
   - Control (a) is simulated (synthetic usage, 1 token = 4 bytes) and almost determined by arithmetic;
     it rules out implementations that attribute by output size alone. Absolute amounts must not be compared
     with live values.
@@ -1991,11 +1993,13 @@
     estimates and bootstrap replicates use the tasks common to the two versions compared. See docs/results/EC-R1.md.
   verdict_reason: See the criteria table.
   notes:
-  - 'Hand-over: the hidden tests are bank minus K plus h cases, so a partial fix can count as S (mean
+  - 'Hand-over: the hidden tests are bank minus K plus h cases, so a partial fix can count as S (the mutation score is generation-time metadata, labelled simulated; mean
     mutation score about 0.84); the W rate is therefore closer to a lower bound.'
   - Rob depends only on the direction of the point-estimate difference and sticks near 0 or 1 even when
     the true difference is zero; the null control reports rob_c12_vs_c01 and the confident fraction (nominal
-    95% bands; actual coverage at 24 clusters is about 0.85).
+    95% bands; actual coverage at 24 clusters is about 0.85). visible_vs_nv_rank_reversal combines live
+    (visible-rate interval) and simulated (Rob over the parameter space) values and carries the more conservative
+    label, simulated.
   - Rob's attainable ceiling depends on where c13's extra W comes from (0.887 for pure F-to-W); missing
     0.9 within that range reflects assumption dependence, not a measurement failure.
   - NaNs of the break-even pi_S* are split into always-gain, always-loss and undefined; quantiles use
@@ -2021,8 +2025,10 @@
     criterion design, not a negative result for the method.
   - silent_wrong_monotone_c13 and identity_error_w0 almost always pass by definition; they are self-checks,
     not evidence for H3. H3's quantitative claim rests on silent_wrong_gain_c13_ci_low.
-  - 'Independence diagnostic: identical_trial_rate (near 0 when cassette salts work; a high value suggests
-    a salt failure, which makes the experiment a FAIL).'
+  - 'Independence diagnostic: identical_trial_rate is recorded only (near 0 when cassette salts work). A salt
+    failure is checked separately: if the step-0 salted cassette key of a repeat is missing or duplicated within
+    a (task, version) group, the experiment is forced to FAIL regardless of the criteria; if the cassettes cannot
+    be read it is recorded as unverifiable.'
   - c12 has only 2 trials, so G_3 cannot be enumerated; the c12 vs c01 difference is recorded as G_2,
     and the k = 5, 6 table is given only for the 6-trial versions.
   - The closed form assumes exchangeable trials within a task and the empirical value resamples the same

@@ -68,10 +68,15 @@ def judge(entry: dict[str, Any], result: dict[str, Any] | None) -> dict[str, Any
                 "target": criterion["value"],
                 "actual": raw_value(value),
                 "ok": ok,
+                "provisional": bool(criterion.get("provisional")),
             }
         )
     if not rows:
         return {"verdict": "PENDING", "detail": "criteria が空", "criteria": rows}
+    forced = result.get("forced_failure")
+    if forced:
+        # 章 C の実験が、基準の指標では表せない欠陥（例: EC-R2 のカセットの塩の不備）を見つけたとき。基準の達成より優先する
+        return {"verdict": "FAIL", "detail": f"強制 FAIL: {forced}", "criteria": rows}
     if all(r["ok"] for r in rows):
         return {"verdict": "PASS", "detail": "全基準を満たした", "criteria": rows}
     declared = str(result.get("failure_type", "fail")).lower()
@@ -201,9 +206,10 @@ def _table_rows(
     titles: dict[str, dict[str, Any]] | None = None,
 ) -> list[str]:
     rows = []
+    mark = " (prov.)" if suffix == ".en.md" else "（暫定）"
     for row in table:
         metrics = " / ".join(
-            f"{m['metric']}={_fmt(m['actual'])}{'○' if m['ok'] else '×'}"
+            f"{m['metric']}={_fmt(m['actual'])}{'○' if m['ok'] else '×'}{mark if m.get('provisional') else ''}"
             for m in row["key_metrics"]
         )
         title = row["title"]

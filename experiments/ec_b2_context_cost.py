@@ -23,7 +23,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _coding_common import finalize_coding, json_safe, labeled
+from _coding_common import failure_caution, finalize_coding, json_safe, labeled
 
 from agenteval.agent.coding_loop import CodingRunOptions, run_coding_task
 from agenteval.agent.scripted import Script, ScriptedToolUse, ScriptStep
@@ -83,6 +83,7 @@ VERBOSE_CMD = "seq 1 2000"  # 約 8.9k 文字の出力（ツール出力の上�
 CHEAP_CMD = "echo ok"
 CONTROL_SCRIPT_IDS = {"early": "sc-b2-early", "late": "sc-b2-late"}
 N_BOOT = 2000
+MIN_LEDGER_MATCH_RATE = 0.95  # EC-B2P の ledger_match_rate の基準。これ未満なら恒等式の値を出さない
 METHOD_FALLBACK = (
     "段 corpus の live の run の usage から位置モデルで課金を割り振り、台帳と照合する（H1）。c04 の詳細出力の"
     "コスト増の run_tests への帰属（H2）と、履歴キャッシュを外したコスト増の事前予測（H3、run 内の反実仮想）を測る。"
@@ -293,6 +294,13 @@ def compute(
         if report.runs[rid].ledger_usd > 0.0
     ]
     ledger_usd = {rid: report.runs[rid].ledger_usd for rid in fully}
+    # 空虚な合格を防ぐ: 照合できた run が少なすぎる（run 単位の対応率が EC-B2P の基準未満）か、検査した run が 0 本なら、
+    # 恒等式の値を出さず（None）、基準を満たさない（FAIL）ことにする。基準そのもの（<= 0.001）は変えない
+    voided = ""
+    if not ident:
+        voided = "恒等式を検査した run が 0 本"
+    elif report.ledger_match_rate < MIN_LEDGER_MATCH_RATE:
+        voided = f"台帳の照合率 {report.ledger_match_rate:.3f} が {MIN_LEDGER_MATCH_RATE} 未満"
 
     # --- H2: 詳細出力の run_tests への帰属 ---
     sub = set(sub10)
@@ -311,13 +319,16 @@ def compute(
     # --- H3: 履歴キャッシュを外したコスト増の予測（run 内の反実仮想） ---
     on_runs = [r for r in runs_by_version[BASE] if r.run_id in ledger_usd]
     off_ok = [r for r in off_runs if r.run_id in ledger_usd]
-    pred = history_cache_prediction_error(
-        on_runs, off_ok, ledger_usd, prices, prefix_tokens=p_tokens
+    # 台帳と対応した run が on・off のどちらかに無ければ予測誤差は出せない（None。基準を満たさない＝FAIL）
+    pred = (
+        history_cache_prediction_error(on_runs, off_ok, ledger_usd, prices, prefix_tokens=p_tokens)
+        if on_runs and off_ok
+        else None
     )
     on_sub = [r for r in on_runs if r.task_id in sub]
     pred_sub = (
         history_cache_prediction_error(on_sub, off_ok, ledger_usd, prices, prefix_tokens=p_tokens)
-        if on_sub
+        if on_sub and off_ok
         else None
     )
     verbose_ok = [r for r in runs_by_version[VERBOSE] if r.run_id in ledger_usd]
@@ -325,7 +336,7 @@ def compute(
         history_cache_prediction_error(
             verbose_ok, off_ok, ledger_usd, prices, prefix_tokens=p_tokens
         )
-        if verbose_ok
+        if verbose_ok and off_ok
         else None
     )
     # 事前予測: 予測増加率 Σ Ŝ / Σ Ĉon（sub10 の c01 の run）
@@ -409,9 +420,9 @@ def compute(
         "allocation_identity_error": labeled(
             max(a.allocation_identity_error for a in allocs.values()), "live"
         ),
-        "ledger_identity_error": labeled(max(ident, default=0.0), "live"),
+        "ledger_identity_error": labeled(None if voided else max(ident), "live"),
         "verbose_attribution_to_run_tests": labeled(attribution.value, "live"),
-        "history_cache_prediction_error": labeled(pred.error, "live"),
+        "history_cache_prediction_error": labeled(pred.error if pred else None, "live"),
         "control_attribution": labeled(control_ratio, "simulated"),
         # --- 記録のみ ---
         "verbose_attribution_ci": labeled(
@@ -423,7 +434,10 @@ def compute(
             "live",
         ),
         "e_on_e_off": labeled(
-            {"e_on": pred.e_on, "e_off": pred.e_off, "n_on": pred.n_on, "n_off": pred.n_off}, "live"
+            {"e_on": pred.e_on, "e_off": pred.e_off, "n_on": pred.n_on, "n_off": pred.n_off}
+            if pred
+            else None,
+            "live",
         ),
         "e_on_sub10_only": labeled(pred_sub.e_on if pred_sub else None, "live"),
         "e_on_c04": labeled(pred_c04.e_on if pred_c04 else None, "live"),
@@ -445,6 +459,8 @@ def compute(
         ),
         "ledger_match_rate": labeled(report.ledger_match_rate, "live"),
         "runs_fully_matched": labeled(len(fully), "live"),
+        "ledger_identity_runs_checked": labeled(len(ident), "live"),
+        "ledger_identity_voided_reason": labeled(voided or None, "live"),
         "runs_total": labeled(len(all_runs), "live"),
         "control_detail": labeled(control_detail, "simulated"),
         "predicted_resend_ratio_n10": labeled(predicted_resend_ratio(10, prices), "simulated"),
@@ -483,12 +499,13 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         seed=seed,
     )
     metrics = out["metrics"]
-    broken = out["extras"]["cache_chain_broken"]
     notes = [
         (
             "ledger_identity_error が検証するのは、単価表の写し・台帳の行との対応づけ・成分の総和だけで、ブロックごとの"
             "割り振り（どのツール結果にいくら掛かったか）の正しさは示さない。ブロック別の手がかりは位置モデルの前提と"
-            "対照 (a) だけである（EC-B2P.md と同じ）。"
+            "対照 (a) だけである（EC-B2P.md と同じ）。恒等式を検査した run は "
+            f"{metrics['ledger_identity_runs_checked']['value']} 本（台帳の照合率が 0.95 未満か 0 本なら値を出さず FAIL にする。"
+            f"理由: {metrics['ledger_identity_voided_reason']['value']}）。"
         ),
         (
             "対照 (a) は simulated（合成 usage。1 トークン = 4 バイトの近似）で、算術でほぼ決まる。確かめたのは"
@@ -520,11 +537,8 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         seed=seed,
         provenance="live",
         method_fallback=METHOD_FALLBACK,
-        # H2・H3 の未達は「正しく実装したが主張どおり働かなかった」NEGATIVE。ただしキャッシュの鎖が切れていれば
-        # H3 の未達は実装の誤り（FAIL）。恒等式・対照 (a) の未達は常に FAIL（EC-B2.md の FAIL と NEGATIVE の区別）
-        negative_if_only=("verbose_attribution_to_run_tests",)
-        if broken
-        else ("verbose_attribution_to_run_tests", "history_cache_prediction_error"),
+        # 自動の判定は FAIL。NEGATIVE は designer が --failure-type negative --reason で明示する
+        caution=failure_caution(EXPERIMENT_ID),
     )
 
 

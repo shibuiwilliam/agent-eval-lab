@@ -75,7 +75,16 @@ def test_registry_has_six_chapter_c_entries_matching_the_draft() -> None:
     )
     assert [e["id"] for e in draft] == CHAPTER_C_IDS
     for expected in draft:
-        assert entries[expected["id"]] == expected  # 下書きの写しで、1 字も変えていない
+        written = {
+            **entries[expected["id"]],
+            "criteria": [
+                {k: v for k, v in c.items() if k != "provisional"}
+                for c in entries[expected["id"]]["criteria"]
+            ],
+        }
+        assert (
+            written == expected
+        )  # 下書きの写し（暫定の印 provisional を除く）で、1 字も変えていない
         assert expected["chapter"] == "C"
         assert expected["provenance"] in ("live", "replay", "simulated")
         assert (REPO_ROOT / expected["script"]).exists()
@@ -131,22 +140,11 @@ def test_design_method_survives_regeneration(tmp_path: Path) -> None:
     assert match is not None and match.group(1).strip() == designer
 
 
-def test_failing_metrics_and_negative_classification() -> None:
+def test_failing_metrics_reports_missing_values_as_unmet() -> None:
     common = _load_script("_coding_common")
     ok = {"w_rate_diff_ci_low": {"value": 0.1, "provenance": "live"}}
     failed = common.failing_metrics("EC-R1", ok)
     assert "w_rate_diff_ci_low" not in failed and "rob_c01_over_c13" in failed  # 欠けた指標は未達
-    captured: dict[str, Any] = {}
-
-    def fake_finalize(experiment_id: str, metrics: Any, **kwargs: Any) -> dict[str, Any]:
-        captured.update(kwargs)
-        return {}
-
-    common.finalize = fake_finalize
-    common.finalize_coding(
-        "EC-B2P", {}, [], seed=1, provenance="live", negative_if_only=("negative_increment_rate",)
-    )
-    assert captured["failure_type"] == "fail"  # 他の基準も欠けている（FAIL）
 
 
 # ---------------------------------------------------------------------------
@@ -1310,3 +1308,414 @@ def test_all_expected_nodeids_match_parse_junit_ids() -> None:
     with ThreadPoolExecutor(max_workers=6) as pool:
         problems = [p for found in pool.map(_expected_vs_parse_junit, task_ids) for p in found]
     assert problems == []
+
+
+# ---------------------------------------------------------------------------
+# レビュー対応（W1-I8 追加）: ゲート・判定の種類・塩・空虚な合格・結果ページの引き継ぎ・再利用
+# ---------------------------------------------------------------------------
+
+
+def test_gate_must_match_the_stage() -> None:
+    assert [cc.required_gate(s) for s in ("pilot", "opcheck", "corpus", "unit", "offline")] == [
+        "G1",
+        "G1",
+        "G2",
+        None,
+        None,
+    ]
+    cc.check_gate("pilot", "G1")
+    cc.check_gate("opcheck", "G1")
+    cc.check_gate("corpus", "G2")
+    cc.check_gate("unit", "")  # live でない段はゲート不要
+    for stage, wrong in (("pilot", "G2"), ("opcheck", "G2"), ("corpus", "G1"), ("corpus", "")):
+        with pytest.raises(cc.PlanError, match="承認済みのゲート"):
+            cc.check_gate(stage, wrong)
+
+
+def test_cli_live_requires_the_gate_of_the_stage(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "1000")
+    for stage, wrong in (("pilot", "G2"), ("opcheck", "G2"), ("corpus", "G1")):
+        res = RUNNER.invoke(
+            app, ["coding", "corpus", "--stage", stage, "--live", "--approved", wrong]
+        )
+        assert res.exit_code != 0 and "承認済みのゲート" in res.output, (stage, res.output)
+    both = RUNNER.invoke(
+        app, ["coding", "corpus", "--stage", "pilot", "--live", "--dry-run", "--approved", "G1"]
+    )
+    assert both.exit_code != 0 and "同時に指定できない" in both.output
+    only_no_dry = RUNNER.invoke(app, ["coding", "corpus", "--stage", "pilot", "--no-dry-run"])
+    assert only_no_dry.exit_code != 0
+
+
+def test_cli_coding_run_requires_the_gate_for_live_stages() -> None:
+    base = ["coding", "run", "--version", "c01_baseline", "--task", "CT-tillcalc-001"]
+    for mode in ("record", "replay"):
+        for stage, wrong in (("pilot", ""), ("corpus", "G1"), ("opcheck", "G2")):
+            args = [*base, "--mode", mode, "--stage", stage]
+            if wrong:
+                args += ["--approved", wrong]
+            res = RUNNER.invoke(app, args)
+            assert res.exit_code != 0 and "承認済みのゲート" in res.output, (
+                mode,
+                stage,
+                res.output,
+            )
+
+
+def test_cli_corpus_live_exits_nonzero_when_incomplete(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100000")
+    summaries = {
+        "ok": {"stopped": None, "blocked_partial": [], "incomplete": 0},
+        "budget": {"stopped": "BudgetExceeded: x", "blocked_partial": [], "incomplete": 3},
+        "partial": {"stopped": None, "blocked_partial": ["cd__x"], "incomplete": 1},
+        "missing": {"stopped": None, "blocked_partial": [], "incomplete": 2},
+    }
+    for name, summary in summaries.items():
+        monkeypatch.setattr(cc, "run_stage", lambda *a, _s=summary, **k: _s)
+        res = RUNNER.invoke(
+            app, ["coding", "corpus", "--stage", "opcheck", "--live", "--approved", "G1"]
+        )
+        assert (res.exit_code == 0) == (name == "ok"), (name, res.output)
+
+
+def test_run_stage_reports_incomplete_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agenteval.agent import coding_loop
+
+    plan = cc.load_plan()
+    units = cc.plan_units(plan, "opcheck")
+
+    def fake_run(task: Any, version: Any, opts: Any) -> tuple[Run, CodingOutcome]:
+        run = _fake_run(
+            coding_registry.coding_run_id(task.id, version.id, opts.stage, opts.repeat),
+            task.id,
+            version.id,
+            opts.repeat,
+        )
+        run.outcome = Outcome(passed=False)
+        return run, None  # type: ignore[return-value]
+
+    monkeypatch.setattr(coding_loop, "run_coding_task", fake_run)
+    partial = cc.run_stage(plan, "opcheck", data_root=tmp_path, guard=object(), stop_after=4)  # type: ignore[arg-type]
+    assert partial["ran"] == 4 and partial["incomplete"] == len(units) - 4
+    assert partial["stopped"] == "stop_after"
+
+
+def test_cli_report_stage_is_limited() -> None:
+    res = RUNNER.invoke(app, ["coding", "report", "--stage", "corpus"])
+    assert res.exit_code != 0 and "pilot | opcheck" in res.output
+
+
+def test_cli_failure_type_validation_and_env_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    def run(*args: str) -> Any:
+        return RUNNER.invoke(app, ["exp", *args])
+
+    assert run("ec_r1", "--failure-type", "negative").exit_code != 0  # 理由が要る
+    assert run("ec_r1", "--failure-type", "fail", "--reason", "x").exit_code != 0
+    assert run("e3_1", "--failure-type", "negative", "--reason", "x").exit_code != 0  # 章 C だけ
+    assert run("ec_r1", "--failure-type", "negative", "--reason", "x", "--dry-run").exit_code != 0
+    assert run("ec_r1", "--live", "--dry-run").exit_code != 0
+    assert run("ec_r1", "--failure-type", "bogus").exit_code != 0
+    seen: dict[str, str | None] = {}
+
+    from agenteval.reports import runner
+
+    def fake_run(experiment_id: str, live: bool = False, seed: int = 0) -> dict[str, Any]:
+        seen["type"] = os.environ.get("AGENTEVAL_FAILURE_TYPE")
+        seen["reason"] = os.environ.get("AGENTEVAL_FAILURE_REASON")
+        return {"id": experiment_id}
+
+    monkeypatch.setattr(runner, "run_experiment", fake_run)
+    ok = run("ec_r1", "--failure-type", "negative", "--reason", "操作確認で効いていた")
+    assert ok.exit_code == 0 and seen == {"type": "negative", "reason": "操作確認で効いていた"}
+    assert "AGENTEVAL_FAILURE_TYPE" not in os.environ  # 実行後に残さない
+
+
+R1_PASSING = {
+    "w_rate_diff_ci_low": {"value": 0.1, "provenance": "live"},
+    "visible_vs_nv_rank_reversal": {"value": 1, "provenance": "simulated"},
+    "rob_c01_over_c13": {"value": 0.95, "provenance": "simulated"},
+    "null_confident_fraction_c12": {"value": 0.05, "provenance": "simulated"},
+}
+
+
+@pytest.fixture
+def results_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """finalize が書く結果ページの置き場を tmp に向け、設計者のページ（EC-R1）を写しておく。"""
+    directory = tmp_path / "pages"
+    directory.mkdir()
+    shutil_copy = __import__("shutil").copy
+    shutil_copy(REPO_ROOT / "docs" / "results" / "EC-R1.md", directory / "EC-R1.md")
+    monkeypatch.setattr(pages, "RESULTS_DIR", directory)
+    for key in ("AGENTEVAL_FAILURE_TYPE", "AGENTEVAL_FAILURE_REASON"):
+        monkeypatch.delenv(key, raising=False)
+    return directory
+
+
+def _r1_failing() -> dict[str, Any]:
+    return {**R1_PASSING, "rob_c01_over_c13": {"value": 0.7, "provenance": "simulated"}}
+
+
+def test_finalize_defaults_to_fail_with_caution_and_never_auto_negative(results_dir: Path) -> None:
+    common = _load_script("_coding_common")
+    result = common.finalize_coding(
+        "EC-R1",
+        _r1_failing(),
+        ["n1"],
+        seed=1,
+        provenance="live",
+        caution=common.failure_caution("EC-R1"),
+    )
+    assert result["verdict"] == "FAIL" and result["failure_type"] == "fail"
+    reason = result["verdict_reason"]
+    assert "検出力不足の可能性" in reason and "MDE" in reason and "操作確認" in reason
+    assert "--failure-type negative" in reason and "ec_r1" in reason
+    ok = common.finalize_coding(
+        "EC-R1",
+        dict(R1_PASSING),
+        ["n1"],
+        seed=1,
+        provenance="live",
+        caution=common.failure_caution("EC-R1"),
+    )
+    assert ok["verdict"] == "PASS" and "検出力不足" not in ok["verdict_reason"]
+
+
+def test_finalize_designer_negative_is_recorded_with_reason(
+    results_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    common = _load_script("_coding_common")
+    monkeypatch.setenv("AGENTEVAL_FAILURE_TYPE", "negative")
+    monkeypatch.setenv(
+        "AGENTEVAL_FAILURE_REASON", "操作確認で効いており、MDE を超える差が出なかった"
+    )
+    result = common.finalize_coding("EC-R1", _r1_failing(), ["n1"], seed=1, provenance="live")
+    assert result["verdict"] == "NEGATIVE" and result["failure_type"] == "negative"
+    assert "designer の判断で NEGATIVE: 操作確認で効いており" in result["verdict_reason"]
+    page = (results_dir / "EC-R1.md").read_text(encoding="utf-8")
+    assert "designer の判断で NEGATIVE" in page
+    judged = verify.judge(next(e for e in verify.load_registry() if e["id"] == "EC-R1"), result)
+    assert judged["verdict"] == "NEGATIVE"
+    # 未達が無ければ指定は使われない（PASS を NEGATIVE にしない）
+    passing = common.finalize_coding("EC-R1", dict(R1_PASSING), ["n1"], seed=1, provenance="live")
+    assert passing["verdict"] == "PASS" and "使われなかった" in passing["verdict_reason"]
+
+
+def test_forced_failure_overrides_passing_criteria_and_negative(
+    results_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    common = _load_script("_coding_common")
+    monkeypatch.setenv("AGENTEVAL_FAILURE_TYPE", "negative")
+    monkeypatch.setenv("AGENTEVAL_FAILURE_REASON", "x")
+    result = common.finalize_coding(
+        "EC-R1",
+        dict(R1_PASSING),
+        ["n1"],
+        seed=1,
+        provenance="live",
+        forced_failure="反復のカセット鍵（塩）の不備 1 件",
+    )
+    assert result["verdict"] == "FAIL" and result["forced_failure"].startswith("反復のカセット鍵")
+    assert "強制 FAIL" in result["verdict_reason"]
+    entry = next(e for e in verify.load_registry() if e["id"] == "EC-R1")
+    judged = verify.judge(entry, result)
+    assert judged["verdict"] == "FAIL" and "強制 FAIL" in judged["detail"]
+    page = (results_dir / "EC-R1.md").read_text(encoding="utf-8")
+    assert "\n## 判定\nFAIL\n" in page
+
+
+def test_finalize_carries_over_designer_page_and_is_idempotent(results_dir: Path) -> None:
+    common = _load_script("_coding_common")
+    designer = (results_dir / "EC-R1.md").read_text(encoding="utf-8")
+    old_head = designer.split("\n## 5項目")[0]
+    old_five = designer.split("## 5項目\n", 1)[1].split("\n## 方法")[0]
+    notes = ["自動注記 A", "自動注記 B"]
+    common.finalize_coding("EC-R1", dict(R1_PASSING), notes, seed=1, provenance="live")
+    first = (results_dir / "EC-R1.md").read_text(encoding="utf-8")
+    assert first.split("\n## 5項目")[0] == old_head  # 状態・原典の段落を含む先頭ブロック
+    assert first.split("## 5項目\n", 1)[1].split("\n## 方法")[0] == old_five
+    assert "状態:" in first and "原典:" in first
+    # 既存ページの「気づき・限界」が未記入なので、notes はそこに（自動注記の印付きで）出る
+    assert "## 気づき・限界\n" + common.AUTO_NOTES_MARK + "\n- 自動注記 A" in first
+    assert "## 自動注記" not in first
+    # 暫定の基準には印が付く
+    assert ">= 0.9（暫定） | ○" in first
+    common.finalize_coding("EC-R1", dict(R1_PASSING), notes, seed=1, provenance="live")
+    second = (results_dir / "EC-R1.md").read_text(encoding="utf-8")
+    assert second.count("自動注記 A") == 1 and "## 自動注記" not in second  # 再実行で重複しない
+    assert second.split("\n## 5項目")[0] == old_head
+
+
+def test_finalize_keeps_filled_findings_and_puts_notes_under_auto_heading(
+    results_dir: Path,
+) -> None:
+    common = _load_script("_coding_common")
+    page = results_dir / "EC-R1.md"
+    text = page.read_text(encoding="utf-8")
+    text = text.replace(
+        "## 気づき・限界\n（未実施）", "## 気づき・限界\n- 手書きの気づき（設計者）"
+    )
+    page.write_text(text, encoding="utf-8")
+    for _ in range(2):  # 2 回実行しても手書きは消えず、自動注記は 1 つだけ
+        common.finalize_coding("EC-R1", dict(R1_PASSING), ["自動注記 A"], seed=1, provenance="live")
+    out = page.read_text(encoding="utf-8")
+    assert "- 手書きの気づき（設計者）" in out
+    assert out.count("## 自動注記") == 1 and out.count("- 自動注記 A") == 1
+    assert out.index("手書きの気づき") < out.index("## 自動注記") < out.index("\n---\n生成:")
+    assert common.AUTO_NOTES_MARK not in out
+
+
+def test_provisional_mark_in_pages_and_summary() -> None:
+    entry = next(e for e in verify.load_registry() if e["id"] == "EC-B2")
+    marks = {c["metric"]: bool(c.get("provisional")) for c in entry["criteria"]}
+    assert marks == {
+        "allocation_identity_error": False,
+        "ledger_identity_error": False,
+        "verbose_attribution_to_run_tests": True,
+        "history_cache_prediction_error": True,
+        "control_attribution": True,
+    }
+    assert pages.provisional_mark({"provisional": True}) == "（暫定）"
+    assert pages.provisional_mark({"provisional": True}, "en") == " (provisional)"
+    assert pages.provisional_mark({}) == ""
+    result = {
+        "metrics": {
+            "verbose_attribution_to_run_tests": {"value": 0.9, "provenance": "live"},
+        }
+    }
+    judged = verify.judge(entry, result)
+    row = {
+        "id": "EC-B2",
+        "chapter": "C",
+        "title": "t",
+        "verdict": judged["verdict"],
+        "provenance": "live",
+        "usd": 0.0,
+        "key_metrics": judged["criteria"],
+    }
+    text = "\n".join(verify._table_rows([row]))
+    assert "verbose_attribution_to_run_tests=0.9○（暫定）" in text
+    assert "allocation_identity_error=None×（暫定）" not in text
+    # 暫定でない基準と既存の章の行は変わらない
+    old = next(e for e in verify.load_registry() if e["id"] == "E3-1")
+    assert not any(c.get("provisional") for c in old["criteria"])
+
+
+def test_b2_ledger_identity_is_withheld_when_matching_is_poor_or_empty() -> None:
+    b2 = _load_script("ec_b2_context_cost")
+    common = _load_script("_coding_common")
+    runs, tasks = _b2_corpus()
+    all_runs = [r for v in runs.values() for r in v]
+    ledger = _ledger_for(all_runs)
+    full = b2.compute(runs, ledger, load_pricing(), None, sub10=tasks, seed=1, n_boot=20)
+    assert full["metrics"]["ledger_identity_error"]["value"] <= 1e-9
+    assert full["metrics"]["ledger_identity_runs_checked"]["value"] == len(all_runs)
+    assert full["metrics"]["ledger_identity_voided_reason"]["value"] is None
+    # 一部の run の台帳の行が無い（照合率 < 0.95）
+    drop = {r.run_id for r in all_runs[:3]}
+    partial = [e for e in ledger if e.run_id not in drop]
+    poor = b2.compute(runs, partial, load_pricing(), None, sub10=tasks, seed=1, n_boot=20)
+    assert poor["metrics"]["ledger_identity_error"]["value"] is None
+    assert "照合率" in poor["metrics"]["ledger_identity_voided_reason"]["value"]
+    assert poor["metrics"]["ledger_identity_runs_checked"]["value"] == len(all_runs) - 3
+    assert "ledger_identity_error" in common.failing_metrics("EC-B2", poor["metrics"])
+    # 台帳が空: 検査した run が 0 本。値を出さず（None）、H3 の予測誤差も出せない（どちらも基準を満たさない）
+    empty = b2.compute(runs, [], load_pricing(), None, sub10=tasks, seed=1, n_boot=20)
+    assert empty["metrics"]["ledger_identity_error"]["value"] is None
+    assert empty["metrics"]["ledger_identity_runs_checked"]["value"] == 0
+    assert "0 本" in empty["metrics"]["ledger_identity_voided_reason"]["value"]
+    assert empty["metrics"]["history_cache_prediction_error"]["value"] is None
+    failed = common.failing_metrics("EC-B2", empty["metrics"])
+    assert "ledger_identity_error" in failed and "history_cache_prediction_error" in failed
+
+
+def _salted_payload(salt: str, n_messages: int) -> str:
+    return json.dumps(
+        {"request": {"messages": [{}] * n_messages}, "response": {}, "usage": {}, "salt": salt},
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def _salt_runs(repeats: int = 3) -> list[Run]:
+    return [
+        _fake_run(
+            f"cd__CT-demo-001__c13_minimal_fix__corpus__r{r}", "CT-demo-001", "c13_minimal_fix", r
+        )
+        for r in range(repeats)
+    ]
+
+
+def test_r2_salt_defects_detects_missing_and_duplicated_step0_keys(tmp_path: Path) -> None:
+    r2 = _load_script("ec_r2_retry")
+    runs = _salt_runs()
+    root = tmp_path / "llm" / "model"
+    (root / "ab").mkdir(parents=True)
+    for r in range(3):
+        salt = coding_registry.coding_cassette_salt("CT-demo-001", "c13_minimal_fix", 20261103, r)
+        (root / "ab" / f"key{r}.json").write_text(_salted_payload(salt, 1), encoding="utf-8")
+        (root / "ab" / f"later{r}.json").write_text(_salted_payload(salt, 3), encoding="utf-8")
+    (root / "ab" / "office.json").write_text('{"request": {}, "response": {}}', encoding="utf-8")
+    index = r2.build_salt_index(tmp_path / "llm")
+    assert len(index) == 3  # 塩の無いカセットは含めない
+    ok = r2.salt_defects(runs, index)
+    assert ok == {"status": "checked", "checked": 3, "defects": []}
+    # 反復 2 のステップ 0 が無い（塩が掛かっていない・上書きされた）
+    broken = {k: v for k, v in index.items() if not k.endswith(":r2")}
+    missing = r2.salt_defects(runs, broken)
+    assert len(missing["defects"]) == 1 and "r2" in missing["defects"][0]
+    # 反復 1 と 2 のステップ 0 の鍵が重複
+    salt1 = coding_registry.coding_cassette_salt("CT-demo-001", "c13_minimal_fix", 20261103, 1)
+    salt2 = coding_registry.coding_cassette_salt("CT-demo-001", "c13_minimal_fix", 20261103, 2)
+    dup = {**index, salt2: list(index[salt1])}
+    found = r2.salt_defects(runs, dup)
+    assert len(found["defects"]) == 1 and "重複" in found["defects"][0]
+    # カセットを読み出せない（置き場が無い）ときは検査できなかったと記録し、不備とは数えない
+    assert r2.build_salt_index(tmp_path / "nowhere") == {}
+    assert r2.salt_defects(runs, {}) == {"status": "unverifiable", "checked": 0, "defects": []}
+
+
+def test_load_existing_run_reuses_and_stops_on_corrupt_trace(tmp_path: Path) -> None:
+    common = _load_script("_coding_common")
+    run_id = "cd__CT-demo-001__c01_baseline__offline__r0__sc-gold"
+    assert common.load_existing_run(run_id, data_root=tmp_path) is None
+    run = _fake_run(run_id, "CT-demo-001", "c01_baseline", 0)
+    run.mode = "sim"
+    save_coding_run(run, None, data_root=tmp_path)
+    assert common.load_existing_run(run_id, data_root=tmp_path).run_id == run_id  # type: ignore[union-attr]
+    path = tmp_path / "traces" / "sim" / f"{run_id}.json"
+    path.write_text("{壊れた", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="snapshots.*承認"):
+        common.load_existing_run(run_id, data_root=tmp_path)
+
+
+def test_o2_execute_plants_reuses_existing_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agenteval.agent import coding_loop
+
+    o2 = _load_script("ec_o2_integrity")
+    monkeypatch.setattr(o2, "plant_spec", lambda name: {"options": {}})
+
+    def forbidden(*a: Any, **k: Any) -> None:
+        raise AssertionError("既にある run を再実行した")
+
+    monkeypatch.setattr(coding_loop, "run_coding_task", forbidden)
+    tasks = coding_registry.load_task_sets()["o2_plant"]
+    expected: list[str] = []
+    for plant in o2.PLANT_CHECK:
+        for task_id in tasks:
+            script_id = f"sc-gold-{plant.replace('_', '-')}"
+            run_id = coding_registry.coding_run_id(task_id, "c01_baseline", "offline", 0, script_id)
+            run = _fake_run(run_id, task_id, "c01_baseline", 0)
+            run.mode = "sim"
+            save_coding_run(run, None, data_root=tmp_path)
+            expected.append(run_id)
+    out = o2.execute_plants(data_root=tmp_path)
+    assert [r.run_id for _, r in out] == expected and len(out) == 20
+    assert {p for p, _ in out} == set(o2.PLANT_CHECK)

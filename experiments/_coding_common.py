@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 import sys
 from collections.abc import Mapping, Sequence
@@ -22,18 +23,24 @@ import numpy as np
 from _common import finalize, labeled, meta_of
 from numpy.typing import NDArray
 
+from agenteval.core.coding_store import trace_path
+from agenteval.core.schema import Run
 from agenteval.econ.roi import ThetaSample, VersionEconomics
 from agenteval.llm.cost import REPO_ROOT
 from agenteval.reports import pages
 
 __all__ = [
     "breakeven_summary",
+    "carry_over_designer_page",
     "conditional_rob",
     "design_method",
     "failing_metrics",
+    "failure_caution",
+    "failure_override",
     "finalize_coding",
     "json_safe",
     "labeled",
+    "load_existing_run",
     "nv_array",
 ]
 
@@ -74,6 +81,107 @@ def failing_metrics(experiment_id: str, metrics: Mapping[str, Any]) -> list[str]
     return out
 
 
+AUTO_NOTES_MARK = "<!-- agenteval:auto-notes -->"
+_UNFILLED = ("", "（未実施）")
+_FOOTER = "\n---\n生成:"
+
+
+def _section_span(text: str, heading: str) -> tuple[int, int] | None:
+    """`## heading` の見出しの行の先頭から、次の `\n## `・フッター・末尾の手前までの範囲。"""
+    start = text.find(f"## {heading}\n")
+    if start < 0:
+        return None
+    ends = [e for e in (text.find("\n## ", start + 1), text.find(_FOOTER, start)) if e >= 0]
+    return start, (min(ends) if ends else len(text))
+
+
+def carry_over_designer_page(
+    experiment_id: str, old_text: str | None, notes: Sequence[str]
+) -> None:
+    """`finalize` が書いた結果ページに、設計者が書いた既存ページの記述を引き継ぐ（方法は finalize の引数で別に引き継ぐ）。
+
+    - 先頭ブロック（タイトル行と「## 5項目」の間の状態・原典の段落）と「## 5項目」を既存ページのものに戻す
+    - 既存ページの「## 気づき・限界」が未記入（空・「（未実施）」・自動注記だけ）なら、スクリプトの notes をそこに出す
+      （自動注記の印付き。再実行で重複しない）。記入済みなら上書きせず、notes は別の見出し「## 自動注記」に出す
+    既存ページが無い・形が違うときは何もしない。
+    """
+    if not old_text:
+        return
+    path = pages.RESULTS_DIR / f"{experiment_id}.md"
+    new = path.read_text(encoding="utf-8")
+    bullets = "\n".join(f"- {n}" for n in notes)
+
+    old_five, new_five = _section_span(old_text, "5項目"), _section_span(new, "5項目")
+    if old_five and new_five:
+        old_title_end = old_text.find("\n")
+        new_title_end = new.find("\n")
+        head = old_text[old_title_end + 1 : old_five[0]].strip("\n")
+        block = old_text[old_five[0] : old_five[1]].rstrip("\n")
+        rebuilt_head = f"\n\n{head}\n\n" if head else "\n\n"
+        new = new[:new_title_end] + rebuilt_head + block + "\n" + new[new_five[1] :]
+    old_notes, new_notes = (
+        _section_span(old_text, "気づき・限界"),
+        _section_span(new, "気づき・限界"),
+    )
+    if new_notes is None:
+        path.write_text(new, encoding="utf-8")
+        return
+    # 既存ページの「気づき・限界」の本文（見出し行と、直後の「## 自動注記」・フッターを除く）
+    filled = ""
+    if old_notes:
+        body = (
+            old_text[old_notes[0] : old_notes[1]].split("\n", 1)[1]
+            if "\n" in old_text[old_notes[0] : old_notes[1]]
+            else ""
+        )
+        auto = body.find("\n## 自動注記")
+        filled = (body if auto < 0 else body[:auto]).strip()
+    if filled in _UNFILLED or AUTO_NOTES_MARK in filled:
+        section = f"## 気づき・限界\n{AUTO_NOTES_MARK}\n{bullets}\n"
+        new = new[: new_notes[0]] + section + new[new_notes[1] :]
+    else:
+        section = f"## 気づき・限界\n{filled}\n\n## 自動注記\n{bullets}\n"
+        new = new[: new_notes[0]] + section + new[new_notes[1] :]
+    path.write_text(new, encoding="utf-8")
+
+
+def load_existing_run(run_id: str, *, data_root: Path, mode_dir: str = "sim") -> Run | None:
+    """同じ run_id の run が既にあれば読む（無ければ None）。読めない・壊れていれば案内付きで止まる。
+
+    スクリプト化 run（EC-S1・EC-O2・EC-B2 の対照 (a)）は再実行しても同じ結果になるので、再利用する。
+    壊れた記録を黙って消さない: やり直すには data/coding/snapshots/ などの削除が要り、ユーザーの承認が要る（CLAUDE.md）。
+    """
+    path = trace_path(run_id, mode_dir, data_root=data_root)  # type: ignore[arg-type]
+    if not path.exists():
+        return None
+    try:
+        return Run.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            f"{path} が読めない・壊れている（{type(exc).__name__}）。やり直すには data/coding/snapshots/ と traces/ の"
+            "該当 run の削除が要るので、ユーザーの承認を得る（黙って消さない）"
+        ) from exc
+
+
+def failure_caution(experiment_id: str) -> str:
+    """EC-R1・R2・B2 の未達の判定理由に必ず添える注意（自動では NEGATIVE にしない。designer が判断する）。"""
+    return (
+        "自動の判定は FAIL。次を確かめてから判断する: (1) 検出力不足の可能性: 観測した差・区間の幅を、パイロットで確定した"
+        "MDE（W3-A2 の記録）と比べる（MDE 未満の差は否定的結果ではなく検出力不足）。(2) 植込みの効果は操作確認"
+        "（ADR-037。c13 の spec_literal の発火数）で確認済みか。実装は正しく手法が主張どおり働かなかったと判断したときは、"
+        f'`uv run agenteval exp {experiment_id.lower().replace("-", "_")} --failure-type negative --reason "<理由>"` で'
+        "明示する（理由は結果 JSON と結果ページに残る）。"
+    )
+
+
+def failure_override() -> tuple[str, str] | None:
+    """CLI の `exp --failure-type negative --reason ...` が環境変数で渡した designer の判断。"""
+    kind = os.environ.get("AGENTEVAL_FAILURE_TYPE", "")
+    if kind not in ("fail", "negative"):
+        return None
+    return kind, os.environ.get("AGENTEVAL_FAILURE_REASON", "")
+
+
 def finalize_coding(
     experiment_id: str,
     metrics: dict[str, Any],
@@ -83,20 +191,46 @@ def finalize_coding(
     provenance: str,
     method_fallback: str = "",
     negative_if_only: Sequence[str] = (),
+    caution: str = "",
+    forced_failure: str = "",
     figures: list[tuple[str, str]] | None = None,
     verdict_reason_extra: str = "",
 ) -> dict[str, Any]:
     """結果 JSON と結果ページを書く。
 
-    `negative_if_only`: 未達の基準がこの指標の部分集合だけなら NEGATIVE（実装は正しいが手法が主張どおりに
-    働かなかった）、それ以外の未達は FAIL（実装や設計の不備）。判断の根拠は各 EC-*.md の
-    「FAIL と NEGATIVE の区別」。
+    判定の種類:
+    - 既定は FAIL。`negative_if_only`（EC-B2P・EC-S1 のように原因が機械的に決まる実験だけ）に未達の指標が収まれば NEGATIVE
+    - EC-R1・R2・B2 は自動では NEGATIVE にしない。designer が `exp <id> --failure-type negative --reason "<理由>"` で
+      明示したときだけ NEGATIVE（理由は結果 JSON の verdict_reason と結果ページに残る）
+    - `caution`: 未達のときの判定理由に必ず添える注意（検出力不足の可能性・植込みの効果の確認）
+    - `forced_failure`: 基準の指標では表せない欠陥（例: カセットの塩の不備）。基準を満たしていても FAIL にする
+      （`result["forced_failure"]`。verify が優先して FAIL にする）。designer の NEGATIVE の指定より優先する
+    結果ページは設計者が書いた既存ページの先頭ブロック・5項目・方法・記入済みの気づきを引き継ぐ
+    （`carry_over_designer_page`）。
     """
     failed = failing_metrics(experiment_id, metrics)
     failure_type = "fail"
+    extra = [verdict_reason_extra] if verdict_reason_extra else []
     if failed and negative_if_only and set(failed) <= set(negative_if_only):
         failure_type = "negative"
-    return finalize(
+    override = failure_override()
+    if override is not None:
+        kind, why = override
+        if failed and not forced_failure:
+            failure_type = kind
+            if kind == "negative":
+                extra.append(f"designer の判断で NEGATIVE: {why}")
+        elif not failed:
+            extra.append("（--failure-type の指定は、未達の基準が無いので使われなかった）")
+        else:
+            extra.append("（--failure-type の指定は、強制 FAIL があるので使われなかった）")
+    if failed and caution:
+        extra.append(caution)
+    if forced_failure:
+        extra.append(f"強制 FAIL: {forced_failure}")
+    old_page = pages.RESULTS_DIR / f"{experiment_id}.md"
+    old_text = old_page.read_text(encoding="utf-8") if old_page.exists() else None
+    result = finalize(
         experiment_id,
         metrics,
         method=design_method(experiment_id) or method_fallback,
@@ -105,8 +239,15 @@ def finalize_coding(
         seed=seed,
         provenance=provenance,
         failure_type=failure_type,
-        verdict_reason_extra=verdict_reason_extra,
+        verdict_reason_extra=" ".join(extra),
     )
+    if forced_failure:
+        result["forced_failure"] = forced_failure
+        result["verdict"] = "FAIL"
+        result["failure_type"] = "fail"
+        pages.write(meta_of(experiment_id), result)
+    carry_over_designer_page(experiment_id, old_text, notes)
+    return result
 
 
 # ---------------------------------------------------------------------------

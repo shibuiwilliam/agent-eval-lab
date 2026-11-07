@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 from collections.abc import Mapping, Sequence
 from itertools import pairwise
@@ -20,9 +21,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _coding_common import finalize_coding, json_safe, labeled, nv_array
+from _coding_common import failure_caution, finalize_coding, json_safe, labeled, nv_array
 
-from agenteval.core.coding_registry import load_coding_tasks
+from agenteval.core.coding_registry import coding_cassette_salt, load_coding_tasks
 from agenteval.core.coding_store import load_coding_outcome
 from agenteval.core.coding_types import CODING_DATA_ROOT, CodingTask
 from agenteval.core.schema import Run
@@ -49,6 +50,7 @@ from agenteval.econ.roi import (
     load_theta_space,
     sample_thetas,
 )
+from agenteval.llm.cassette import CASSETTE_ROOT
 from agenteval.reports.coding_corpus import load_plan, plan_units, require_stage_runs, unit_states
 
 EXPERIMENT_ID = "EC-R2"
@@ -81,6 +83,66 @@ def dry_run(seed: int = 20260913) -> dict[str, Any]:  # Any: 表示用
         "ready": not states["partial"] and not states["missing"],
         "how_to_make_runs": "uv run agenteval coding corpus --stage corpus --dry-run（G2 の承認後に --live）",
     }
+
+
+def build_salt_index(root: Path | None = None) -> dict[str, list[tuple[str, int]]]:
+    """カセットの置き場を走査し、塩付きのカセットを 塩 → [(カセットの鍵, request の messages 数)] にまとめる。
+
+    塩の無いカセットは含めない。塩付きかどうかは本文の `"salt": "cd:` で先に絞り、該当するものだけ読み込む
+    （置き場には office のカセットも多いので、全件の JSON 解析を避ける）。置き場が無ければ空。
+    """
+    base = root or CASSETTE_ROOT
+    index: dict[str, list[tuple[str, int]]] = {}
+    if not base.exists():
+        return index
+    for path in base.rglob("*.json"):
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            continue
+        if b'"salt": "cd:' not in raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            continue
+        salt = payload.get("salt")
+        if isinstance(salt, str):
+            n_messages = len((payload.get("request") or {}).get("messages") or [])
+            index.setdefault(salt, []).append((path.stem, n_messages))
+    return index
+
+
+def salt_defects(
+    runs: Sequence[Run], index: Mapping[str, Sequence[tuple[str, int]]]
+) -> dict[str, Any]:  # Any: 検査の記録
+    """反復のカセットの塩の不備を調べる（EC-R2.md: 塩の不備で反復が同一になれば FAIL）。
+
+    各 run の期待する塩（`coding_cassette_salt(task, version, seed, repeat)`）で、ステップ 0（messages が 1 件）の
+    塩付きカセットを引く。見つからない run（塩が掛かっていない・上書きされた）と、同じ (タスク, 版) の反復どうしで
+    ステップ 0 の鍵が重複するものを不備とする。カセットの索引が空（置き場が無い・読み出せない）なら
+    `status="unverifiable"` で、不備とは数えない（検査できなかったことを記録する）。
+    """
+    if not index:
+        return {"status": "unverifiable", "checked": 0, "defects": []}
+    defects: list[str] = []
+    step0_keys: dict[tuple[str, str], dict[str, str]] = {}
+    for run in runs:
+        salt = coding_cassette_salt(run.task_id, run.version_id, run.seed, run.repeat)
+        keys = [k for k, n in index.get(salt, ()) if n == 1]
+        if not keys:
+            defects.append(f"{run.run_id}: 塩 {salt} のステップ 0 のカセットが無い")
+            continue
+        step0_keys.setdefault((run.task_id, run.version_id), {})[run.run_id] = keys[0]
+    for (task_id, version_id), by_run in step0_keys.items():
+        seen: dict[str, str] = {}
+        for run_id, key in sorted(by_run.items()):
+            if key in seen:
+                defects.append(
+                    f"{task_id} {version_id}: {seen[key]} と {run_id} のステップ 0 の鍵が重複（{key[:12]}）"
+                )
+            seen.setdefault(key, run_id)
+    return {"status": "checked", "checked": len(runs), "defects": defects}
 
 
 def final_diff_hashes(
@@ -350,6 +412,16 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
     )
     metrics = out["metrics"]
     mae = out["extras"]["mae_by_version"]
+    salts = salt_defects([r for rs in by_version.values() for r in rs], build_salt_index())
+    metrics["cassette_salt_check"] = labeled(
+        {"status": salts["status"], "checked": salts["checked"], "defects": salts["defects"][:20]},
+        "live",
+    )
+    forced = (
+        f"反復のカセット鍵（塩）の不備 {len(salts['defects'])} 件: {salts['defects'][:3]}"
+        if salts["defects"]
+        else ""
+    )
     notes = [
         (
             "closed_form_mae_k1to4 の閾値 0.05 は仮置きで、推定誤差の床（0.05〜0.07）と同程度のため、閉形式が正しくても"
@@ -362,8 +434,10 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         ),
         (
             "反復の独立性の診断: identical_trial_rate = "
-            f"{metrics['identical_trial_rate']['value']}（塩が効いていれば 0 に近い。高ければ F1 の実装を疑う。"
-            "EC-R2.md では塩の不備で反復が同一になれば FAIL）。"
+            f"{metrics['identical_trial_rate']['value']}（記録のみ。塩が効いていれば 0 に近い）。塩の不備は別に、"
+            "同じ (タスク, 版) の反復どうしでステップ 0 のカセット鍵（塩付き）が欠けている・重複していないかを調べ"
+            f"（cassette_salt_check: {salts['status']}、検査 {salts['checked']} run、不備 {len(salts['defects'])} 件）、"
+            "あれば基準の達成によらず強制 FAIL にする。カセットを読み出せなければ「検査できなかった」と記録する。"
         ),
         (
             "c12（試行 2 回）では G_3 が列挙できないので、c12 と c01 の差は G_2 で記録した（g2_diff_c12_minus_c01、"
@@ -382,12 +456,10 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         seed=seed,
         provenance="live",
         method_fallback=METHOD_FALLBACK,
-        # 自己検査（恒等式・単調性）の未達は実装の誤り（FAIL）。それ以外は手法が主張どおり働かなかった（NEGATIVE）
-        negative_if_only=(
-            "closed_form_mae_k1to4",
-            "g3_diff_ci_low",
-            "silent_wrong_gain_c13_ci_low",
-        ),
+        # 自動の判定は FAIL（閉形式の閾値の未達は基準設計の問題で、手法の否定的結果ではない。EC-R2.md）。
+        # NEGATIVE は designer が --failure-type negative --reason で明示する
+        caution=failure_caution(EXPERIMENT_ID),
+        forced_failure=forced,
     )
 
 

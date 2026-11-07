@@ -23,7 +23,7 @@ from typing import Any, Literal
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _coding_common import finalize_coding, json_safe, labeled
+from _coding_common import finalize_coding, json_safe, labeled, load_existing_run
 
 from agenteval.core.coding_registry import (
     coding_run_id,
@@ -305,6 +305,11 @@ def execute_plants(
                 if executor_factory_of is not None
                 else docker_executor_factory(run_id, mode_dir_of("sim"))
             )
+            # 同じ run_id の run が既にあれば再利用する（スクリプト化 run は決定的）。壊れていれば案内付きで止まる
+            existing = load_existing_run(run_id, data_root=data_root)
+            if existing is not None:
+                out.append((plant, existing))
+                continue
             run, _ = run_coding_task(
                 task,
                 version,

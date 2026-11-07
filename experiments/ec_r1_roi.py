@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _coding_common import (
     breakeven_summary,
     conditional_rob,
+    failure_caution,
     finalize_coding,
     json_safe,
     labeled,
@@ -233,11 +234,12 @@ def compute(
         ),
         "vis_fail_hidden_pass": labeled(vis_fail_hidden_pass, "live"),
         "test_files_modified": labeled(dict(test_files_modified), "live"),
+        # タスク生成時のメタデータ（run の観測ではない）。来歴は ADR-004 の 3 種のうち、より保守的な simulated を付ける
         "hidden_test_mutation_score_mean": labeled(
-            float(np.mean([mutation_scores[t] for t in common13])), "live"
+            float(np.mean([mutation_scores[t] for t in common13])), "simulated"
         ),
         "hidden_test_mutation_score_min": labeled(
-            float(min(mutation_scores[t] for t in common13)), "live"
+            float(min(mutation_scores[t] for t in common13)), "simulated"
         ),
         "n_common_tasks": labeled({"c01_c13": len(common13), "c01_c12": len(common12)}, "live"),
         "n_theta": labeled(space.n_samples, "simulated"),
@@ -279,11 +281,14 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
             "部分的な修正は S に数えられうる（W0-Z の変異スコアの平均は 0.84）。S の中に本当は不完全な修正が"
             f"混ざりうるので W 率は下限寄りである。この実験の 24 タスクの変異スコア平均 "
             f"{metrics['hidden_test_mutation_score_mean']['value']:.3f}、最小 {metrics['hidden_test_mutation_score_min']['value']:.3f}。"
+            "変異スコアはタスク生成時のメタデータ（run の観測ではない）なので、来歴は simulated を付けた。"
         ),
         (
             "Rob は点推定の差の向きだけで決まり、真の差が 0 でも 0 か 1 に張り付く。対照 c12 では rob_c12_vs_c01 "
             f"= {metrics['rob_c12_vs_c01']['value']:.3f}。確信できる θ の割合 null_confident_fraction_c12 "
             f"= {metrics['null_confident_fraction_c12']['value']:.3f}（同時信頼帯は名目 95%。24 クラスタでの実被覆は約 0.85）。"
+            "visible_vs_nv_rank_reversal は live（可視合格率の差の区間）と simulated（Θ 上の Rob）を組み合わせた指標で、"
+            "来歴ラベルは ADR-004 の 3 種のうちより保守的な simulated を付けた。"
         ),
         (
             "Rob の到達上限は c13 の W の出どころで決まる（純粋な F→W で 0.887、S からの移動が増えるほど 1 に近づく。"
@@ -306,13 +311,8 @@ def main(live: bool = False, seed: int = 20260913) -> dict[str, Any]:
         seed=seed,
         provenance="live",
         method_fallback=METHOD_FALLBACK,
-        # 植込みが効いたうえで基準に届かないのは「手法が主張どおり働かなかった」NEGATIVE（EC-R1.md）
-        negative_if_only=(
-            "w_rate_diff_ci_low",
-            "visible_vs_nv_rank_reversal",
-            "rob_c01_over_c13",
-            "null_confident_fraction_c12",
-        ),
+        # 自動の判定は FAIL。NEGATIVE は designer が --failure-type negative --reason で明示する
+        caution=failure_caution(EXPERIMENT_ID),
     )
 
 

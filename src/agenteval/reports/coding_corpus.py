@@ -60,6 +60,25 @@ DEFAULT_CONSERVATIVE_FACTOR = 1.5
 CORPUS_TASKS = 24
 
 
+# live の段と、それを始めてよい承認済みのゲート（TASK.md 6.1 節: G1 = パイロット・操作確認、G2 = コーパス）
+STAGE_GATES = {"pilot": "G1", "opcheck": "G1", "corpus": "G2"}
+
+
+def required_gate(stage: str) -> str | None:
+    """live の段なら、始めるのに要る承認済みのゲート（G1 | G2）。live でない段（unit・offline など）は None。"""
+    return STAGE_GATES.get(stage)
+
+
+def check_gate(stage: str, approved: str) -> None:
+    """live の段を record・replay で始めるときのゲートの確認。対応しない承認では PlanError（ゲートの迂回を防ぐ）。"""
+    need = required_gate(stage)
+    if need is not None and approved != need:
+        raise PlanError(
+            f"段 {stage} は承認済みのゲート {need} が要る（--approved {need}）。受け取った値: {approved!r}"
+            "（G1 = パイロット・操作確認、G2 = コーパス。承認は --dry-run の見積りを提示して得る）"
+        )
+
+
 class PlanError(ValueError):
     """コーパス計画の誤り（未知の段・集合・版など）。"""
 
@@ -407,6 +426,7 @@ def run_stage(
         "planned": len(units),
         "skipped_done": 0,
         "blocked_partial": [],
+        "incomplete": 0,
         "ran": 0,
         "passed_hidden": 0,
         "usd": 0.0,
@@ -445,6 +465,8 @@ def run_stage(
         summary["ran"] += 1
         summary["passed_hidden"] += int(run.passed())
         summary["usd"] = round(summary["usd"] + run.cost.usd, 4)
+    # この shard の計画のうち、完了していない run の数（予算停止・途中終了・飛ばした分を含む）
+    summary["incomplete"] = summary["planned"] - summary["skipped_done"] - summary["ran"]
     return summary
 
 

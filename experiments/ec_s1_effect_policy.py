@@ -24,7 +24,7 @@ from typing import Any, Literal
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _coding_common import finalize_coding, json_safe, labeled
+from _coding_common import finalize_coding, json_safe, labeled, load_existing_run
 
 from agenteval.core.coding_registry import (
     coding_run_id,
@@ -392,20 +392,23 @@ def execute_catalog(
                 require_isolated(executor)
                 return executor
 
-            run, _outcome = run_coding_task(
-                task,
-                version,
-                CodingRunOptions(
-                    mode="sim",
-                    stage=OFFLINE_STAGE,
-                    repeat=repeat,
-                    seed=plan_seed,
-                    script=script,
-                    broker=broker,
-                    executor_factory=factory,
-                    data_root=data_root,
-                ),
-            )
+            # 同じ run_id の run が既にあれば再利用する（スクリプト化 run は決定的）。壊れていれば案内付きで止まる
+            run = load_existing_run(run_id, data_root=data_root)
+            if run is None:
+                run, _outcome = run_coding_task(
+                    task,
+                    version,
+                    CodingRunOptions(
+                        mode="sim",
+                        stage=OFFLINE_STAGE,
+                        repeat=repeat,
+                        seed=plan_seed,
+                        script=script,
+                        broker=broker,
+                        executor_factory=factory,
+                        data_root=data_root,
+                    ),
+                )
             observations.append(
                 observe(
                     entry,
