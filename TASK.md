@@ -377,6 +377,7 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 | 2026-11-07 | W1-I8 への申し送り | `economics_of` は `tasks=共通タスク` を明示して呼ぶ（点推定と複製のタスク集合を揃える）。損益分岐の nan は「常に得」「常に損」の別を記録する。H3 は `prefix_tokens` を c01o から求める | I8 の指示文 |
 | 2026-11-07 | W1-I3（重大） | 隠しテストの `tests_hidden/pytest.ini` は `pythonpath = ../src`（pytest 9 は ini の位置から相対）。評価（隠しテスト・最終評価）の合否は JUnit XML が必須（標準出力の件数へのフォールバックは評価では使わない）、skip・error・name の無い testcase は不合格、フィクスチャの `expected_nodeids.json`（W1-I4 が正しいコードで生成）の全ノードが passed であることを条件にする。同一プロセス内の偽装は完全には防げないことを限界として記録する | SPEC.md 6.6、**新 ADR-041 が要る（SPEC 6.6 の標準出力フォールバックからの逸脱）**。W2-A1 の前に designer が反映 |
 | 2026-11-07 | W1-I3（中） | digest に実行ビットを含め、目録に全クラスの `full_hash` を足す。除外分類は repo 領域だけ。読み込みに上限（oversize は blob を保存しない）。`create` は既存のスナップショットがあれば拒否。blob にはカナリアの値が生で残るので、ADR-030 に「blob は例外、事後の秘匿走査は blobs を対象外」と追記 | SPEC.md 6.4・6.5、ADR-030 の追記（designer） |
+| 2026-11-07 | W1-I2（再レビュー） | PID 1 はシグナルを無視して子を回収するループ（`--init` は使わない。エージェントがコンテナを止められるため）。run_shell の呼び出しで起動した背景プロセスは呼び出しの終了時に終了させる。`hook_missing` で `-S`・venv の sitecustomize による遮蔽を「観測不能」として検出するので、SPEC 5.4 の「`-S` は盲点」と EC-S1 の盲点の探針の期待値を見直す。hook_missing の対象は `python*`・`pytest`・`py.test`、`hook_log_not_regular` は `fs_write`、名前解決は `net:<host>:`。`write: bool`・`unexecuted_call_ids`・`DockerConfig.fsize_bytes` を SPEC に追記 | SPEC.md 5 節、CONTENT.md 10 章、EC-S1.md（designer） |
 | 2026-11-07 | EC-B2P の解釈（W2-A1 へ） | `ledger_identity_error` は台帳とトークン数で照合した行の usd との一致なので、検証するのは単価表の写し・行の対応づけ・総和だけで、ブロックごとの割り振りの正しさではない。植込みの検出率 1.0 は適格条件と検出が同じ量なので「配管の煙試験」であって検出感度ではない。結果ページの「気づき・限界」に必ず書く | EC-B2P.md（W2-A1） |
 
 ### W2 オフライン検証（W1 の統合後。runner 5 体並列）
