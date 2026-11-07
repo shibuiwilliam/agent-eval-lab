@@ -417,6 +417,8 @@ def run_stage(
     予算停止（BudgetExceeded）が出たら波を止めて報告する（上限を上げるのはユーザーの承認後。TASK.md 6.3）。
     途中終了（.partial）の run は触らず、報告に載せる（やり直しは snapshots の削除の承認が要る）。
     `stop_after` は実行する run の数の上限（試験用）。
+    操作確認の段（`opcheck<N>`）の summary は `passed_hidden`・`usd` を持たない（ADR-037 判断 2: 植込みの痕跡以外を見ない。
+    費用は `agenteval cost` で見る）。
     """
     from agenteval.agent.coding_loop import (
         CodingRunOptions,
@@ -441,10 +443,12 @@ def run_stage(
         "blocked_partial": [],
         "incomplete": 0,
         "ran": 0,
-        "passed_hidden": 0,
-        "usd": 0.0,
         "stopped": None,
     }
+    show_outcome = not is_opcheck_stage(stage)
+    if show_outcome:
+        summary["passed_hidden"] = 0
+        summary["usd"] = 0.0
     for unit in units:
         state = unit_state(unit, data_root=data_root, mode_dir=mode_dir)
         if state == "done":
@@ -476,8 +480,9 @@ def run_stage(
             summary["blocked_partial"].append(f"{unit.run_id}: {exc}")
             continue
         summary["ran"] += 1
-        summary["passed_hidden"] += int(run.passed())
-        summary["usd"] = round(summary["usd"] + run.cost.usd, 4)
+        if show_outcome:
+            summary["passed_hidden"] += int(run.passed())
+            summary["usd"] = round(summary["usd"] + run.cost.usd, 4)
     # この shard の計画のうち、完了していない run の数（予算停止・途中終了・飛ばした分を含む）
     summary["incomplete"] = summary["planned"] - summary["skipped_done"] - summary["ran"]
     return summary
@@ -627,7 +632,12 @@ def stage_report(
     合格率・S/W/F・W 率・費用は出さない（ADR-037 判断 2: 操作確認で c13 の W 率と合格率を見ない）。
     通常（`--stage pilot`）は合格率・σ_d の材料・1 run の実費・finish 未呼び出し率・タイムアウト率・
     spec_literal 発火率・履歴キャッシュが作動していない run の数を出す。EC-B2 H3 の残差は出さない。
+    操作確認の段（`opcheck<N>`）で `only_spec=False` は PlanError（CLI だけを関門にしない。ADR-037 判断 2）。
     """
+    if is_opcheck_stage(stage) and not only_spec:
+        raise PlanError(
+            f"段 {stage} は合格率・W 率を見ない（ADR-037 判断 2）。only_spec=True（--only spec）だけを許す"
+        )
     tasks = load_coding_tasks()
     units = plan_units(plan, stage, task_sets=task_sets)
     states = unit_states(units, data_root=data_root, mode_dir=mode_dir)

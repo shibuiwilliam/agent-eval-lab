@@ -16,7 +16,7 @@ from collections import Counter
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -294,7 +294,7 @@ def test_run_stage_skips_done_stops_on_budget_and_reports_blocked(
     from agenteval.llm.cost import BudgetExceeded
 
     plan = cc.load_plan()
-    units = cc.plan_units(plan, "opcheck")
+    units = cc.plan_units(plan, "pilot")
     save_coding_run(
         _fake_run(units[0].run_id, units[0].task_id, units[0].version_id, 0),
         None,
@@ -311,7 +311,7 @@ def test_run_stage_skips_done_stops_on_budget_and_reports_blocked(
     def fake_run(task: Any, version: Any, opts: Any) -> tuple[Run, CodingOutcome]:
         run_id = coding_registry.coding_run_id(task.id, version.id, opts.stage, opts.repeat)
         calls.append(run_id)
-        assert opts.mode == "record" and opts.seed == 20261102  # 段の seed（塩付き record）
+        assert opts.mode == "record" and opts.seed == 20261101  # 段の seed（塩付き record）
         if len(calls) == 3:
             raise BudgetExceeded("予算停止（テスト）")
         run = _fake_run(run_id, task.id, version.id, opts.repeat, cost=Cost(usd=0.05))
@@ -319,7 +319,7 @@ def test_run_stage_skips_done_stops_on_budget_and_reports_blocked(
         return run, None  # type: ignore[return-value]
 
     monkeypatch.setattr(coding_loop, "run_coding_task", fake_run)
-    summary = cc.run_stage(plan, "opcheck", data_root=tmp_path, guard=object())  # type: ignore[arg-type]
+    summary = cc.run_stage(plan, "pilot", data_root=tmp_path, guard=object())  # type: ignore[arg-type]
     assert summary["skipped_done"] == 1 and summary["blocked_partial"] == [units[1].run_id]
     assert summary["ran"] == 2 and summary["usd"] == pytest.approx(0.10)
     assert "BudgetExceeded" in summary["stopped"]
@@ -466,20 +466,24 @@ def _outcome_run(
 
 def test_stage_report_pilot_vs_only_spec(tmp_path: Path) -> None:
     plan = cc.load_plan()
-    units = cc.plan_units(plan, "opcheck")
+    # opcheck 系は only_spec なしの集計を拒否するので、全集計は同じ計画を持つ opcheck 以外の段（pilotx）で確かめる
+    plan = {**plan, "stages": {**plan["stages"], "pilotx": plan["stages"]["opcheck"]}}
     classes = ["S", "W", "F", "S", "W", "W", "S", "F", "S", "W"]
-    for unit, cls in zip(units, classes, strict=True):
-        save_coding_run(
-            _outcome_run(unit.run_id, unit.task_id, unit.version_id, unit.repeat, cls),
-            None,
-            data_root=tmp_path,
-        )
+    for stage in ("opcheck", "pilotx"):
+        for unit, cls in zip(cc.plan_units(plan, stage), classes, strict=True):
+            save_coding_run(
+                _outcome_run(unit.run_id, unit.task_id, unit.version_id, unit.repeat, cls),
+                None,
+                data_root=tmp_path,
+            )
     only = cc.stage_report(plan, "opcheck", only_spec=True, data_root=tmp_path)
     block = only["versions"]["c13_minimal_fix"]
     assert set(block) == {"n_runs", "spec"}  # 合格率・W 率・費用は出さない（ADR-037）
     assert block["spec"]["n_bugfix_runs"] == 10 and "spec_literal_rate" in block["spec"]
     assert "pi_W" not in json.dumps(only) and "usd_per_run_mean" not in json.dumps(only)
-    full = cc.stage_report(plan, "opcheck", data_root=tmp_path)
+    with pytest.raises(cc.PlanError, match="ADR-037"):  # CLI だけを関門にしない
+        cc.stage_report(plan, "opcheck", data_root=tmp_path)
+    full = cc.stage_report(plan, "pilotx", data_root=tmp_path)
     v = full["versions"]["c13_minimal_fix"]
     assert v["bugfix"]["S"] == 4 and v["bugfix"]["W"] == 4 and v["bugfix"]["F"] == 2
     assert v["finish_not_called_rate"] == 0.2 and v["timeout_run_rate"] == 0.2
@@ -2115,6 +2119,138 @@ def test_cli_coding_run_record_needs_a_live_stage_with_its_gate() -> None:
         res = RUNNER.invoke(app, [*base, "--mode", "record", "--stage", stage])
         flat = "".join(ch for ch in res.output if ch not in " \n│")  # rich の折り返しと枠を除く
         assert res.exit_code != 0 and "liveの段" in flat, (stage, res.output)
+
+
+def test_run_stage_summary_of_opcheck_has_no_pass_count_or_cost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-037 判断 2: 操作確認の段の終了時 summary に合格数・費用を出さない。pilot は出す。"""
+    from agenteval.agent import coding_loop
+
+    plan = cc.load_plan()
+
+    def fake_run(task: Any, version: Any, opts: Any) -> tuple[Run, CodingOutcome]:
+        run = _fake_run(
+            coding_registry.coding_run_id(task.id, version.id, opts.stage, opts.repeat),
+            task.id,
+            version.id,
+            opts.repeat,
+            cost=Cost(usd=0.05),
+        )
+        run.outcome = Outcome(passed=True)
+        return run, None  # type: ignore[return-value]
+
+    monkeypatch.setattr(coding_loop, "run_coding_task", fake_run)
+    for stage in ("opcheck", "opcheck2"):
+        summary = cc.run_stage(plan, stage, data_root=tmp_path, guard=object(), stop_after=2)  # type: ignore[arg-type]
+        assert summary["ran"] == 2 and summary["stopped"] == "stop_after", stage
+        assert "passed_hidden" not in summary and "usd" not in summary, (stage, summary)
+        assert "0.05" not in json.dumps(summary)
+    pilot = cc.run_stage(plan, "pilot", data_root=tmp_path, guard=object(), stop_after=2)  # type: ignore[arg-type]
+    assert pilot["passed_hidden"] == 2 and pilot["usd"] == pytest.approx(0.10)
+
+
+def test_cli_coding_run_opcheck_output_has_no_class_or_pass_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agenteval.agent import coding_loop
+
+    def fake_run(task: Any, version: Any, opts: Any) -> tuple[Run, Any]:
+        run = _outcome_run("cd__x__y__s__r0", task.id, version.id, 0, "S")
+        run.cost = Cost(usd=0.07)
+        out = SimpleNamespace(
+            finished=True,
+            visible=SimpleNamespace(passed=True),
+            hidden=SimpleNamespace(passed=True),
+            test_files_modified=False,
+        )
+        return run, out
+
+    monkeypatch.setattr(coding_loop, "run_coding_task", fake_run)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100000")
+    base = ["coding", "run", "--version", "c13_minimal_fix", "--task", "CT-tillcalc-001"]
+    res = RUNNER.invoke(app, [*base, "--mode", "record", "--stage", "opcheck2", "--approved", "G1"])
+    assert res.exit_code == 0, res.output
+    out = json.loads(res.output)
+    for key in ("class", "visible_passed", "hidden_passed", "usd"):
+        assert key not in out, key
+    assert out["finished"] is True and out["test_files_modified"] is False
+    # pilot は従来どおり合否・費用を出す
+    res = RUNNER.invoke(app, [*base, "--mode", "record", "--stage", "pilot", "--approved", "G1"])
+    assert res.exit_code == 0, res.output
+    out = json.loads(res.output)
+    assert out["hidden_passed"] is True and out["visible_passed"] is True and out["usd"] == 0.07
+
+
+def test_cli_coding_run_live_seed_is_the_plan_seed_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """計画に無い段は seed 0 に落ちず、計画の seed と違う --seed は拒否される（ADR-038 の 1 対 1）。"""
+    from agenteval.agent import coding_loop
+
+    seen: list[int] = []
+
+    def fake_run(task: Any, version: Any, opts: Any) -> tuple[Run, Any]:
+        seen.append(opts.seed)
+        run = _outcome_run("cd__x__y__s__r0", task.id, version.id, 0, "S")
+        out = SimpleNamespace(finished=True, visible=None, hidden=None, test_files_modified=False)
+        return run, out
+
+    monkeypatch.setattr(coding_loop, "run_coding_task", fake_run)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100000")
+    base = ["coding", "run", "--version", "c13_minimal_fix", "--task", "CT-tillcalc-001"]
+    gated = ["--mode", "record", "--approved", "G1"]
+    unplanned = RUNNER.invoke(app, [*base, *gated, "--stage", "opcheck3"])
+    assert unplanned.exit_code != 0 and seen == [], unplanned.output
+    assert "計画" in unplanned.output
+    wrong = RUNNER.invoke(app, [*base, *gated, "--stage", "opcheck2", "--seed", "0"])
+    assert wrong.exit_code != 0 and seen == [], wrong.output
+    ok = RUNNER.invoke(app, [*base, *gated, "--stage", "opcheck2"])
+    assert ok.exit_code == 0 and seen == [20261104], ok.output
+    same = RUNNER.invoke(app, [*base, *gated, "--stage", "opcheck2", "--seed", "20261104"])
+    assert same.exit_code == 0 and seen == [20261104, 20261104], same.output
+
+
+def test_cli_corpus_live_refuses_a_stage_without_a_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("AGENTEVAL_BUDGET_USD", "100000")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cc,
+        "run_stage",
+        lambda plan, stage, **kw: (
+            calls.append(stage) or {"stopped": None, "blocked_partial": [], "incomplete": 0}
+        ),
+    )
+    # 計画にあるがゲートに対応しない段（offline）は、見積りを通っても --live では拒否される
+    monkeypatch.setattr(cc, "estimate_stage", lambda plan, stage, **kw: {"stage": stage})
+    for approved in ("", "G1", "G2"):
+        res = RUNNER.invoke(
+            app, ["coding", "corpus", "--stage", "offline", "--live", "--approved", approved]
+        )
+        flat = "".join(ch for ch in res.output if ch not in " \n│")
+        assert res.exit_code != 0 and "liveの段" in flat, (approved, res.output)
+    assert calls == []
+
+
+def test_c12_team_note_and_c13_minimal_fix_have_similar_length() -> None:
+    """CONTENT.md 8.3: c12 の team_note と c13 の minimal_fix の本文の長さは ±10% 以内（長さの交絡を作らない）。
+
+    数え方: `<!-- section: 名前 -->` の次の行から、次の section マーカーの直前（または末尾）までを取り、
+    見出しのマーカー行と前後の空白を除いた文字数（改行は数えない）。
+    """
+    import re
+
+    def section_length(path: str, name: str) -> int:
+        text = (REPO_ROOT / path).read_text(encoding="utf-8")
+        parts = re.split(r"^<!-- section: (\w+) -->\s*$", text, flags=re.MULTILINE)
+        sections = dict(zip(parts[1::2], parts[2::2], strict=True))
+        return len(sections[name].strip().replace("\n", ""))
+
+    team_note = section_length("coding/prompts/c12_null.md", "team_note")
+    minimal_fix = section_length("coding/prompts/c13_minimal_fix.md", "minimal_fix")
+    assert team_note > 0 and minimal_fix > 0
+    assert abs(team_note - minimal_fix) <= 0.10 * minimal_fix, (team_note, minimal_fix)
 
 
 def test_cli_coding_report_opcheck2_is_spec_only(monkeypatch: pytest.MonkeyPatch) -> None:

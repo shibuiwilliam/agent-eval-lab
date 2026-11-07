@@ -222,6 +222,7 @@ def coding_run(
     from agenteval.reports.coding_corpus import (
         PlanError,
         check_gate,
+        is_opcheck_stage,
         load_plan,
         required_gate,
         stage_seed,
@@ -240,6 +241,19 @@ def coding_run(
             check_gate(stage, approved)
         except PlanError as exc:
             raise typer.BadParameter(str(exc)) from exc
+    if mode in ("record", "replay") and required_gate(stage) is not None:
+        # live の段の seed は計画の seed ただ 1 つ（ADR-038 の 1 対 1）。計画に無い段を seed 0 に落として走らせない
+        try:
+            plan_seed = stage_seed(load_plan(plan), stage)
+        except (PlanError, KeyError) as exc:
+            raise typer.BadParameter(
+                f"段 {stage!r} は計画（{plan}）に無い。計画に足してから実行する（seed 0 には落とさない）"
+            ) from exc
+        if seed is not None and seed != plan_seed:
+            raise typer.BadParameter(
+                f"--seed {seed} は計画の段 {stage!r} の seed {plan_seed} と違う（live の段は計画の seed だけを使う）"
+            )
+        seed = plan_seed
     if seed is None:
         try:
             seed = stage_seed(load_plan(plan), stage)
@@ -260,24 +274,23 @@ def coding_run(
             mode=cast("Mode", mode), stage=stage, repeat=repeat, seed=seed, script=script_obj
         ),
     )
-    typer.echo(
-        json.dumps(
-            {
-                "run_id": run_result.run_id,
-                "mode": run_result.mode,
-                "provenance": run_result.provenance,
-                "class": classify(run_result) if task_def.kind == "bugfix" else None,
-                "finished": outcome.finished,
-                "visible_passed": outcome.visible.passed if outcome.visible else None,
-                "hidden_passed": outcome.hidden.passed if outcome.hidden else None,
-                "steps": run_result.n_steps,
-                "usd": run_result.cost.usd,
-                "test_files_modified": outcome.test_files_modified,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    out: dict[str, Any] = {  # Any: 表示用の JSON
+        "run_id": run_result.run_id,
+        "mode": run_result.mode,
+        "provenance": run_result.provenance,
+        "class": classify(run_result) if task_def.kind == "bugfix" else None,
+        "finished": outcome.finished,
+        "visible_passed": outcome.visible.passed if outcome.visible else None,
+        "hidden_passed": outcome.hidden.passed if outcome.hidden else None,
+        "steps": run_result.n_steps,
+        "usd": run_result.cost.usd,
+        "test_files_modified": outcome.test_files_modified,
+    }
+    if is_opcheck_stage(stage):
+        # 操作確認では合否・分類・費用を見ない（ADR-037 判断 2）。費用は `agenteval cost` で見る
+        for key in ("class", "visible_passed", "hidden_passed", "usd"):
+            del out[key]
+    typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
 
 
 @coding_app.command("corpus")
@@ -318,6 +331,7 @@ def coding_corpus(
         estimate_stage,
         load_plan,
         parse_shard,
+        required_gate,
         run_stage,
     )
 
@@ -338,6 +352,11 @@ def coding_corpus(
     if not live:
         typer.echo(json.dumps(estimate, ensure_ascii=False, indent=2))
         return
+    if required_gate(stage) is None:
+        # ゲートに対応しない段は、承認なしの live にならないよう拒否する（coding run --mode record と同じ関門）
+        raise typer.BadParameter(
+            f"--live は live の段（pilot・opcheck<N>・corpus）だけ。段 {stage!r} はゲートに対応しない"
+        )
     try:
         check_gate(stage, approved)
     except PlanError as exc:
