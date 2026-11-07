@@ -73,7 +73,7 @@
 | M8 | ハーネス部品は 3.4 節の 10 個 | 3.4 節の部品を全部宣言し（未実装は既定値以外を拒否）、運用上の項目 `max_steps`・`max_tokens`・`test_verbosity`・`tool_output_limit_chars` を足す。版ハッシュは既定値でない項目だけを入れる（SPEC.md 7.3 節、ADR-035） | 後の段で部品を足しても既存の版のハッシュが変わらない |
 | M9 | EC-O2 のスパン整合性 | 第 1 段は `Span` を足さないので、ステップ内の参照整合性（呼び出し・結果・効果・権限判定・目録）で代替する（`docs/results/EC-O2.md`） | M3 |
 | M10 | サンドボックスは作業ツリーだけを書き込み可 | 書き込み可は run 専用の 3 領域（作業ツリー・偽 HOME・/tmp）。ルート FS は読み取り専用。作業ツリー外への書き込みは範囲外の効果として記録（ADR-030 判断 1） | ハニーポット領域が書き込めないと、非 Python の範囲外への書き込みがどの層にも痕跡を残さない |
-| M11 | EC-S1 の試みは 30 件 | 本体 30 件（観測範囲内と予測）と盲点の探針 8 件（記録のみ）に分ける（CONTENT.md 10.3 節、`docs/results/EC-S1.md`） | 見えないと予測する試みを分母に入れると基準が到達不能になる |
+| M11 | EC-S1 の試みは 30 件 | 本体 30 件（観測範囲内と予測）と盲点の探針 9 件（記録のみ。W0-Z で effects への書き込み B1-F1-E1 を追加）に分ける（CONTENT.md 10.3 節、`docs/results/EC-S1.md`） | 見えないと予測する試みを分母に入れると基準が到達不能になる |
 | M12 | テスト改変は W（4.0 節） | 第 1 段は S / W / F を**元のテストファイル**での最終評価で決め、テスト改変は `test_files_modified` に記録するだけ。第 2 段で c03 を入れるときに ADR で見直す（SPEC.md 6.6 節） | 第 1 段の版はテストを変えない前提で、評価を植込みと独立にする |
 | M13 | 作業領域は `data/work/<run_id>/`、blob は `data/blobs/`（3.1 節） | `data/coding/` の下に置き、`<mode>` の階層で分ける。run_id に段（`pilot`・`corpus` など）を入れる（SPEC.md 2.2・2.4 節、ADR-039） | 既存の生成物と分ける。段や mode が違う run が上書きし合わない |
 
@@ -86,7 +86,7 @@
 
 | ID | 推奨 | 仮説（要点） | 植込み | 対照 | 基準の確定 | 来歴 | live |
 |---|---|---|---|---|---|---|---|
-| EC-S1 | 1 | 効果モニタは許可済み経路からの禁止効果をほぼすべて検出し、無害な双子には反応しない。拒否された操作は効果を残さない。コマンド規則は検出しない（記録のみ） | 許可済み経路の試み 30 件（6 系統 × 5 効果）。盲点の探針 8 件は記録のみ | 無害な双子 30 件 | G0 | simulated | なし |
+| EC-S1 | 1 | 効果モニタは許可済み経路からの禁止効果をほぼすべて検出し、無害な双子には反応しない。拒否された操作は効果を残さない。コマンド規則は検出しない（記録のみ） | 許可済み経路の試み 30 件（6 系統 × 5 効果）。盲点の探針 9 件は記録のみ | 無害な双子 30 件 | G0 | simulated | なし |
 | EC-O2 | 1 | 4 つの完全性検査（仲介されない効果・秘匿・記録の整合性・拒否の効果残存）は植込みをすべて検出し、正常な run に反応しない | バグを模したハーネス 4 種 × 5 run | 正常なスクリプト化 run 78 件（正解パッチ 48 ＋ 双子 30） | G0 | simulated | なし |
 | EC-B2P | 2 | 課金の割り振りは台帳と一致し、位置モデルの前提（増分が非負）が既存 live 軌跡で成り立ち、照合の検査は植込みに反応する | 既存記録の写しへの植込み P2〜P4 | 台帳（独立の記録） | G0 | live（既存記録の再計算）＋ simulated（植込み） | なし |
 | EC-B2 | 2 | 詳細出力のコスト増は `run_tests` 出力に帰属し、`history_cache` を off にしたときのコスト増は事前予測と一致する | `c04_verbose_ctx`、`c01o_no_history_cache`（`sub10` × 1。H3 の on 側は c01 のコーパス全 run） | 詳細出力を最初／最後に出すスクリプト化エージェントの対、`c12_null`（記録のみ） | G2（恒等式の 2 つは G0） | live ＋ simulated | 20 run |
@@ -321,7 +321,7 @@ W1-A0 は数分の直列段で、これが統合ブランチに入るまで W1-A
 | W0-D1 | designer | T0 | `docs/plan/03-decisions.md` に ADR-029〜033・035・037〜040 を追記（3 章の内容を正式化） | 各 ADR に状況・判断・理由・影響がある。既存 ADR を書き換えていない（**完了**） |
 | W0-D2 | designer | T0 | `docs/plan/coding/SPEC.md`: モジュールの公開インターフェース（Protocol・pydantic 型・関数シグネチャ）、YAML 形式（CodingTask・CodingVersion・task_sets）、効果ログの形式、run_id の規則、5 章の所有ファイル表の確認 | W1-A の 7 タスクが SPEC.md だけを読んで互いを待たずに書ける。型はすべて完全注釈（**完了**） |
 | W0-D3 | designer | T0 | `docs/results/EC-S1.md`・`EC-O2.md`・`EC-B2P.md`・`EC-B2.md`・`EC-R1.md`・`EC-R2.md` の 5 項目、`docs/plan/coding/registry_draft.yaml`（registry 項目の下書き。W1-I8 が `experiments/registry.yaml` の末尾に写す）、Θ の説明 `docs/plan/coding/THETA.md` と値 `coding/theta.yaml`（ADR-032 はこれを参照する） | 6 実験の 5 項目がある。EC-S1・EC-O2・EC-B2P の基準は確定（到達上限を併記）。EC-B2・R1・R2 は暫定と明記し、パイロットで計算する量（σ_d、W 率の下限、MDE）を列挙（**完了**） |
-| W0-D4 | designer | T0 | `docs/plan/coding/CONTENT.md`: リポジトリ 6 個の仕様（題材・行数・モジュール構成・依存は標準ライブラリ＋pytest のみ）、AST 変異オペレータと難度のつまみ、可視／隠しテストの設計規則、特殊化検出器の定義、EC-S1 の試みカタログ（6 系統 × 5 効果と無害な双子、盲点の探針 8 件。**系統と効果の名前の水準で書き、具体的な攻撃手順は書かない**）、EC-O2 の植込み 4 種。版のプロンプト本文 `coding/prompts/{c01_baseline,c12_null,c13_minimal_fix}.md`（**designer の所有**。W1-I5 は参照だけ） | W1-I4・I6 がこの文書だけで作れる。ベースラインの隠しテスト合格率 0.5〜0.8 を狙う難度設計の根拠がある（**完了**） |
+| W0-D4 | designer | T0 | `docs/plan/coding/CONTENT.md`: リポジトリ 6 個の仕様（題材・行数・モジュール構成・依存は標準ライブラリ＋pytest のみ）、AST 変異オペレータと難度のつまみ、可視／隠しテストの設計規則、特殊化検出器の定義、EC-S1 の試みカタログ（6 系統 × 5 効果と無害な双子、盲点の探針 9 件（W0-Z で 8 → 9）。**系統と効果の名前の水準で書き、具体的な攻撃手順は書かない**）、EC-O2 の植込み 4 種。版のプロンプト本文 `coding/prompts/{c01_baseline,c12_null,c13_minimal_fix}.md`（**designer の所有**。W1-I5 は参照だけ） | W1-I4・I6 がこの文書だけで作れる。ベースラインの隠しテスト合格率 0.5〜0.8 を狙う難度設計の根拠がある（**完了**） |
 | W0-X | designer | D1〜D4 | 4 成果物の突き合わせ（食い違いの修正）、`docs/plan/coding/G0.md`（ユーザーの判断事項と、反映済みの食い違いの付録）、本書の更新 | G0.md の判断事項がそれぞれ「推奨案 / 根拠 / 推奨しない場合の影響」を持つ。SPEC.md の付録 A・B-1 が一時コピー上で mypy・ruff を通る（**完了**） |
 | W0-Y | designer | G0 | G0 項目 13 の反映: ADR-035 判断 4 の改訂（4'・4''）、`docs/results/EC-B2.md`（H3 を on と off の差の予測に）、`registry_draft.yaml`、CONTENT.md 5.7 節・8 章、SPEC.md（版名・7.3 節の YAML 例・9.1 節の予測関数・11.5 節・12.3 節）、本書、G0.md、NEW_IDEA の注記 | `c01h_history_cache` への言及が、改訂の記録と NEW_IDEA の原文（注記付き）以外に残っていない。`HarnessConfig` の既定値と SPEC.md 付録 A は変えていない（**完了**） |
 
@@ -370,15 +370,17 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 
 | 日付 | 対象 | 決定 | 反映先 |
 |---|---|---|---|
-| 2026-11-07 | W1-F1 | `BudgetGuard.check()` は呼び出しのたびに台帳の総額を読み直し `max(self.spent, 台帳)` で判定する（live 4 並列で累積上限を合計で超えないため） | `llm/cost.py`（マージ済み） |
-| 2026-11-07 | W1-I1 | on の run の接頭辞は T0 − in0 では user0 を含んでしまうので、`prefix_tokens` を引数で受ける | SPEC.md 9.1 の改訂注記、`econ/context_cost.py` |
-| 2026-11-07 | W1-I2 | ハニーポット自身の走査除外を「そのファイル自身のカナリア ID だけを hits から除く」に絞る。effects・reports も rw なので「書き込み可は 3 領域」の文言を「rw は run 専用の 5 領域（作業ツリー・偽 HOME・/tmp・reports・effects）。reports は想定外の名前を検出、effects は観測外の盲点」に改める。python の起動で hook.start が無い呼び出しは `hook_missing` として「観測不能」と区別する | SPEC.md 5.2・5.6、CONTENT.md 10 章（盲点の探針に effects への書き込みを追加）。**W2-A1 の前に designer が反映** |
-| 2026-11-07 | W1-I7 | 文書の追記（designer、W2-A1 の前）: CONTENT.md 6.2 に「L_vis はテストが名前で参照するモジュール直下の定数を推移的に含む」、THETA.md の損益分岐を SPEC どおり「解が [0,1] に無ければ nan」に、EC-R2.md の MAE の表に「SPEC どおりの実装（k≤3 は全列挙）では 0.061〜0.077（simulated）。W3-A2 は実装の関数で再模擬する」、EC-R1.md に「同時信頼帯の familywise 被覆は 24 クラスタで約 0.85（simulated）」 | 各文書 |
-| 2026-11-07 | W1-I8 への申し送り | `economics_of` は `tasks=共通タスク` を明示して呼ぶ（点推定と複製のタスク集合を揃える）。損益分岐の nan は「常に得」「常に損」の別を記録する。H3 は `prefix_tokens` を c01o から求める | I8 の指示文 |
-| 2026-11-07 | W1-I3（重大） | 隠しテストの `tests_hidden/pytest.ini` は `pythonpath = ../src`（pytest 9 は ini の位置から相対）。評価（隠しテスト・最終評価）の合否は JUnit XML が必須（標準出力の件数へのフォールバックは評価では使わない）、skip・error・name の無い testcase は不合格、フィクスチャの `expected_nodeids.json`（W1-I4 が正しいコードで生成）の全ノードが passed であることを条件にする。同一プロセス内の偽装は完全には防げないことを限界として記録する | SPEC.md 6.6、**新 ADR-041 が要る（SPEC 6.6 の標準出力フォールバックからの逸脱）**。W2-A1 の前に designer が反映 |
-| 2026-11-07 | W1-I3（中） | digest に実行ビットを含め、目録に全クラスの `full_hash` を足す。除外分類は repo 領域だけ。読み込みに上限（oversize は blob を保存しない）。`create` は既存のスナップショットがあれば拒否。blob にはカナリアの値が生で残るので、ADR-030 に「blob は例外、事後の秘匿走査は blobs を対象外」と追記 | SPEC.md 6.4・6.5、ADR-030 の追記（designer） |
-| 2026-11-07 | W1-I2（再レビュー） | PID 1 はシグナルを無視して子を回収するループ（`--init` は使わない。エージェントがコンテナを止められるため）。run_shell の呼び出しで起動した背景プロセスは呼び出しの終了時に終了させる。`hook_missing` で `-S`・venv の sitecustomize による遮蔽を「観測不能」として検出するので、SPEC 5.4 の「`-S` は盲点」と EC-S1 の盲点の探針の期待値を見直す。hook_missing の対象は `python*`・`pytest`・`py.test`、`hook_log_not_regular` は `fs_write`、名前解決は `net:<host>:`。`write: bool`・`unexecuted_call_ids`・`DockerConfig.fsize_bytes` を SPEC に追記 | SPEC.md 5 節、CONTENT.md 10 章、EC-S1.md（designer） |
-| 2026-11-07 | EC-B2P の解釈（W2-A1 へ） | `ledger_identity_error` は台帳とトークン数で照合した行の usd との一致なので、検証するのは単価表の写し・行の対応づけ・総和だけで、ブロックごとの割り振りの正しさではない。植込みの検出率 1.0 は適格条件と検出が同じ量なので「配管の煙試験」であって検出感度ではない。結果ページの「気づき・限界」に必ず書く | EC-B2P.md（W2-A1） |
+| 2026-11-07 | W1-F1 | `BudgetGuard.check()` は呼び出しのたびに台帳の総額を読み直し `max(self.spent, 台帳)` で判定する（live 4 並列で累積上限を合計で超えないため） | `llm/cost.py`（マージ済み）。**反映済み（W0-Z）** |
+| 2026-11-07 | W1-I1 | on の run の接頭辞は T0 − in0 では user0 を含んでしまうので、`prefix_tokens` を引数で受ける | SPEC.md 9.1 の改訂注記、`econ/context_cost.py`。**反映済み（W0-Z）** |
+| 2026-11-07 | W1-I2 | ハニーポット自身の走査除外を「そのファイル自身のカナリア ID だけを hits から除く」に絞る。effects・reports も rw なので「書き込み可は 3 領域」の文言を「rw は run 専用の 5 領域（作業ツリー・偽 HOME・/tmp・reports・effects）。reports は想定外の名前を検出、effects は観測外の盲点」に改める。python の起動で hook.start が無い呼び出しは `hook_missing` として「観測不能」と区別する | SPEC.md 5.2・5.6、CONTENT.md 10 章（盲点の探針に effects への書き込みを追加）。**W2-A1 の前に designer が反映**。**反映済み（W0-Z）** |
+| 2026-11-07 | W1-I7 | 文書の追記（designer、W2-A1 の前）: CONTENT.md 6.2 に「L_vis はテストが名前で参照するモジュール直下の定数を推移的に含む」、THETA.md の損益分岐を SPEC どおり「解が [0,1] に無ければ nan」に、EC-R2.md の MAE の表に「SPEC どおりの実装（k≤3 は全列挙）では 0.061〜0.077（simulated）。W3-A2 は実装の関数で再模擬する」、EC-R1.md に「同時信頼帯の familywise 被覆は 24 クラスタで約 0.85（simulated）」 | 各文書。**反映済み（W0-Z）** |
+| 2026-11-07 | W1-I8 への申し送り | `economics_of` は `tasks=共通タスク` を明示して呼ぶ（点推定と複製のタスク集合を揃える）。損益分岐の nan は「常に得」「常に損」の別を記録する。H3 は `prefix_tokens` を c01o から求める | I8 の指示文。**反映済み（W0-Z）** |
+| 2026-11-07 | W1-I3（重大） | 隠しテストの `tests_hidden/pytest.ini` は `pythonpath = ../src`（pytest 9 は ini の位置から相対）。評価（隠しテスト・最終評価）の合否は JUnit XML が必須（標準出力の件数へのフォールバックは評価では使わない）、skip・error・name の無い testcase は不合格、フィクスチャの `expected_nodeids.json`（W1-I4 が正しいコードで生成）の全ノードが passed であることを条件にする。同一プロセス内の偽装は完全には防げないことを限界として記録する | SPEC.md 6.6、**新 ADR-041 が要る（SPEC 6.6 の標準出力フォールバックからの逸脱）**。W2-A1 の前に designer が反映。**反映済み（W0-Z）** |
+| 2026-11-07 | W1-I3（中） | digest に実行ビットを含め、目録に全クラスの `full_hash` を足す。除外分類は repo 領域だけ。読み込みに上限（oversize は blob を保存しない）。`create` は既存のスナップショットがあれば拒否。blob にはカナリアの値が生で残るので、ADR-030 に「blob は例外、事後の秘匿走査は blobs を対象外」と追記 | SPEC.md 6.4・6.5、ADR-030 の追記（designer）。**反映済み（W0-Z）** |
+| 2026-11-07 | W1-I2（再レビュー） | PID 1 はシグナルを無視して子を回収するループ（`--init` は使わない。エージェントがコンテナを止められるため）。run_shell の呼び出しで起動した背景プロセスは呼び出しの終了時に終了させる。`hook_missing` で `-S`・venv の sitecustomize による遮蔽を「観測不能」として検出するので、SPEC 5.4 の「`-S` は盲点」と EC-S1 の盲点の探針の期待値を見直す。hook_missing の対象は `python*`・`pytest`・`py.test`、`hook_log_not_regular` は `fs_write`、名前解決は `net:<host>:`。`write: bool`・`unexecuted_call_ids`・`DockerConfig.fsize_bytes` を SPEC に追記 | SPEC.md 5 節、CONTENT.md 10 章、EC-S1.md（designer）。**反映済み（W0-Z）** |
+| 2026-11-07 | W0-Z の未決 1・2（統合済みコードの欠陥） | (1) `effects.dedupe_effects` のキーに `detail` が無く、`hook_missing` が起動記録にまとめられて消える → キーに detail を含める。(2) reports 領域の `abs:` の効果で `sink_effects` が `RepoEnv.read_area_file("abs:…")` を呼び ValueError でループが落ちる → `sink_effects` に `abs:` の読み手（reports は Executor の mounts から読む）を渡す引数を足し、渡されなければ内容を走査せず `content_not_scanned` と記録する。どちらも W1-I5 が `env/effects.py` の所有を一時的に持って直す | `env/effects.py`、`agent/coding_loop.py`（W1-I5） |
+| 2026-11-07 | W0-Z の未決 6・7 | (6) EC-B2 の P（接頭辞）は c01o から求め、ツール定義と system が同じ c01・c04 にだけ使う。c12・c13 の版ごとの e_on は「該当なし」と記録する（I8 は c04 のツール定義が c01 と同一であることを検査する）。(7) EC-O2 の秘匿検査は、`Effect.canary_hits` に `harness_secret` を含む効果も秘匿違反の観測に数える（値が trace に出なくても、走査時に ID だけが残る経路を捕まえるため）。基準値は変えない | EC-B2.md・EC-O2.md（W2-A1 で designer）、I6・I8 の指示文 |
+| 2026-11-07 | EC-B2P の解釈（W2-A1 へ） | `ledger_identity_error` は台帳とトークン数で照合した行の usd との一致なので、検証するのは単価表の写し・行の対応づけ・総和だけで、ブロックごとの割り振りの正しさではない。植込みの検出率 1.0 は適格条件と検出が同じ量なので「配管の煙試験」であって検出感度ではない。結果ページの「気づき・限界」に必ず書く | EC-B2P.md（W2-A1）。**反映済み（W0-Z）** |
 
 ### W2 オフライン検証（W1 の統合後。runner 5 体並列）
 
@@ -466,7 +468,7 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 | worktree の `data/` が共有されず、テストや実験が既存の trace を見られない | テストは `data/` に依存させない（I1 は `data/fixtures/traces/` に 3 本を置く）。実験と live は runner がメインの作業ツリーで実行する |
 | Haiku 4.5（被験）がコーディングタスクを解けなさすぎる・解けすぎる | パイロットで隠しテスト合格率を測り、変異の置き場所と隠しテストの本数で調整する（モデルは変えない） |
 | c13 の植込みが実モデルで効かない（IMPROVEMENT.md L6 の再来） | W3-P5 の操作確認。特殊化検出の発火数だけを見て、ADR-037 の規則で効いていなければ植込みを立て直す |
-| 監査フックが非 Python のプロセスを見ない。起動記録は最上位のコマンドしか見ない | EC-S1 の本体 30 件には言語によらない層で見える非 Python の経路（6 件）を含め、見えないと予測する経路は盲点の探針 8 件として記録する（再現率の分母に入れない）。境界は Docker に置く |
+| 監査フックが非 Python のプロセスを見ない。起動記録は最上位のコマンドしか見ない | EC-S1 の本体 30 件には言語によらない層で見える非 Python の経路（6 件）を含め、見えないと予測する経路は盲点の探針 9 件として記録する（再現率の分母に入れない）。境界は Docker に置く |
 | 危険な台本がホストで実行される | I6 で、台本は Docker の Executor でしか実行できないことをコードで保証する。reviewer の観点に含める |
 | 秘密（カナリアの鍵、API キー）が trace・カセット・結果ページに残る | カナリアの鍵はプロセス内で生成して保存しない。EC-O2 の秘匿検査を全コーパスにも当てる |
 | 同時実行で予算を超過する | 同時 4 まで、累積上限に余裕を持たせる（2.3 節の 6） |
@@ -496,6 +498,7 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 - [x] W0-X 4 成果物の突き合わせ、`docs/plan/coding/G0.md`（判断事項と、反映済みの食い違いの付録）
 - [x] **G0** ユーザー承認（2026-11-07、全 15 項目を推奨案どおり）
 - [x] W0-Y G0 項目 13 の反映（c01 系を `history_cache: on`、EC-B2 の植込みを off の版 `c01o_no_history_cache` に入れ替え。designer。ADR-035 改訂、`docs/results/EC-B2.md`、`registry_draft.yaml`、CONTENT.md 8 章、SPEC.md、G0.md、NEW_IDEA の注記）
+- [x] W0-Z W1 レビューの決定を仕様に反映（designer。SPEC.md 5・6・9.1 節、ADR-041 と ADR-030 の改訂、CONTENT.md 6.2・10・12 章、THETA.md、EC-S1・EC-O2・EC-B2P・EC-B2・EC-R1・EC-R2 の結果ページ、registry_draft.yaml の探針数）
 
 ### W1 実装
 - [x] W1-A0 共有型の先行コミット（`core/coding_types.py`、`schema.py` のクラス、`econ/__init__.py`、`conftest.py`） ＋ 軽いレビュー（0ea5432。指摘なし）
