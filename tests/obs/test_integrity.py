@@ -182,6 +182,7 @@ def test_secrecy_detects_harness_secret_in_text() -> None:
     findings = check_secrecy(
         {"trace.json": f'{{"stdout": "AGENTEVAL={secret}"}}', "ok.json": "{}"},
         vault.fingerprints(RUN_ID),
+        make_run(),
     )
     assert [(f.check, f.run_id, f.step) for f in findings] == [("secrecy", RUN_ID, None)]
     assert "trace.json" in findings[0].detail
@@ -191,7 +192,7 @@ def test_secrecy_detects_harness_secret_in_text() -> None:
 def test_secrecy_ignores_honeypot_canaries() -> None:
     vault = CanaryVault(KEY)
     text = vault.value(RUN_ID, "repo_env") + " " + vault.value(RUN_ID, "home_credentials")
-    assert check_secrecy({"trace.json": text}, vault.fingerprints(RUN_ID)) == []
+    assert check_secrecy({"trace.json": text}, vault.fingerprints(RUN_ID), make_run()) == []
 
 
 def test_secrecy_scans_per_run_fingerprints() -> None:
@@ -199,7 +200,7 @@ def test_secrecy_scans_per_run_fingerprints() -> None:
     other = "cd__CT-demo-001__c01_baseline__unit__r1"
     texts = {"ledger.jsonl": vault.value(other, "harness_secret")}
     fps = [*vault.fingerprints(RUN_ID), *vault.fingerprints(other)]
-    findings = check_secrecy(texts, fps)
+    findings = check_secrecy(texts, fps, make_run())
     assert [f.run_id for f in findings] == [other]
 
 
@@ -218,7 +219,7 @@ def test_secrecy_counts_harness_secret_in_effect_canary_hits() -> None:
     run = make_run(step)
     # 値が trace に現れなくても、効果の canary_hits に ID が残っていれば違反
     assert check_secrecy({}, [], run=run)[0].step == 0
-    assert check_secrecy({}, []) == []  # run を渡さなければ効果は見ない
+    assert check_secrecy({}, [], make_run()) == []  # 効果が無い run では警報なし
     honeypot = make_step(
         effects=[
             eff(
@@ -249,11 +250,11 @@ def test_secrecy_excludes_blobs(tmp_path: Path) -> None:
     files = list(iter_secrecy_files(root))
     assert files == [outcome]
     texts = {str(blob): blob.read_text(), str(outcome): outcome.read_text()}
-    assert check_secrecy(texts, vault.fingerprints(RUN_ID)) == []
+    assert check_secrecy(texts, vault.fingerprints(RUN_ID), make_run()) == []
     # blob 以外に同じ値があれば検出する
     outcome.write_text(f"leak {secret}")
     texts[str(outcome)] = outcome.read_text()
-    assert len(check_secrecy(texts, vault.fingerprints(RUN_ID))) == 1
+    assert len(check_secrecy(texts, vault.fingerprints(RUN_ID), make_run())) == 1
 
 
 # --- 記録の整合性 ----------------------------------------------------------------------
@@ -402,6 +403,22 @@ def test_denied_residue_detects_injected_error_and_timeout_only() -> None:
             effects=[eff("fs_write", "repo:a.py", "fs_diff", detail="modified")],
         )
         assert check_denied_residue(make_run(step)) == [], kind
+
+
+def test_denied_residue_ignores_injected_result_that_is_merely_an_error() -> None:
+    # is_error だけでは未実行と見なさない（timeout・error の注入だけを対象にする）
+    step = make_step(
+        results=[
+            ToolResult(
+                id="c1",
+                content="{}",
+                is_error=True,
+                injected={"kind": "fault:partial", "step": 0, "tool": "t", "detail": {}},
+            )
+        ],
+        effects=[eff("fs_write", "repo:a.py", "fs_diff", detail="modified")],
+    )
+    assert check_denied_residue(make_run(step)) == []
 
 
 def test_denied_residue_ignores_effects_of_allowed_calls_and_other_calls() -> None:

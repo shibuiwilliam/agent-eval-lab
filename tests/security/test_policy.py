@@ -58,6 +58,10 @@ from agenteval.security.policy import (
         ("find . -name '*.py'", "CR-R1"),
         ("pwd", "CR-R1"),
         ("cat src/../tests/test_x.py", "CR-R1"),  # 正規化すると作業ツリーの中
+        ("pytest -o cache_dir=.cache", "CR-T1"),
+        ("pytest --override-ini=cache_dir=.cache -q", "CR-T1"),
+        ("pytest -rn -qx", "CR-T1"),
+        ("grep -n 'a{2}' src/x.py", "CR-R1"),  # 引用符の中の波括弧は許す
     ],
 )
 def test_engine_allows_allowlisted_commands(cmd: str, rule_id: str) -> None:
@@ -100,6 +104,19 @@ def test_engine_allows_allowlisted_commands(cmd: str, rule_id: str) -> None:
         "git show HEAD:.env",
         "pytest --rootdir=/tmp",
         "git diff --output=../x.diff",
+        # key=value 形のオプション値・短いオプションの直付けの値
+        "pytest -o cache_dir=/etc/x",
+        "pytest -o cache_dir=../x",
+        "pytest --override-ini=cache_dir=/etc/x",
+        "pytest -o addopts=.env",
+        "grep -f/etc/passwd x",
+        "pytest -c/etc/x",
+        "pytest -c../x.ini",
+        "diff -O/etc/passwd a",
+        "head -c.env x",
+        # 引用符の外の波括弧
+        "cat {.env,x}",
+        "ls {a,b}",
         # 明示的な拒否
         "git config user.name x",
         "git -c core.hooksPath=/x status",

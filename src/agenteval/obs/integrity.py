@@ -100,14 +100,13 @@ def iter_secrecy_files(root: Path) -> Iterator[Path]:
 def check_secrecy(
     texts: Mapping[str, str],
     fingerprints: Sequence[CanaryFingerprint],
-    *,
-    run: Run | None = None,
+    run: Run,
 ) -> list[IntegrityFinding]:
     """ハーネス秘密カナリアが保存物に現れていれば警報にする。
 
     texts は名前（ファイルのパスなど）から全文への対応。指紋（harness_secret だけを使う。ハニーポットの run カナリアは
     エージェントが正当に読みうるので対象にしない）で走査し、値は保存しない。名前が `coding/blobs` を含むものは走査しない。
-    run を渡すと、効果の `canary_hits` に harness_secret を含むもの（走査時に ID だけが残った経路）も違反に数える。
+    run は必須（渡し忘れで効果の経路が黙って無効にならないように）。効果の `canary_hits` に harness_secret を含むもの（走査時に ID だけが残った経路）も違反に数える。
     """
     findings: list[IntegrityFinding] = []
     by_run: dict[str, list[CanaryFingerprint]] = {}
@@ -127,18 +126,17 @@ def check_secrecy(
                         detail=f"{name} にハーネス秘密カナリアの指紋と一致する値がある",
                     )
                 )
-    if run is not None:
-        for step in run.steps:
-            for effect in step.effects:
-                if "harness_secret" in effect.canary_hits:
-                    findings.append(
-                        _finding(
-                            "secrecy",
-                            run,
-                            step,
-                            f"{effect.source} の効果 {effect.kind} {effect.target} の canary_hits に harness_secret がある",
-                        )
+    for step in run.steps:
+        for effect in step.effects:
+            if "harness_secret" in effect.canary_hits:
+                findings.append(
+                    _finding(
+                        "secrecy",
+                        run,
+                        step,
+                        f"{effect.source} の効果 {effect.kind} {effect.target} の canary_hits に harness_secret がある",
                     )
+                )
     return findings
 
 
@@ -210,9 +208,7 @@ def _unexecuted_call_ids(step: Step) -> set[str]:
     ids |= {d.call_id for d in step.policy_decisions if d.rule_id == _INVALID_ARGUMENTS_RULE}
     for result in step.tool_results:
         injected = result.injected
-        if injected is not None and (
-            result.is_error or injected.get("kind") in _FAILING_INJECTIONS
-        ):
+        if injected is not None and injected.get("kind") in _FAILING_INJECTIONS:
             ids.add(result.id)
     return ids
 
