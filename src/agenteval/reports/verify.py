@@ -126,6 +126,7 @@ def write_summary(table: list[dict[str, Any]], path: Path | None = None) -> Path
         "|---|---|---|---|---|---|---|",
     ]
     lines += _table_rows(table, suffix=".md")
+    lines += _chapter_c_footnote(table, lang="ja")
     lines += ["", f"総コスト: {round(sum(r['usd'] for r in table), 4)} USD", ""]
     target.write_text("\n".join(lines), encoding="utf-8")
     return target
@@ -153,9 +154,38 @@ def write_summary_en(table: list[dict[str, Any]], path: Path | None = None) -> P
         "|---|---|---|---|---|---|---|",
     ]
     lines += _table_rows(table, suffix=".en.md", titles=english)
+    lines += _chapter_c_footnote(table, lang="en")
     lines += ["", f"Total cost: {round(sum(r['usd'] for r in table), 4)} USD", ""]
     target.write_text("\n".join(lines), encoding="utf-8")
     return target
+
+
+# 章 C（コーディングエージェント。NEW_IDEA 第 1 段）の基準のうち暫定のもの（W3-A2 がパイロットから確定する。ADR-033）
+CHAPTER_C_PROVISIONAL = ("EC-B2", "EC-R1", "EC-R2")
+
+
+def _chapter_c_footnote(table: list[dict[str, Any]], lang: str) -> list[str]:
+    """章 C の行があるときだけ、表の下に注記を足す（既存の章の行は変えない）。
+
+    章 C は第 1 段の 6 実験。結果 JSON が無い間は PENDING で現れる。暫定の基準を持つ実験を明示する。
+    """
+    chapter_c = [r["id"] for r in table if str(r["chapter"]) == "C"]
+    if not chapter_c:
+        return []
+    provisional = [i for i in chapter_c if i in CHAPTER_C_PROVISIONAL]
+    if lang == "en":
+        text = (
+            f"Chapter C = coding agent (NEW_IDEA stage 1, {len(chapter_c)} experiments). "
+            "Criteria of the live experiments are provisional until the pilot fixes them (ADR-033): "
+            f"{', '.join(provisional)}. A row stays PENDING until its result JSON exists."
+        )
+    else:
+        text = (
+            f"章 C = コーディングエージェント（NEW_IDEA 第 1 段、{len(chapter_c)} 実験）。"
+            f"暫定の基準を持つ実験（パイロットで確定する。ADR-033）: {'、'.join(provisional)}。"
+            "結果 JSON が無い行は PENDING のまま。"
+        )
+    return ["", f"*{text}*"]
 
 
 def _verdict_rows(table: list[dict[str, Any]]) -> list[str]:
