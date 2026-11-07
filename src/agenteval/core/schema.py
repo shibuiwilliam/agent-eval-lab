@@ -95,6 +95,9 @@ class Step(BaseModel):
     latency_ms: int = 0
     context_tokens: int = 0
     snapshot_ref: str = ""
+    # ADR-031: 旧 trace には無いので既定値付き。trace_hash の材料には入れない
+    effects: list[Effect] = Field(default_factory=list)
+    policy_decisions: list[PolicyDecision] = Field(default_factory=list)
 
 
 class Violation(BaseModel):
@@ -156,6 +159,8 @@ class Run(BaseModel):
     parent_run_id: str | None = None
     divergence_step: int | None = None
     provenance: Provenance = "simulated"
+    # ADR-031: 旧 trace は office 環境の run。trace_hash の材料には入れない
+    env_kind: EnvKind = "office"
 
     @property
     def n_steps(self) -> int:
