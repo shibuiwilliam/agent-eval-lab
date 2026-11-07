@@ -70,18 +70,18 @@
   chapter: C
   title: コンテキスト・コスト帰属 — ツール出力の生涯コストと履歴キャッシュの事前予測
   script: experiments/ec_b2_context_cost.py
-  hypothesis: "割り振りは台帳に一致し、詳細出力の版のコスト増の大部分は run_tests の出力に帰属し、history_cache の節約は軌跡のトークン量だけから予測でき実測と一致する"
-  planted: {versions: [c04_verbose_ctx, c01h_history_cache], tasks: sub10, repeats: 1}
-  planted_text: "c04_verbose_ctx（test_output_limit 無効＋詳細出力）、c01h_history_cache（履歴末尾にキャッシュ区切り）。各 10 タスク（sub10）× 1"
+  hypothesis: "割り振りは台帳に一致し、詳細出力の版のコスト増の大部分は run_tests の出力に帰属し、history_cache を off にしたときのコスト増は軌跡のトークン量だけから事前に予測でき実測と一致する"
+  planted: {versions: [c04_verbose_ctx, c01o_no_history_cache], tasks: sub10, repeats: 1}   # G0 項目 13: c01h_history_cache（on）を off の版に入れ替えた。c01 系は history_cache: true
+  planted_text: "c04_verbose_ctx（test_output_limit 無効＋詳細出力）、c01o_no_history_cache（c01 から history_cache: true を除いた版。予測可能なコスト増）。各 10 タスク（sub10）× 1。H3 の on 側は c01_baseline のコーパス全 run（core24 × 6）"
   control: {scripted: verbose_early_vs_late, versions: [c12_null]}
-  control_text: "同じ詳細出力をステップ 1 で出す版と最後のツールステップで出す版のスクリプト化エージェントの対（simulated、history_cache off）。c12_null は記録のみ"
+  control_text: "同じ詳細出力をステップ 1 で出す版と最後のツールステップで出す版のスクリプト化エージェントの対（simulated、history_cache off。c01o_no_history_cache のハーネスを借りる）。c12_null は記録のみ"
   criteria:   # 暫定（W3-A2 で確定）
     - {metric: allocation_identity_error, op: "<=", value: 1.0e-9}  # TASK からの変更: 0.03 → 1e-9（EC-B2P と同じ理由）
     - {metric: ledger_identity_error, op: "<=", value: 0.001}       # TASK からの変更: 追加（EC-B2P と同じ根拠。今確定してよい）
     - {metric: verbose_attribution_to_run_tests, op: ">=", value: 0.8}
-    - {metric: history_cache_prediction_error, op: "<=", value: 0.10}  # run 内の反実仮想。キャッシュ関係の usage を予測に使わない
+    - {metric: history_cache_prediction_error, op: "<=", value: 0.10}  # |e_off − e_on|（G0 項目 13 で on/off の差の予測誤差に改めた）。run 内の反実仮想。キャッシュ関係の usage を予測に使わない
     - {metric: control_attribution, op: "<=", value: 0.10}           # CCA_L / CCA_E。予測 1/11
-  # 記録のみ: verbose_attribution の区間, history_cache_saving_between_versions と事前予測, c12 の帰属の差と区間
+  # 記録のみ: verbose_attribution の区間, e_on と e_off（個別）, sub10 に限った e_on と版ごとの e_on, history_cache_increase_between_versions と事前予測, c12 の帰属の差と区間
   provenance: live   # 対照のスクリプト化 run は simulated と数値ごとに付ける
   budget_usd: 0
 

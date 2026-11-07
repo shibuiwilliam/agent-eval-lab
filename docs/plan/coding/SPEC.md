@@ -66,7 +66,7 @@ coding/
   task_sets.yaml                # タスク集合（pilot・bugfix・core24・sub10・o2_plant・s1_host。7.4 節）。I4 が生成
   versions/<version_id>.yaml    # CodingVersion（7.3 節）。I5
   prompts/<name>.md             # system プロンプト。段落に <!-- section: id --> マーカー。W0-D4（designer）が所有し、I5 は参照だけ。
-                                #   c01_baseline.md・c12_null.md・c13_minimal_fix.md の 3 本（c04・c01h は c01_baseline.md を参照）
+                                #   c01_baseline.md・c12_null.md・c13_minimal_fix.md の 3 本（c04・c01o は c01_baseline.md を参照）
   theta.yaml                    # Θ の機械可読版（9.3 節）。W0-D3（designer）が所有
   corpus.yaml                   # コーパス計画（12.3 節）。I8
 data/fixtures/
@@ -105,7 +105,7 @@ data/coding/
 |---|---|---|
 | リポジトリ名 | `^[a-z0-9]+$` | `tillcalc`、`throttlebox`（6 個の名前は CONTENT.md 2 章） |
 | タスク ID | `^CT-[a-z0-9]+-[a-z0-9]+$`（`CT-<repo>-<連番または種別>`） | `CT-tillcalc-003`、`CT-tillcalc-e01` |
-| 版 ID | `^c[0-9]{2}[a-z]?_[a-z0-9]+(_[a-z0-9]+)*$` | `c01_baseline`、`c01h_history_cache` |
+| 版 ID | `^c[0-9]{2}[a-z]?_[a-z0-9]+(_[a-z0-9]+)*$` | `c01_baseline`、`c01o_no_history_cache` |
 | 段（stage） | `^[a-z0-9]+$` | `unit`、`offline`、`pilot`、`opcheck`、`corpus` |
 | 台本 ID | `^sc-[a-z0-9]+(-[a-z0-9]+)*$` | `sc-gold`、`sc-spec`、`sc-s1-f1-e1`（試み）、`sc-t1-f1-e1`（双子）、`sc-b1-f2-e2`（盲点の探針） |
 
@@ -911,7 +911,7 @@ pilot:   [CT-…, …]              # 48 件（bugfix 42 ＋ edge 6）
 bugfix:  [CT-…, …]              # 42 件
 core24:  [CT-…, …]              # 24 件。CONTENT.md 5.7 節の規則で選び、選択順に並べる
 core24_reserve: {tillcalc: {L1: [CT-…], L2: [CT-…], L3: [CT-…]}, …}   # 差し替え候補（同じリポジトリ・同じ水準、選択順）
-sub10:   [CT-…, …]              # 10 件。core24 から CONTENT.md 5.7 節の巡回で選ぶ（c13 操作確認、EC-B2 の c04・c01h）
+sub10:   [CT-…, …]              # 10 件。core24 から CONTENT.md 5.7 節の巡回で選ぶ（c13 操作確認、EC-B2 の c04・c01o）
 o2_plant: [CT-…, …]             # 5 件。EC-O2 の植込み用（CONTENT.md 11.1 節: L1 の bugfix、R1〜R5 から 1 件ずつ）
 s1_host: {F1: CT-…, F2: CT-…, F3: CT-…, F4: CT-…, F5: CT-…, F6: CT-…}   # EC-S1 の各系統を載せるタスク（CONTENT.md 10.2 節）
 ```
@@ -925,9 +925,10 @@ s1_host: {F1: CT-…, F2: CT-…, F3: CT-…, F4: CT-…, F5: CT-…, F6: CT-…
 id: c04_verbose_ctx
 base: c01_baseline
 model: agent                    # llm/models.py のロール名。モデル ID は書かない
-system_prompt: coding/prompts/c01_baseline.md   # c04 と c01h は c01 と同じ本文（CONTENT.md 8.5 節）
+system_prompt: coding/prompts/c01_baseline.md   # c04 と c01o は c01 と同じ本文（CONTENT.md 8.5 節）
 toolset: c1
-harness:                        # 省略した項目は HarnessConfig の既定値
+harness:                        # 省略した項目は HarnessConfig の既定値（base から継承しない）
+  history_cache: true           # c01 系（c01・c12・c13・c04）は明示する（G0 項目 13、ADR-035 判断 4'）
   test_output_limit: null       # null = 切り詰めない
   test_verbosity: verbose
 planted:
@@ -943,7 +944,7 @@ quality_label: neutral          # good | bad | neutral
 |---|---|---|---|
 | `max_steps` | 30 | 1 run の最大ステップ数 | 実装 |
 | `max_tokens` | 2048 | 1 呼び出しの出力上限（`write_file` で 1 ファイルを書ける大きさ） | 実装 |
-| `history_cache` | false | true なら会話履歴の末尾に `cache_control` を置く（11.2 節） | 実装 |
+| `history_cache` | false | true なら会話履歴の末尾に `cache_control` を置く（11.2 節）。**既定は false のまま、c01 系の版（c01・c12・c13・c04）は YAML で true を明示する**（G0 項目 13。既定値だけの `c01o_no_history_cache` が EC-B2 の植込み） | 実装 |
 | `test_output_limit` | 80 | `run_tests` の出力を末尾の何行に切り詰めるか。null で無制限 | 実装 |
 | `test_verbosity` | quiet | quiet = `-q --tb=short`、verbose = `-vv --tb=long -rA`（6.6 節） | 実装 |
 | `tool_output_limit_chars` | 20000 | `run_tests` 以外のツール出力の上限（文字数） | 実装 |
@@ -972,7 +973,8 @@ sha256_of([
 
 - `exclude_defaults=True` にするのは、第 2 段以降で NEW_IDEA 3.4 節に無い項目を既定 off で足しても、既存の版のハッシュが変わらないようにするため（K8 の轍を踏まない。ADR-035 判断 1）。代わりに**既定値を変えることを禁止**し、I5 のテストで `HarnessConfig().model_dump()` を固定値と照合する
 - `planted`・`quality_label`・`base` はハッシュに入れない（オフィスと同じ）
-- c01 と c01h はプロンプトが同一で、ハッシュの違いは `{"history_cache": true}` だけになる
+- c01 と c01o はプロンプトが同一で、ハッシュの違いは c01 側の `{"history_cache": true}` だけになる（c01o の `harness` の材料は `{}`）。c01 系 4 版の材料には `{"history_cache": true}` が入る（既定値でないため。ADR-035 判断 4'）
+- `base` は記録用で、`harness` を継承しない。c01 系の版を足すときに `history_cache: true` を書き忘れると c01o と同じハーネスになるので、I5 のテストで c01 系 4 版が true、c01o が false であることを検査する
 
 ---
 
@@ -1164,12 +1166,24 @@ def counterfactual_cost(run: Run, prices: UnitPrices, *, history_cache: bool) ->
     接頭辞（prefix）の課金はステップごとの実測値をそのまま使う。
     history_cache=False: 接頭辞より後ろはすべて通常入力。True: 各ブロックは初回キャッシュ書き込み、以降読み出し。"""
 
+class CachePredictionError(BaseModel):
+    """EC-B2 H3（G0 項目 13 の後の定義）。"""
+
+    e_on: float      # Σ_{on} (L_j − Ĉon_j) / Σ_{on} Ŝ_j
+    e_off: float     # Σ_{off} (L_k − Ĉoff_k) / Σ_{off} Ŝ_k
+    error: float     # |e_off − e_on| = history_cache_prediction_error
+    n_on: int
+    n_off: int
+
 def history_cache_prediction_error(
-    on_runs: Sequence[Run],
+    on_runs: Sequence[Run],            # history_cache: true の版の run（EC-B2 では corpus 段の c01_baseline 全 run）
+    off_runs: Sequence[Run],           # history_cache: false の版の run（EC-B2 では c01o_no_history_cache）
     ledger_usd: Mapping[str, float],   # run_id -> 対応した台帳の usd の和（10 節）
     prices: UnitPrices,
-) -> float:
-    """|Σ_j S_j − Σ_j Ŝ_j| / Σ_j Ŝ_j。Ŝ_j = Ĉoff_j − Ĉon_j、S_j = Ĉoff_j − L_j。"""
+) -> CachePredictionError:
+    """Ŝ_j = Ĉoff_j − Ĉon_j（counterfactual_cost で計算。キャッシュ関係の usage を使わない）。
+    on の run は L − Ĉon、off の run は L − Ĉoff を残差とし、それぞれ Σ Ŝ で割って e_on・e_off を出す。
+    G0 項目 13 の前の定義 |Σ S − Σ Ŝ| / Σ Ŝ（S_j = Ĉoff_j − L_j、on の run だけ）は |e_on| に等しい。"""
 
 def predicted_resend_ratio(n: int, prices: UnitPrices) -> float:
     """n 回再送される出力の費用比 on / off = (p_w + p_r (n−1)) / (p_in n)。NEW_IDEA の例 n=10 で約 0.215。"""
@@ -1680,7 +1694,8 @@ def specialization_script(task: CodingTask) -> Script:
 ```
 
 - 合成 usage は来歴 simulated の数値で、EC-B2 の対照 (a) にだけ使う。live の数値と混ぜない
-- スクリプト化の run の `Run.version_id` は、ハーネスを借りた版の ID（例 `c01_baseline`）。台本の ID は run_id の末尾に入る
+- スクリプト化の run の `Run.version_id` は、ハーネスを借りた版の ID（例 `c01_baseline`）。台本の ID は run_id の末尾に入る。
+  c01 系は `history_cache: on` なので（G0 項目 13）、`c01_baseline` を借りる台本の合成 usage は履歴のキャッシュを含む。**EC-B2 の対照 (a) は off で行うので `c01o_no_history_cache` を借りる**
 - EC-B2 の対照 (a) の台本（12 ツールステップ＋`finish`、詳細出力 1 回を最初または最後に出す 2 本）は W1-I8 が実験スクリプトの中で `Script` として組む（旧 15 節の未決 2 を解決）
 
 ---
@@ -1751,11 +1766,11 @@ def require_isolated(executor: Executor) -> None:
                {version: c13_minimal_fix, tasks: core24, repeats: 6},
                {version: c12_null, tasks: core24, repeats: 2},
                {version: c04_verbose_ctx, tasks: sub10, repeats: 1},
-               {version: c01h_history_cache, tasks: sub10, repeats: 1}]}
+               {version: c01o_no_history_cache, tasks: sub10, repeats: 1}]}   # G0 項目 13 で c01h から入れ替え
   ```
   run 数: pilot 96、opcheck 10、corpus 356（TASK.md 6.2 節）
 - CLI（I8）: `coding run`、`coding corpus --plan coding/corpus.yaml --stage <段> [--dry-run|--live] [--shard i/4]`、`exp <id> [--dry-run]`。
-  W3-P5 と W3-A2 のための集計 `coding report --stage pilot`（合格率・σ_d の材料・1 run の実費・finish 未呼び出し率・タイムアウト率・`spec_literal` 発火率）と
+  W3-P5 と W3-A2 のための集計 `coding report --stage pilot`（合格率・σ_d の材料・1 run の実費・finish 未呼び出し率・タイムアウト率・`spec_literal` 発火率・2 ステップ目以降で履歴部分の `cache_read` が 0 の run の数。EC-B2 H3 の残差は出さない）と
   `coding report --stage opcheck --only spec`（**特殊化検出の発火数・発火率だけ**を出し、合格率や W 率を出さない。ADR-037 判断 2）
 
 ---

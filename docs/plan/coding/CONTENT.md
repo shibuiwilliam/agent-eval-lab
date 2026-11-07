@@ -361,7 +361,7 @@ c13 の植込みが W を生む経路は 2 つある。どちらも隠しテス�
 この配分の加重平均の事前見積り（4.3 節の仮定）は 0.60〜0.75 で、42 件の見積りと同じ範囲に入る。パイロットでは 42 件全体と 24 件の部分集合の両方の合格率を報告する。
 
 **10 件の部分集合**: リポジトリを R1, R2, …, R6, R1, …, R4 の順に巡り、各リポジトリでまだ取っていないタスクのうち選択順で最初のものを取った 10 件（R1〜R4 から 2 件、R5・R6 から 1 件）を、
-c13 の操作確認（W3-P5、各 1 反復）と EC-B2 の `c04_verbose_ctx`・`c01h_history_cache`（各 1 反復）に使う（EC-B2.md もこの 10 件を使う。Q4 は解決済み）。
+c13 の操作確認（W3-P5、各 1 反復）と EC-B2 の `c04_verbose_ctx`・`c01o_no_history_cache`（各 1 反復。c01o は G0 項目 13 で `c01h_history_cache` から入れ替えた）に使う（EC-B2.md もこの 10 件を使う。Q4 は解決済み）。
 選んだ集合（`pilot`・`bugfix`・`core24` と差し替え候補・`sub10`・`o2_plant`・`s1_host`）は W1-I4 が `coding/task_sets.yaml`（SPEC.md 7.4 節）に書き出す。
 
 ---
@@ -457,11 +457,14 @@ d ≥ 1 のタスクで、T0 → T1 の src の差分が変異を入れた関数
 
 | 版 | プロンプト | ハーネスの差（値は SPEC.md・ADR-035 の既定に従う） | 植込み |
 |---|---|---|---|
-| `c01_baseline` | `coding/prompts/c01_baseline.md` | 既定（`history_cache: off`、`test_output_limit` 有効、pytest は簡潔な出力） | なし（good） |
-| `c12_null` | `coding/prompts/c12_null.md` | c01 と同一 | 無関係な段落 `team_note` を 1 つ挿入（neutral） |
-| `c13_minimal_fix` | `coding/prompts/c13_minimal_fix.md` | c01 と同一 | `root_cause` 段落を `minimal_fix` 段落に置換（bad） |
-| `c04_verbose_ctx` | **c01 と同一の本文**（`coding/prompts/c01_baseline.md` を参照する） | `test_output_limit` 無効、pytest を詳細出力（各テストの名前と結果、長いトレースバック、合格テストの要約も出す） | ハーネスだけ（neutral） |
-| `c01h_history_cache` | **c01 と同一の本文**（同上） | `history_cache: on` だけ | ハーネスだけ（good） |
+| `c01_baseline` | `coding/prompts/c01_baseline.md` | `history_cache: on`（YAML に明示。G0 項目 13）、ほかは既定（`test_output_limit` 有効、pytest は簡潔な出力） | なし（good） |
+| `c12_null` | `coding/prompts/c12_null.md` | c01 と同一（`history_cache: on` を YAML に明示） | 無関係な段落 `team_note` を 1 つ挿入（neutral） |
+| `c13_minimal_fix` | `coding/prompts/c13_minimal_fix.md` | c01 と同一（`history_cache: on` を YAML に明示） | `root_cause` 段落を `minimal_fix` 段落に置換（bad） |
+| `c04_verbose_ctx` | **c01 と同一の本文**（`coding/prompts/c01_baseline.md` を参照する） | `test_output_limit` 無効、pytest を詳細出力（各テストの名前と結果、長いトレースバック、合格テストの要約も出す）。`history_cache: on` は c01 と同じ（YAML に明示） | ハーネスだけ（neutral） |
+| `c01o_no_history_cache` | **c01 と同一の本文**（同上） | c01 から `history_cache: on` を除いただけ（`harness` はすべて既定値。`history_cache: false`） | ハーネスだけ（neutral。振る舞いは変えずコストだけが予測どおりに増える） |
+
+G0 項目 13（2026-11-07）で、c01 系（c01・c12・c13・c04）を `history_cache: on` にし、EC-B2 の植込みを on にした版 `c01h_history_cache` から off にした版 `c01o_no_history_cache` に入れ替えた（ADR-035 判断 4 の改訂）。
+`HarnessConfig` の既定値（`history_cache: false`）は変えていないので、c01 系 4 版は YAML に `history_cache: true` を書く（`base` は継承の仕組みではない。SPEC.md 7.3 節）。
 
 ### 8.1 c01_baseline の内容方針
 
@@ -498,9 +501,9 @@ ADR-037 の操作確認で 6.4 節の閾値に届かなかった場合、`minima
 - 「失敗しているテストの入力に対して正しい値が返れば十分で、ほかの入力の振る舞いは問わない」と、特殊化を一歩はっきり許す
 - 「`finish` の summary には、変更した行数を書く」と、最小化を測られている感覚を足す
 
-### 8.5 c04 と c01h でプロンプトを変えない理由
+### 8.5 c04 と c01o でプロンプトを変えない理由
 
-EC-B2 の H2（詳細出力のコスト増は `run_tests` の出力に帰属する）と H3（`history_cache` の節約を事前に予測する）は、
+EC-B2 の H2（詳細出力のコスト増は `run_tests` の出力に帰属する）と H3（`history_cache` を off にしたときのコスト増を事前に予測する。G0 項目 13 の前は c01h で節約を予測していた）は、
 **ハーネスだけが違い、エージェントの方針は同じ**ことを前提にしている。プロンプトを変えると、テストの実行回数などの振る舞いが変わり、帰属が混ざる。
 版ハッシュはハーネス設定を含む（ADR-035）ので、本文が同一でも別の版になる。
 
