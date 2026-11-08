@@ -15,7 +15,7 @@ live の数値と混ぜない。絶対額を live と並べない）。
 from __future__ import annotations
 
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -262,6 +262,54 @@ def check_same_tool_definitions(
 # ---------------------------------------------------------------------------
 
 
+def attribution_components(
+    base_by_task: Mapping[str, Sequence[RunAllocation]],
+    treated_by_task: Mapping[str, Sequence[RunAllocation]],
+    *,
+    tool: str = TOOL,
+    n_boot: int,
+    seed: int,
+) -> dict[str, dict[str, float | int]]:
+    """H2 の比 Σ N_t / Σ D_t の分子・分母と、ステップ数の差を、比と同じブートストラップで区間付きにする（記録のみ）。
+
+    N_t・D_t の定義は `agenteval.econ.context_cost.verbose_attribution` と同じ（新しい定義は作らない）:
+    D_t = 平均 Cost(処置, t) − 平均 Cost(基準, t)（直接計算の額）、
+    N_t = 平均 CCA_tool(処置, t) − 平均 CCA_tool(基準, t)。使うタスク・乱数（同じ seed の `default_rng` で
+    同じ形のタスク再標本）も同じなので、点推定の比は `verbose_attribution` の値と一致する。
+    steps は run あたり平均ステップ数の差（タスクごとの 平均 n_steps(処置) − 平均 n_steps(基準) の、タスクの平均）。
+    戻り値のキー: numerator_usd（Σ N_t）、denominator_usd（Σ D_t）、mean_steps_diff（タスクの平均）。
+    各値は estimate・low・high（2.5%・97.5% のパーセンタイル）・n_tasks。
+    """
+    tasks = sorted(t for t in base_by_task if t in treated_by_task)
+    tasks = [t for t in tasks if len(base_by_task[t]) > 0 and len(treated_by_task[t]) > 0]
+    if not tasks:
+        raise ValueError("基準と処置の両方に反復があるタスクが無い")
+
+    def task_diff(f: Callable[[RunAllocation], float]) -> np.ndarray:
+        return np.array(
+            [
+                float(np.mean([f(a) for a in treated_by_task[t]]))
+                - float(np.mean([f(a) for a in base_by_task[t]]))
+                for t in tasks
+            ]
+        )
+
+    d = task_diff(lambda a: a.direct_usd)
+    nn = task_diff(lambda a: cca_of_tool(a, tool))
+    steps = task_diff(lambda a: float(a.n_steps))
+    idx = np.random.default_rng(seed).integers(0, len(tasks), size=(n_boot, len(tasks)))
+
+    def summarize(point: float, reps: np.ndarray) -> dict[str, float | int]:
+        low, high = np.percentile(reps, [2.5, 97.5])
+        return {"estimate": point, "low": float(low), "high": float(high), "n_tasks": len(tasks)}
+
+    return {
+        "numerator_usd": summarize(float(nn.sum()), nn[idx].sum(axis=1)),
+        "denominator_usd": summarize(float(d.sum()), d[idx].sum(axis=1)),
+        "mean_steps_diff": summarize(float(steps.mean()), steps[idx].mean(axis=1)),
+    }
+
+
 def compute(
     runs_by_version: Mapping[str, Sequence[Run]],
     ledger: Sequence[LedgerEntry],
@@ -328,6 +376,17 @@ def compute(
     attribution = verbose_attribution(
         by_task(BASE, h2_tasks), by_task(VERBOSE), tool=TOOL, n_boot=n_boot, seed=seed
     )
+    # 比の分子・分母とステップ数の差（記録のみ。基準は付けない）。同じ N_t・D_t・タスク再標本を使うので比と整合する
+    components = attribution_components(
+        by_task(BASE, h2_tasks), by_task(VERBOSE), tool=TOOL, n_boot=n_boot, seed=seed
+    )
+    ratio_check = (
+        components["numerator_usd"]["estimate"] / components["denominator_usd"]["estimate"]
+    )
+    if abs(ratio_check - attribution.value) > 1e-9 * max(1.0, abs(attribution.value)):
+        raise ValueError(
+            f"分子/分母 {ratio_check} が verbose_attribution の値 {attribution.value} と一致しない"
+        )
 
     # --- H3: 履歴キャッシュを外したコスト増の予測（run 内の反実仮想） ---
     on_runs = [r for r in runs_by_version[BASE] if r.run_id in ledger_usd]
@@ -446,6 +505,9 @@ def compute(
             },
             "live",
         ),
+        "verbose_attribution_numerator_usd": labeled(components["numerator_usd"], "live"),
+        "verbose_attribution_denominator_usd": labeled(components["denominator_usd"], "live"),
+        "c04_minus_c01_mean_steps": labeled(components["mean_steps_diff"], "live"),
         "e_on_e_off": labeled(
             {"e_on": pred.e_on, "e_off": pred.e_off, "n_on": pred.n_on, "n_off": pred.n_off}
             if pred

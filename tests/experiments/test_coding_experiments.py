@@ -970,6 +970,54 @@ def test_b2_compute_on_position_model_runs_has_zero_errors_and_full_attribution(
     assert out["extras"]["cache_chain_broken"] is False
 
 
+def test_b2_attribution_components_match_the_ratio_and_record_step_difference() -> None:
+    """記録のみの指標: 比 = 分子/分母（同じ N_t・D_t）。c04 − c01 の平均ステップ数の差も出る（来歴 live）。"""
+    b2 = _load_script("ec_b2_context_cost")
+    runs, tasks = _b2_corpus()
+    # 1 タスクだけ c04 の run を 5 ステップにする（他の 2 タスクは c01 と同じ 4 ステップ）。タスクの平均の差 = 1/3
+    outs5, tools5 = (
+        [100, 80, 60, 40, 30],
+        ["run_tests", "read_file", "run_tests", "read_file", "finish"],
+    )
+    runs["c04_verbose_ctx"] = [
+        _model_run(
+            r.run_id, r.task_id, r.version_id, outs5, [2300, 200, 100, 50], on=True, tools=tools5
+        )
+        if r.task_id == tasks[0]
+        else r
+        for r in runs["c04_verbose_ctx"]
+    ]
+    all_runs = [r for v in runs.values() for r in v]
+    out = b2.compute(
+        runs, _ledger_for(all_runs), load_pricing(), None, sub10=tasks, seed=7, n_boot=200
+    )
+    metrics = out["metrics"]
+    num = metrics["verbose_attribution_numerator_usd"]
+    den = metrics["verbose_attribution_denominator_usd"]
+    steps = metrics["c04_minus_c01_mean_steps"]
+    for entry in (num, den, steps):
+        assert entry["provenance"] == "live"
+        assert set(entry["value"]) == {"estimate", "low", "high", "n_tasks"}
+        assert entry["value"]["n_tasks"] == 3 and entry["value"]["low"] <= entry["value"]["high"]
+    assert den["value"]["estimate"] > 0.0
+    ratio = metrics["verbose_attribution_to_run_tests"]["value"]
+    assert num["value"]["estimate"] / den["value"]["estimate"] == pytest.approx(ratio, rel=1e-9)
+    assert steps["value"]["estimate"] == pytest.approx(1.0 / 3.0, abs=1e-12)
+    # 基準は付けない（registry の基準に無い）
+    entry = next(e for e in verify.load_registry() if e["id"] == "EC-B2")
+    recorded_only = {
+        "verbose_attribution_numerator_usd",
+        "verbose_attribution_denominator_usd",
+        "c04_minus_c01_mean_steps",
+    }
+    assert recorded_only.isdisjoint(c["metric"] for c in entry["criteria"])
+    # 同じ seed なら同じ区間（再現性）
+    again = b2.compute(
+        runs, _ledger_for(all_runs), load_pricing(), None, sub10=tasks, seed=7, n_boot=200
+    )
+    assert again["metrics"]["verbose_attribution_numerator_usd"] == num
+
+
 def test_b2_h2_task_set_follows_the_c04_runs_core24_x3() -> None:
     """ADR-044 (A): c04 が core24 × 3 のとき H2 は 24 タスクで計算され、c01 側はそのタスクの全反復の平均になる。
     H3（c01o・sub10 × 1）の計算は sub10 のまま変わらない。"""
@@ -2674,6 +2722,106 @@ def test_finalize_keeps_filled_findings_and_puts_notes_under_auto_heading(
     assert out.count("## 自動注記") == 1 and out.count("- 自動注記 A") == 1
     assert out.index("手書きの気づき") < out.index("## 自動注記") < out.index("\n---\n生成:")
     assert common.AUTO_NOTES_MARK not in out
+
+
+def _set_section(page: Path, heading: str, body: str) -> None:
+    """一時ページの `## heading…` 節の中身を `body` に置き換える（見出しの行・他の節・フッターは変えない）。"""
+    common = _load_script("_coding_common")
+    text = page.read_text(encoding="utf-8")
+    span = common._section_span(text, heading)
+    assert span is not None
+    first = text[span[0] : span[1]].split("\n", 1)[0]
+    page.write_text(text[: span[0]] + f"{first}\n{body}\n" + text[span[1] :], encoding="utf-8")
+
+
+def test_finalize_keeps_designer_paragraphs_above_marks_and_replaces_old_auto_parts(
+    results_dir: Path,
+) -> None:
+    """設計者の段落＋印＋古い自動注記・自動判定 → 2 回 finalize しても設計者の段落が残り、自動部分は 1 つだけ。"""
+    common = _load_script("_coding_common")
+    page = results_dir / "EC-R1.md"
+    _set_section(
+        page,
+        "気づき・限界",
+        f"設計者の気づき A\n\n設計者の気づき B\n\n{common.AUTO_NOTES_MARK}\n- 古い自動注記 OLD",
+    )
+    _set_section(
+        page,
+        "判定",
+        f"設計者の判定の所見\n\n{common.AUTO_VERDICT_HEADING}\n{common.AUTO_VERDICT_MARK}\nFAIL",
+    )
+    for _ in range(2):
+        common.finalize_coding(
+            "EC-R1", dict(R1_PASSING), ["新しい自動注記 NEW"], seed=1, provenance="live"
+        )
+        out = page.read_text(encoding="utf-8")
+        findings = _headed(out, "気づき・限界")
+        assert "設計者の気づき A\n\n設計者の気づき B\n\n" + common.AUTO_NOTES_MARK in findings
+        assert "OLD" not in out and out.count("新しい自動注記 NEW") == 1
+        assert out.count(common.AUTO_NOTES_MARK) == 1 and "## 自動注記" not in out
+        assert findings.endswith(common.AUTO_NOTES_MARK + "\n- 新しい自動注記 NEW")
+        judge = _headed(out, "判定")
+        assert judge.startswith("## 判定\n設計者の判定の所見\n\n### 自動判定\n")
+        assert out.count("設計者の判定の所見") == 1 and out.count(common.AUTO_VERDICT_MARK) == 1
+    # 印の上が未記入なら（印以下だけなら）従来どおり、印の直下に notes だけを出す
+    _set_section(page, "気づき・限界", f"{common.AUTO_NOTES_MARK}\n- 古い自動注記 OLD")
+    common.finalize_coding(
+        "EC-R1", dict(R1_PASSING), ["新しい自動注記 NEW"], seed=1, provenance="live"
+    )
+    out = page.read_text(encoding="utf-8")
+    assert (
+        _headed(out, "気づき・限界").endswith(
+            "## 気づき・限界\n" + common.AUTO_NOTES_MARK + "\n- 新しい自動注記 NEW"
+        )
+        and "OLD" not in out
+    )
+
+
+def _designer_parts(text: str) -> tuple[str, str]:
+    """ページの「## 判定」と「## 気づき・限界」の設計者の記述（印より上の本文）。"""
+    common = _load_script("_coding_common")
+    findings = _headed(text, "気づき・限界").split("\n", 1)[1].split("\n## 自動注記")[0]
+    return (
+        common.designer_verdict_text(text),
+        findings.split(common.AUTO_NOTES_MARK)[0].strip(),
+    )
+
+
+def test_rerunning_keeps_designer_verdict_and_findings_of_the_real_pages_verbatim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """EC-R1・R2・B2 の実ページの写しに finalize を 2 回かけても、設計者の判定・気づき・限界が一字一句残る。
+
+    期待値は実ページの内容のハードコードではなく、かける前の写しから抽出した設計者部分。
+    """
+    common = _load_script("_coding_common")
+    directory = tmp_path / "pages"
+    directory.mkdir()
+    monkeypatch.setattr(pages, "RESULTS_DIR", directory)
+    for key in ("AGENTEVAL_FAILURE_TYPE", "AGENTEVAL_FAILURE_REASON"):
+        monkeypatch.delenv(key, raising=False)
+    for experiment_id in ("EC-R1", "EC-R2", "EC-B2"):
+        original = (REPO_ROOT / "docs" / "results" / f"{experiment_id}.md").read_text(
+            encoding="utf-8"
+        )
+        (directory / f"{experiment_id}.md").write_text(original, encoding="utf-8")
+        before_verdict, before_findings = _designer_parts(original)
+        assert before_verdict and before_findings, experiment_id  # 設計者の記述がある実ページが前提
+        for _ in range(2):
+            common.finalize_coding(
+                experiment_id,
+                _passing_metrics(experiment_id),
+                ["テスト用の自動注記"],
+                seed=1,
+                provenance="simulated",
+            )
+            out = (directory / f"{experiment_id}.md").read_text(encoding="utf-8")
+            after_verdict, after_findings = _designer_parts(out)
+            assert after_verdict == before_verdict, experiment_id
+            assert after_findings == before_findings, experiment_id
+            assert out.count("テスト用の自動注記") == 1, experiment_id
+            assert out.count(common.AUTO_NOTES_MARK) == 1, experiment_id
+            assert out.count(common.AUTO_VERDICT_MARK) == 1, experiment_id
 
 
 # 設計者が書いた実ページ（EC-S1 は付記付きの見出しを持つ）を入力に、再生成で設計者の記述が残ることを確かめる。
