@@ -26,6 +26,7 @@ If you are new here, start with the repository [README](../README.md), then read
 
 | Document | Contents |
 |---|---|
+| [report/new-idea-report.md](report/new-idea-report.md) | **The stage-1 verification report** (Japanese only): aims, framework, the six experiments' results and how to read them, the plant that did not take, how much each PASS tells, evaluator defects, limitations, recommendations for stage 2 |
 | [NEW_IDEA.md](NEW_IDEA.md) (Japanese only) | The coding-agent evaluation proposal: methods for ROI, harness effects, bottlenecks, and permission and security evaluation; principles and formulas; the evaluation and the 3 recommendations; the stage-1 results. Theory, formulas and hypotheses are authoritative here |
 | [../TASK.md](../TASK.md) (Japanese only) | The work plan and record of stage 1 (3 recommendations): subagent roles, waves (W0–W6), gates (G0–G2), cost, the checklist (chapter 9). **Stage 1 was completed on 2026-11-08** |
 | [plan/coding/SPEC.md](plan/coding/SPEC.md) (Japanese only) | Interface specification (environment, sandbox, coding loop, economics, security, observation, CLI) |
