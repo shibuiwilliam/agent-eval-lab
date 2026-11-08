@@ -10,13 +10,17 @@ we took the methods proposed in a report on overlooked agent-evaluation techniqu
 them against a small controllable agent, deliberately planted defects, and measured whether each
 method reacted to the planted defect and stayed quiet on the control.
 
-We ran **30 experiments**. Here is how they landed.
+We ran **36 experiments**: 30 in the office environment (chapters 3, 4 and 8 of the source report) and 6 in a
+self-built coding environment (chapter C, stage 1 of [docs/NEW_IDEA.md](docs/NEW_IDEA.md), Japanese only).
+Here is how they landed.
 
 | Verdict | Count | Meaning |
 |---|---|---|
-| PASS | 15 | The method worked as claimed |
+| PASS | 21 | The method worked as claimed (office 15, coding 6) |
 | NEGATIVE | 6 | Correctly implemented, but the claim did not hold |
 | FAIL | 9 | Our implementation or experiment design was at fault |
+
+All 6 coding experiments are PASS, but **3 of them cannot be read as a bare "PASS"** (see below).
 
 The most useful part is not the tally. It is that **we ran the whole suite against a simulated
 agent first, everything looked consistent, and then $3 of real Claude API calls showed that three
@@ -82,7 +86,9 @@ That discipline is what turned four disappointments into results worth publishin
 | Agent under test | Claude Haiku 4.5 |
 | Judge / reference policy | Claude Sonnet 5 |
 | Corpus | 5,520 simulated runs, plus a 15,180-run PTS corpus built from 65 synthetic changes |
-| Live verification | 1,308 API calls, **$3.09** total |
+| Live verification (office) | 1,308 API calls, **$3.09** total (the ledger, including later supplementary calls, shows 1,617 calls and 3.80 USD) |
+| Coding environment (chapter C) | 6 self-built Python repositories, 48 tasks (42 bug fixes, 3 do-nothing, 3 ambiguous), 5 versions (baseline, null control, 3 planted). Code written by the agent under test runs only inside Docker (`--network none`, non-root) |
+| Live verification (coding) | 96 pilot runs + 30 manipulation-check runs + a 418-run corpus, 7,344 API calls, **$28.07** total. The ledger's live cumulative is **31.87 USD** (overall budget 120 USD) |
 
 Every evaluation method takes only a `Run` (a trajectory) as input. Nothing calls the API to
 compute a metric, which is what makes the provenance labels trustworthy.
@@ -143,6 +149,34 @@ drops it to 0.747. Full write-up: [docs/PTS.en.md](docs/PTS.en.md).
 | ε-exploration keeps the selector calibrated | **Undecidable at this scale**: the paired effect is −0.0023 (SD 0.0088), and a power calculation says 113 change orderings would be needed to resolve it |
 | Discriminative power | Outcome-only discriminative power **cannot** separate versions that degrade the process but not the result |
 | Surrogate judge | A deterministic stand-in judge agreed with the real Sonnet 5 judge only 0.683 of the time, and was consistently too lenient |
+
+### Coding agents: visible-test pass rate hides fixes that fail the hidden tests (chapter C)
+
+We had Haiku 4.5 fix bugs in self-built buggy repositories and graded each run against both the
+visible tests (the agent can see them) and the hidden tests (it cannot). Splitting runs into
+**S (both pass), W (visible passes but hidden fails), and F (visible fails)**, two versions that look
+nearly the same on visible pass rate separate clearly on the W rate.
+
+| Version | Runs | Visible pass rate | S | W | F |
+|---|---|---|---|---|---|
+| `c01_baseline` | 144 | 0.986 | 0.910 | 0.076 | 0.014 |
+| `c13_minimal_fix` (prompts for the smallest fix) | 144 | 0.938 | 0.701 | **0.236** | 0.063 |
+| `c12_null` (control with an irrelevant paragraph added) | 48 | 1.000 | 0.938 | 0.063 | 0.000 |
+
+The W-rate difference is 0.160 (95% interval [0.069, 0.285], live); the visible-pass-rate difference
+is −0.049 ([−0.132, 0.007]). The PASS verdicts carry three caveats, though.
+
+- **EC-R1**: the planted version c13 was meant to induce "hard-coding that special-cases the input",
+  but it failed its operation check all three times (0/10 × 3). The difference came from local
+  workarounds and instruction violations, not from special-casing (ADR-046).
+- **EC-R2**: the claim that "retrying until green increases silent errors" was **undecidable**,
+  because c13 produced too few F runs (N/A — not a pass). The agent already iterates to green inside the run.
+- **EC-B2**: attributing cost to tool output met its 5 pre-fixed criteria, but the ratio's interval
+  [−20.7, 23.0] is not pinned down, so the claim that "verbose output accounts for most of the cost
+  increase" is **not verified**.
+
+Details: "Chapter C" in [docs/results/README.en.md](docs/results/README.en.md) and the per-experiment
+pages (`docs/results/EC-*.en.md`).
 
 ## What the real API taught us that simulation could not
 
@@ -214,9 +248,10 @@ uv run agenteval corpus build --plan corpus.yaml --dry-run   # estimate first
 | `docs/results/` | One page per experiment, plus `summary.md`, the overall write-up, and the two live-verification reports |
 | `docs/IMPROVEMENT.md` | Defects found in live verification, the fix plan, and what is still open |
 | `src/agenteval/` | Implementation: `core` `llm` `env` `agent` `judge` `pts` `process` `drift` `reports` |
-| `experiments/` | 30 experiment scripts and `registry.yaml` (the fixed pass criteria) |
-| `tasks/` `versions/` `prompts/` | Task definitions, agent versions with planted defects, system prompts |
-| `tests/` | 131 unit tests. `conftest.py` blocks the network so they can never call the API |
+| `experiments/` | 36 experiment scripts (30 `e*_*.py`, 6 `ec_*.py`) and `registry.yaml` (the fixed pass criteria) |
+| `tasks/` `versions/` `prompts/` | Office-environment task definitions, agent versions with planted defects, system prompts |
+| `coding/` | The coding environment's tasks, versions, prompts and corpus plan (`coding/corpus.yaml`). The self-built repositories live in `data/fixtures/repos/` |
+| `tests/` | 1,094 tests (including those that need Docker). `conftest.py` blocks the network so they can never call the API |
 | `data/` | Generated artefacts. Everything except `data/fixtures/` is git-ignored |
 
 Only conventional root files stay at the top level: `README*`, `LICENSE`, build config, and the two
@@ -229,13 +264,18 @@ YAML files (`corpus.yaml`, `pricing.yaml`) that the code reads relative to the r
 - **[docs/results/summary.md](docs/results/summary.md)** — the verdict table (generated, never edited by hand)
 - **[docs/results/LIVE.md](docs/results/LIVE.md)** and **[LIVE2.md](docs/results/LIVE2.md)** — the live-API verification rounds
 - **[docs/IMPROVEMENT.md](docs/IMPROVEMENT.md)** — every defect we found and what we did about it
+- **[docs/NEW_IDEA.md](docs/NEW_IDEA.md)** and **[TASK.md](TASK.md)** (both Japanese only) — the coding-agent
+  evaluation proposal (theory, formulas, hypotheses) and the stage-1 work plan and record
 
 ## Honest limitations
 
-1. Only the evaluation *harness* was validated against the live API. The 28 method experiments
-   still run on simulated trajectories.
-2. This is a teaching environment: SQLite, 14 tools, 46 tasks. It does not reproduce the messiness
-   of a real coding agent or long-running deployment.
+1. In the office environment, only the evaluation *harness* was validated against the live API. The 28 method
+   experiments still run on simulated trajectories. The coding environment's EC-B2, EC-R1 and EC-R2 were judged on
+   live trajectories (418 runs), but things like robustness over Θ are simulated.
+2. This is a teaching environment. The office side is SQLite, 14 tools, 46 tasks. The coding side is 6 small
+   self-built repositories with single-mutation bug fixes, and Haiku 4.5's baseline pass rate came out above the
+   50–80% target (0.91; ADR-043 decided not to tune it). It does not reproduce the messiness of real large
+   repositories or long-running deployments.
 3. "Production traffic" is generated, so nothing here demonstrates real-world effectiveness.
 4. Some experiments are partly circular — we wrote the simulator policy that the metric then
    detects. Each result page grades its own circularity on a three-point scale.

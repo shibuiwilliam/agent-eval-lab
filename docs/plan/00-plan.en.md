@@ -101,3 +101,10 @@ Adjust the tasks so that the baseline v01 pass rate lands between 50% and 80%. A
 - Each chapter honestly records at least one "negative or conditional" result (an all-PASS suite is suspicious)
 - Total cost stays within 120 USD
 - A table mapping report sections to experiments exists in `docs/results/summary.md`
+
+## Extension: coding-agent evaluation (NEW_IDEA stage 1, chapter C, 2026-11-07/08)
+Outside the plan above (the 25 experiments of chapters 3, 4 and 8, later 30), we added the 3 recommendations of `docs/NEW_IDEA.md` as chapter C.
+The work plan and record are in `TASK.md`, and the design decisions are ADR-029 to 046 (all Japanese only).
+- All 6 experiments (EC-S1, EC-O2, EC-B2P, EC-B2, EC-R1, EC-R2) are judged (PASS 6; EC-B2, EC-R1 and EC-R2 carry caveats in how to read them). The total is 36 experiments, PENDING 0
+- Cost: 28.07 USD live in stage 1. The ledger's live cumulative is 31.87 USD, within the 120 USD overall budget (about 32 USD remaining against NEW_IDEA's 60 USD cap)
+- The "baseline difficulty tuning" above (a 50–80% pass rate) is not met in chapter C (c01 0.91). The difficulty knobs did not move Haiku 4.5's pass rate, and ADR-043 decided not to tune them

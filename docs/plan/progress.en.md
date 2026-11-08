@@ -149,6 +149,16 @@ The prompts for driving a session (P0 kickoff / corpus build / experiment templa
 - [x] **DoD**: PASS 15 / NEGATIVE 6 / FAIL 9 / PENDING 0 (30 experiments). `make check` passes.
       No new live calls (still 3.09 USD). Recorded in `docs/PTS.en.md`
 
+## NEW_IDEA stage 1: coding-agent evaluation (2026-11-07/08; details in chapter 9 of `TASK.md`, Japanese only)
+- [x] W0–W2: design (ADR-030 to 042), implementation (`env/repo*`, `sandbox`, `coding_loop`, `econ/`, `security/`, `obs/`), and EC-S1, EC-O2 and EC-B2P pass offline
+- [x] W3: 96 pilot runs (π_S 0.905, 0.0529 USD/run) and the fixing of the criteria (ADR-033, 043, 044, 045). c13's operation check failed all three times -> ADR-046 (the user chose O1)
+- [x] W4: a 418-run corpus (G2, actual cost 21.27 USD, 0 missing). Confirmed the history cache operates (W4-OB)
+- [x] W5: EC-B2, EC-R1 and EC-R2 are PASS. EC-R1 picked up a W-rate difference of 0.160 [0.069, 0.285] that the visible pass rate cannot see (c13 is a planted version that failed its operation check). EC-R2's H3 is N/A (underpowered, not a pass). EC-B2's H2 is unverified because the ratio's interval is not pinned down. The independent review W5-R's findings were applied in W5-A3b
+- [x] W6: summary.md carries the 6 chapter-C experiments and the designer's reading (PASS 21 / NEGATIVE 6 / FAIL 9 / PENDING 0, 36 experiments). English versions synced. Live cumulative 31.87 USD (stage 1: 28.07 USD)
+- [x] Merged into main (2026-11-08, 4ece095, at the user's request). Not pushed
+- [x] Documentation status updated (2026-11-08): chapter C's status reflected in README, docs/README, results/README, CLAUDE.md and TASK.md (Japanese and English)
+- Next: (1) Decide with the user on the "W6" section of open-questions.md (the data/results drift in 4 office experiments, push and cleaning up the working branches, the lag in the English versions). (2) Start the stage-2 plan (more W for ê, redesigning H3, a component that prompts the agent to continue after max_tokens) from the "W5-A3" section of open-questions.md
+
 ## Next
 - R6–R9 from "11. Not yet fixed" in `IMPROVEMENT.md`.
   Highest priority is R6 (re-take E4-2 / E4-6 with a live judge, estimated 0.3 USD)

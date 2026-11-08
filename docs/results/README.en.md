@@ -14,16 +14,20 @@ Training data was created from 65 synthetic changes (report 3.8's cold start), a
 That moved the escape-defect rate from 0.868× random to **0.319×**, and regression recall at a
 30% budget from 0.535 to **0.819**. The record is in [`PTS.en.md`](../PTS.en.md).
 
-| Verdict | Count |
-|---|---|
-| PASS | 15 |
-| NEGATIVE | 6 |
-| FAIL | 9 |
-| PENDING | 0 |
+**On 2026-11-07/08 stage 1 of coding-agent evaluation (chapter C, 6 experiments) was added, bringing the total to 36**
+(the proposal is [`NEW_IDEA.md`](../NEW_IDEA.md) and the work plan and record is [`TASK.md`](../../TASK.md), both Japanese only; see the "Chapter C" section below).
+
+| Verdict | Count | Of which chapter C |
+|---|---|---|
+| PASS | 21 | 6 |
+| NEGATIVE | 6 | 0 |
+| FAIL | 9 | 0 |
+| PENDING | 0 | 0 |
 
 ## Read this first (provenance)
 
-**The numbers in 28 of the experiments have provenance `simulated` (E8-8 alone is `unit`); only E0-1 and E0-2 carry `live`.**
+**The numbers in 28 of the office-environment experiments have provenance `simulated` (E8-8 alone is `unit`); only E0-1 and E0-2 carry `live`.**
+The provenance of the 6 chapter-C experiments is given separately in the "Chapter C" section below (EC-B2P, EC-B2, EC-R1 and EC-R2 were judged on live trajectories).
 Trajectories are produced by a deterministic simulated agent (`src/agenteval/llm/simulator.py`, ADR-008).
 
 However, **the validity of sim itself was verified twice against live (the real API)**
@@ -207,13 +211,70 @@ level** from a surrogate judge cannot be trusted.
 verdicts that changed on 2026-09-19 (E3-3 / E3-6 / E3-7) changed because **the thing compared
 against the criterion was fixed, not the criterion** (see [`REVIEW.en.md`](../REVIEW.en.md) §0).
 
+## Chapter C: coding-agent evaluation (NEW_IDEA stage 1, 2026-11-07/08)
+
+We had the agent under test, Haiku 4.5, solve bug-fix tasks, each a single mutation planted in one of 6 small
+self-built Python repositories (binkeeper, datewright, rowmill, textmeter, throttlebox, tillcalc).
+Code written by the agent runs only inside Docker (`--network none`, non-root, only the working tree writable) (ADR-030).
+Grading is two-track: visible tests (the agent can see them) and hidden tests (it cannot). Each run is classified
+**S (both pass), W (visible passes but hidden fails = a silent error), or F (visible fails, including unfinished runs)**.
+
+| Experiment | What it verified | Verdict | How to read it |
+|---|---|---|---|
+| [EC-S1](EC-S1.en.md) | Whether the effect monitor detects directly injected marker effects, per observation layer | PASS | simulated (effects injected directly; ADR-042) |
+| [EC-O2](EC-O2.en.md) | The harness's mediation, secrecy, record integrity, and residual effects of denied actions | PASS | simulated |
+| [EC-B2P](EC-B2P.en.md) | Whether billing attribution matches the ledger on existing live trajectories | PASS | existing live trajectories |
+| [EC-B2](EC-B2.en.md) | Lifetime cost attribution of tool output, and the pre-registered prediction of the cost increase when the history cache is removed | PASS | The identity and H3 are strong. **H2 (verbose output is most of the cost increase) is unverified: the ratio's interval [−20.7, 23.0] is not pinned down** |
+| [EC-R1](EC-R1.en.md) | Whether the 3-way decomposition and the decision-robust ROI pick up a difference the visible pass rate cannot see | PASS | W-rate difference 0.160 [0.069, 0.285], visible difference −0.049. **c13 is a planted version that failed its operation check; its mechanism is not special-casing (ADR-046)** |
+| [EC-R2](EC-R2.en.md) | A realisable pass@k, and whether retrying amplifies silent errors | PASS | **H3 (amplification) is N/A = undecided** (c13's F rate 0.0625 < 0.15; N/A is not a pass) |
+
+Breakdown of the bugfix runs in the corpus (stage `corpus`, seed 20261103, 418 runs, live):
+
+| Version | Runs | S | W | F | Actual cost per run |
+|---|---|---|---|---|---|
+| `c01_baseline` | 144 | 131 | 11 | 2 | 0.050 USD |
+| `c13_minimal_fix` (planted) | 144 | 101 | 34 | 9 | 0.048 USD |
+| `c12_null` (null control) | 48 | 45 | 3 | 0 | 0.049 USD |
+| `c04_verbose_ctx` (EC-B2's planted version) | 72 | 66 | 4 | 2 | 0.052 USD |
+| `c01o_no_history_cache` (EC-B2's H3) | 10 | 9 | 1 | 0 | 0.119 USD |
+
+What chapter C showed:
+
+1. **The visible-test pass rate hides fixes that fail the hidden tests.** c01 and c13 are nearly tied on visible pass rate
+   (0.986 and 0.938), yet their W rates split at 0.076 and 0.236. Choosing a version by visible pass rate would never show this (EC-R1).
+2. **A planted defect does not necessarily work as intended.** c13 was meant to induce "hard-coding that special-cases the input",
+   but even after three rewrites of its wording Haiku 4.5 never wrote special-casing (operation check 0/10 × 3; the detector is
+   healthy: 0/42 on correct patches, 42/42 on special-casing patches). On the user's decision (O1, ADR-046) we repositioned it as
+   "a version that induces local workarounds and instruction violations", moved on to the corpus, and wrote on the result page that
+   it is "a planted version that failed its operation check; the mechanism is not special-casing".
+3. **"Retry until green" already happens inside the run.** All 11 F runs were unfinished (10 cut off at max_tokens 2,048, 1 at
+   max_steps), and 0 runs called `finish` with the visible tests still failing. An outer retry has little room to add W, so
+   EC-R2's H3 came out N/A for lack of power.
+4. **A ratio criterion is fragile to a wobbly denominator.** For EC-B2's H2, the numerator (lifetime cost increase of `run_tests`
+   output, 0.112 USD [0.095, 0.129]) appeared as the 0.121 USD estimated beforehand, but the denominator (the c04 − c01 cost
+   difference, 0.046 USD [−0.061, 0.129]) cannot be told from 0, and the ratio of 2.40 exceeded the 0.8 criterion only as a point
+   estimate. We also recorded the procedural lapse that the "interval-width estimate for the ratio" planned in W3-A2 was never run.
+5. **An independent review re-checked the numbers.** The per-page independent review (W5-R) found 0 critical, 4 medium and 6 minor
+   issues, and reproduced the designer's recomputation independently from the main `data/`. All findings were applied (W5-A3b).
+
+Limitations of chapter C:
+
+- The baseline pass rate of 0.91 is above the 50–80% target in CLAUDE.md. The difficulty knobs (distance, decoys, number of hidden
+  tests) barely moved Haiku 4.5's pass rate, and ADR-043 decided not to tune them. The cost is few W and F runs and wide intervals
+- W is concentrated in a few tasks (48 W across the 3 versions fall in 12 tasks, Kish effective size about 6.2). The coverage of the
+  cluster bootstrap may fall below nominal. ê, which predicts W (EC-R1's second stage), will not be pursued on this corpus (about 120 W would be needed)
+- The hidden tests are "bank − K + h tests", with a mean mutation score of 0.846 and a minimum of 0.723. A partial fix can count as S, so the W rate leans toward a lower bound
+- There is one agent under test (Haiku 4.5), and the repositories are small with single mutations. The messiness of real coding-agent work is not reproduced
+- The open items carried to stage 2 are in the "W5-A3" and "W6" sections of [`open-questions.md`](../plan/open-questions.md) (Japanese only)
+
 ## Limitations of this project
 
-1. **The individual experiments were not re-taken under live.** Live verification went as far as
-   sim's validity (E0-1) and the judge (E0-2); the other 28 experiments remain sim. The parts that
+1. **The individual office-environment experiments were not re-taken under live.** Live verification went as far as
+   sim's validity (E0-1) and the judge (E0-2); the other 28 experiments remain sim (chapter C's limitations are in the section above). The parts that
    depend on an LLM's semantic understanding are replaced by deterministic stand-ins, and what they
    demonstrated is that the plumbing connects.
-2. **This is an illustrative environment**: SQLite, 14 tools, 46 tasks (ADR-003).
+2. **This is an illustrative environment**: the SQLite office environment, 14 tools, 46 tasks (ADR-003). Chapter C's coding
+   environment is also 6 small self-built repositories and does not reproduce the complexity of real development work or long-term operation.
 3. **Production traffic is generated** (ADR-006).
 4. **Re-judging after a judge changeover is not verified.** E0-2 measured live-judge stability, but
    not what happens when the judge model is swapped.
@@ -233,12 +294,14 @@ against the criterion was fixed, not the criterion** (see [`REVIEW.en.md`](../RE
 
 | Item | Value |
 |---|---|
-| Live API calls | 1,308 |
-| Total cost | 3.09 USD (2.6% of the 120 USD budget) |
+| Live API calls (office) | 1,617 calls, 3.80 USD (the 1,308 calls and 3.09 USD of the two live verifications, plus later supplementary calls) |
+| Live API calls (chapter C) | 7,344 calls, 28.07 USD (6.80 USD for 96 pilot runs + 30 manipulation-check runs, 21.27 USD for the 418-run corpus) |
+| Ledger live cumulative | **31.87 USD**, 8,961 calls (26.6% of the 120 USD overall budget; about 32 USD remaining against NEW_IDEA's 60 USD cap) |
 | Sim calls | 198,288 |
 | Prompt-cache-equivalent hit rate | 0.684 (a value sim imitates, not a measurement) |
 | Corpus | 46 tasks × 12 versions × 10 repeats = 5,520 runs |
 | PTS corpus | (baseline + 65 synthetic changes) × 46 tasks × 5 repeats = 15,180 runs ([PTS.en.md](../PTS.en.md)) |
+| Chapter C corpus | 418 live runs (c01 and c13: 24 tasks × 6, c12: 24 × 2, c04: 24 × 3, c01o: 10 × 1). Average 0.051 USD per run |
 | Estimate if the same corpus were built live | about 63 USD (`agenteval corpus build --dry-run`, conservatively scaled by 1.5) |
 
 ## If there were a next step
