@@ -15,7 +15,12 @@ import yaml
 
 from agenteval.llm.cost import REPO_ROOT
 from agenteval.reports import i18n
-from agenteval.reports.pages import evaluate_criterion, na_text, validate_criterion
+from agenteval.reports.pages import (
+    RESULTS_DIR,
+    evaluate_criterion,
+    na_text,
+    validate_criterion,
+)
 
 REGISTRY_PATH = REPO_ROOT / "experiments" / "registry.yaml"
 RESULT_DIR = REPO_ROOT / "data" / "results"
@@ -120,6 +125,49 @@ def _na_detail(rows: list[dict[str, Any]]) -> str:
     return f"。N/A（合格ではない）: {'; '.join(na)}" if na else ""
 
 
+READING_PREFIX = "summary 用の要約:"
+
+
+def _reading_of_page(text: str) -> str | None:
+    """結果ページ本文の「## 判定」節から `summary 用の要約:` の行の本文を取る。無ければ None。"""
+    in_verdict = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            in_verdict = line.strip() == "## 判定"
+            continue
+        if in_verdict and line.strip().startswith(READING_PREFIX):
+            body = line.strip()[len(READING_PREFIX) :].strip()
+            return body or None
+    return None
+
+
+def load_readings_ja(table: list[dict[str, Any]], directory: Path | None = None) -> dict[str, str]:
+    """実験 ID → 設計者が結果ページに書いた 1 行の読み方（日本語）。ページや行が無い実験は含めない。"""
+    base = directory or RESULTS_DIR
+    readings: dict[str, str] = {}
+    for row in table:
+        page = base / f"{row['id']}.md"
+        if not page.exists():
+            continue
+        reading = _reading_of_page(page.read_text(encoding="utf-8"))
+        if reading:
+            readings[row["id"]] = reading
+    return readings
+
+
+def load_readings_en(
+    table: list[dict[str, Any]], english: dict[str, dict[str, Any]] | None = None
+) -> dict[str, str]:
+    """実験 ID → registry.en.yaml の `summary_reading`。無い実験は含めない（日本語にフォールバックしない）。"""
+    source = i18n.load_en() if english is None else english
+    readings: dict[str, str] = {}
+    for row in table:
+        value = source.get(row["id"], {}).get("summary_reading")
+        if isinstance(value, str) and value.strip():
+            readings[row["id"]] = value.strip()
+    return readings
+
+
 def verify_all(
     registry_path: Path | None = None, result_dir: Path | None = None
 ) -> list[dict[str, Any]]:
@@ -141,13 +189,20 @@ def verify_all(
                 "key_metrics": judged["criteria"],
             }
         )
-    write_summary(table)
-    write_summary_en(table)
+    write_summary(table, readings=load_readings_ja(table))
+    write_summary_en(table, readings=load_readings_en(table))
     return table
 
 
-def write_summary(table: list[dict[str, Any]], path: Path | None = None) -> Path:
-    """`docs/results/summary.md` を生成する（手で編集しない）。"""
+def write_summary(
+    table: list[dict[str, Any]],
+    path: Path | None = None,
+    readings: dict[str, str] | None = None,
+) -> Path:
+    """`docs/results/summary.md` を生成する（手で編集しない）。
+
+    `readings` は実験 ID → 設計者の 1 行の読み方。1 件以上あるときだけ「読み方」節を足す。
+    """
     target = path or SUMMARY_PATH
     target.parent.mkdir(parents=True, exist_ok=True)
     lines = [
@@ -169,13 +224,21 @@ def write_summary(table: list[dict[str, Any]], path: Path | None = None) -> Path
     lines += _table_rows(table, suffix=".md")
     lines += _chapter_c_footnote(table, lang="ja")
     lines += _na_footnote(table, lang="ja")
+    lines += _readings_section(table, readings or {}, lang="ja")
     lines += ["", f"総コスト: {round(sum(r['usd'] for r in table), 4)} USD", ""]
     target.write_text("\n".join(lines), encoding="utf-8")
     return target
 
 
-def write_summary_en(table: list[dict[str, Any]], path: Path | None = None) -> Path:
-    """`docs/results/summary.en.md` を生成する。タイトルだけ registry.en.yaml から取る。"""
+def write_summary_en(
+    table: list[dict[str, Any]],
+    path: Path | None = None,
+    readings: dict[str, str] | None = None,
+) -> Path:
+    """`docs/results/summary.en.md` を生成する。タイトルは registry.en.yaml から取る。
+
+    `readings` は実験 ID → `summary_reading`（英語）。無い実験は出さない。
+    """
     target = path or SUMMARY_PATH_EN
     target.parent.mkdir(parents=True, exist_ok=True)
     english = i18n.load_en()
@@ -198,9 +261,26 @@ def write_summary_en(table: list[dict[str, Any]], path: Path | None = None) -> P
     lines += _table_rows(table, suffix=".en.md", titles=english)
     lines += _chapter_c_footnote(table, lang="en")
     lines += _na_footnote(table, lang="en")
+    lines += _readings_section(table, readings or {}, lang="en")
     lines += ["", f"Total cost: {round(sum(r['usd'] for r in table), 4)} USD", ""]
     target.write_text("\n".join(lines), encoding="utf-8")
     return target
+
+
+def _readings_section(
+    table: list[dict[str, Any]], readings: dict[str, str], lang: str
+) -> list[str]:
+    """設計者の 1 行の読み方の節。1 件も無ければ節ごと出さない。registry（table）の順に並べる。"""
+    suffix = ".en.md" if lang == "en" else ".md"
+    items = [
+        f"- [{r['id']}]({r['id']}{suffix}): {readings[r['id']]}"
+        for r in table
+        if r["id"] in readings
+    ]
+    if not items:
+        return []
+    heading = "## How to read (designer's summary)" if lang == "en" else "## 読み方（設計者の要約）"
+    return ["", heading, "", *items]
 
 
 def _chapter_c_footnote(table: list[dict[str, Any]], lang: str) -> list[str]:
