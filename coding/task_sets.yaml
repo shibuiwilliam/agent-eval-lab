@@ -1,0 +1,185 @@
+selection_seed: 20261107
+pilot:
+- CT-binkeeper-001
+- CT-binkeeper-002
+- CT-binkeeper-003
+- CT-binkeeper-004
+- CT-binkeeper-005
+- CT-binkeeper-006
+- CT-binkeeper-007
+- CT-binkeeper-008
+- CT-datewright-001
+- CT-datewright-002
+- CT-datewright-003
+- CT-datewright-004
+- CT-datewright-005
+- CT-datewright-006
+- CT-datewright-007
+- CT-datewright-008
+- CT-rowmill-001
+- CT-rowmill-002
+- CT-rowmill-003
+- CT-rowmill-004
+- CT-rowmill-005
+- CT-rowmill-006
+- CT-rowmill-007
+- CT-rowmill-008
+- CT-textmeter-001
+- CT-textmeter-002
+- CT-textmeter-003
+- CT-textmeter-004
+- CT-textmeter-005
+- CT-textmeter-006
+- CT-textmeter-007
+- CT-textmeter-008
+- CT-throttlebox-001
+- CT-throttlebox-002
+- CT-throttlebox-003
+- CT-throttlebox-004
+- CT-throttlebox-005
+- CT-throttlebox-006
+- CT-throttlebox-007
+- CT-throttlebox-008
+- CT-tillcalc-001
+- CT-tillcalc-002
+- CT-tillcalc-003
+- CT-tillcalc-004
+- CT-tillcalc-005
+- CT-tillcalc-006
+- CT-tillcalc-007
+- CT-tillcalc-008
+bugfix:
+- CT-binkeeper-001
+- CT-binkeeper-002
+- CT-binkeeper-003
+- CT-binkeeper-004
+- CT-binkeeper-005
+- CT-binkeeper-006
+- CT-binkeeper-007
+- CT-datewright-001
+- CT-datewright-002
+- CT-datewright-003
+- CT-datewright-004
+- CT-datewright-005
+- CT-datewright-006
+- CT-datewright-007
+- CT-rowmill-001
+- CT-rowmill-002
+- CT-rowmill-003
+- CT-rowmill-004
+- CT-rowmill-005
+- CT-rowmill-006
+- CT-rowmill-007
+- CT-textmeter-001
+- CT-textmeter-002
+- CT-textmeter-003
+- CT-textmeter-004
+- CT-textmeter-005
+- CT-textmeter-006
+- CT-textmeter-007
+- CT-throttlebox-001
+- CT-throttlebox-002
+- CT-throttlebox-003
+- CT-throttlebox-004
+- CT-throttlebox-005
+- CT-throttlebox-006
+- CT-throttlebox-007
+- CT-tillcalc-001
+- CT-tillcalc-002
+- CT-tillcalc-003
+- CT-tillcalc-004
+- CT-tillcalc-005
+- CT-tillcalc-006
+- CT-tillcalc-007
+core24:
+- CT-datewright-002
+- CT-rowmill-003
+- CT-binkeeper-007
+- CT-textmeter-006
+- CT-datewright-007
+- CT-datewright-005
+- CT-rowmill-005
+- CT-tillcalc-004
+- CT-datewright-003
+- CT-binkeeper-001
+- CT-tillcalc-005
+- CT-rowmill-001
+- CT-throttlebox-004
+- CT-throttlebox-006
+- CT-textmeter-001
+- CT-throttlebox-002
+- CT-rowmill-007
+- CT-binkeeper-005
+- CT-tillcalc-007
+- CT-textmeter-005
+- CT-textmeter-003
+- CT-tillcalc-001
+- CT-throttlebox-003
+- CT-binkeeper-004
+core24_reserve:
+  tillcalc:
+    L1:
+    - CT-tillcalc-002
+    L2:
+    - CT-tillcalc-003
+    L3:
+    - CT-tillcalc-006
+  datewright:
+    L1:
+    - CT-datewright-001
+    L2:
+    - CT-datewright-004
+    L3:
+    - CT-datewright-006
+  rowmill:
+    L1:
+    - CT-rowmill-002
+    L2:
+    - CT-rowmill-004
+    L3:
+    - CT-rowmill-006
+  throttlebox:
+    L1:
+    - CT-throttlebox-001
+    L2:
+    - CT-throttlebox-005
+    L3:
+    - CT-throttlebox-007
+  binkeeper:
+    L1:
+    - CT-binkeeper-002
+    L2:
+    - CT-binkeeper-003
+    L3:
+    - CT-binkeeper-006
+  textmeter:
+    L1:
+    - CT-textmeter-002
+    L2:
+    - CT-textmeter-004
+    L3:
+    - CT-textmeter-007
+sub10:
+- CT-tillcalc-004
+- CT-datewright-002
+- CT-rowmill-003
+- CT-throttlebox-004
+- CT-binkeeper-007
+- CT-textmeter-006
+- CT-tillcalc-005
+- CT-datewright-007
+- CT-rowmill-005
+- CT-throttlebox-006
+o2_plant:
+- CT-tillcalc-002
+- CT-datewright-002
+- CT-rowmill-001
+- CT-throttlebox-001
+- CT-binkeeper-002
+s1_host:
+  F1: CT-tillcalc-002
+  F2: CT-datewright-002
+  F3: CT-rowmill-001
+  F4: CT-throttlebox-001
+  F5: CT-binkeeper-002
+  F6: CT-textmeter-002

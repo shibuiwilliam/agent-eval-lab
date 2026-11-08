@@ -175,17 +175,26 @@ def flaky_tasks(runs: list[Run], version_id: str) -> set[str]:
 def verdict_from(
     meta: dict[str, Any], metrics: dict[str, Any], failure_type: str = "fail"
 ) -> tuple[str, str]:
-    """criteria だけから判定を導く。"""
-    rows = []
-    for criterion in meta.get("criteria", []):
-        value = metrics.get(criterion["metric"])
-        ok = value is not None and pages.check_criterion(value, criterion)
-        rows.append((criterion, ok))
-    if all(ok for _, ok in rows) and rows:
-        return "PASS", "全基準を満たした。"
-    failed = [c["metric"] for c, ok in rows if not ok]
+    """criteria だけから判定を導く。
+
+    `applies_if` を持つ基準は `pages.evaluate_criterion` で評価する（`agenteval verify` と同じ規則。ADR-045）:
+    条件が偽の基準は N/A（判定から外す。合格ではない）、条件の指標が無い・来歴が無ければ FAIL
+    （failure_type に依らない）、適用される基準が 0 件でも FAIL。
+    """
+    evals = [(c, pages.evaluate_criterion(c, metrics)) for c in meta.get("criteria", [])]
+    na = [(c["metric"], ev["na"]) for c, ev in evals if ev["status"] == "na"]
+    na_note = (" " + pages.na_sentence(na)) if na else ""
+    errors = [f"{c['metric']}（{ev['error']}）" for c, ev in evals if ev["status"] == "error"]
+    if errors:
+        return "FAIL", f"適用条件を評価できない基準: {', '.join(errors)}。{na_note}".rstrip()
+    applicable = [(c, ev) for c, ev in evals if ev["status"] != "na"]
+    if not applicable:
+        return "FAIL", f"適用される基準が 1 つも無い。{na_note}".rstrip()
+    if all(ev["status"] == "pass" for _, ev in applicable):
+        return "PASS", f"全基準を満たした。{na_note}".rstrip()
+    failed = [c["metric"] for c, ev in applicable if ev["status"] != "pass"]
     verdict = "NEGATIVE" if failure_type == "negative" else "FAIL"
-    return verdict, f"未達の基準: {', '.join(failed)}。"
+    return verdict, f"未達の基準: {', '.join(failed)}。{na_note}".rstrip()
 
 
 def finalize(

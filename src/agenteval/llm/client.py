@@ -81,12 +81,17 @@ class LLMClient:
         budget: BudgetGuard | None = None,
         ledger_path: Path | None = None,
         simulator: Any | None = None,
+        cassette_salt: str | None = None,
     ) -> None:
         self.mode: Mode = mode or current_mode()
         self.run_id = run_id
         self.budget = budget or BudgetGuard(ledger_path=ledger_path)
         self.ledger_path = ledger_path
         self.simulator = simulator
+        if cassette_salt == "":
+            raise ValueError("cassette_salt は None か非空文字列")
+        # 鍵の計算と保存にだけ使う。API には送らない（ADR-038）
+        self.cassette_salt = cassette_salt
         self._client: Any | None = None
         self.calls = 0
 
@@ -94,7 +99,7 @@ class LLMClient:
     def create(self, req: MessageRequest, step: int = -1) -> MessageResult:
         """1 呼び出し。モードに応じて replay / live / sim を選ぶ。"""
         self.calls += 1
-        key = cassette.cassette_key(req.cassette_body())
+        key = cassette.cassette_key(req.cassette_body(), self.cassette_salt)
         if self.mode == "sim":
             return self._simulate(req, step)
         if self.mode in ("replay", "auto"):
@@ -159,6 +164,7 @@ class LLMClient:
             dumped,
             usage.model_dump(),
             sdk_version=_sdk_version(),
+            salt=self.cassette_salt,
         )
         self._ledger(req.model, "live", usd, usage, step, latency_s=elapsed)
         return MessageResult(

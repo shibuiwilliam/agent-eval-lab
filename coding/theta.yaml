@@ -1,0 +1,29 @@
+# Θ — ROI の仮定パラメータの範囲（ADR-032）の機械可読版。
+# 説明・根拠・事前計算は docs/plan/coding/THETA.md が正。値はこのファイルにだけ書く（THETA.md の表はこのファイルの写し）。
+# データ（パイロット・コーパス）を見る前に G0 で承認を得て固定する。固定後の変更は ADR を要し、変更前の Θ での値も併記する。
+# 読み込みは src/agenteval/econ/roi.py の load_theta_space()（SPEC.md 9.3 節の ThetaSpace）。
+version: 1
+status: draft          # G0 の承認後に approved に変える（値は変えない）
+seed: 20261107         # numpy.random.default_rng(seed)。全版で同じ標本を使う（共通乱数）
+n_samples: 200000      # Rob のモンテカルロ誤差 <= sqrt(0.25 / N) ≈ 0.0011
+
+# 独立に引く 7 つの基底パラメータ。金額は USD、kappa と miss は無次元。
+params:
+  H:     {low: 20.0,  high: 600.0,   scale: log}   # 人が自分でやる費用
+  kappa: {low: 0.5,   high: 1.5,     scale: log}   # H' = kappa * H（差し戻し後のやり直し）
+  R0:    {low: 5.0,   high: 50.0,    scale: log}   # 差分レビューの固定費
+  rho:   {low: 0.1,   high: 2.0,     scale: log}   # 差分 1 行あたりのレビュー費用（USD / 行）
+  R_F:   {low: 2.0,   high: 25.0,    scale: log}   # 見える失敗の処理費用
+  D:     {low: 50.0,  high: 10000.0, scale: log}   # 漏れた欠陥の後始末
+  miss:  {low: 0.1,   high: 0.8,     scale: log}   # W の見逃し率。r = 1 - miss
+
+# 4.0 節の式が使う 7 量（Theta）への写像。実装はこの 2 行と一致することを検査し、式を解釈はしない。
+derived:
+  H_prime: "kappa * H"
+  r: "1 - miss"
+
+# 感度の変種（記録のみ。基準には使わない）。log_width_factor は対数尺度で中心（幾何平均）のまわりの幅を何倍にするか。
+variants:
+  narrow: {log_width_factor: 0.5}
+  wide:   {log_width_factor: 2.0, clip: {miss: [0.01, 0.99]}}
+  linear: {scale: linear}   # 範囲は同じで線形一様（ADR-032 影響: 対数一様の偏りの診断）

@@ -1,0 +1,14 @@
+id: c04_verbose_ctx
+base: c01_baseline
+model: agent
+system_prompt: coding/prompts/c01_baseline.md   # c01 と同じ本文（CONTENT.md 8.5 節。方針を変えず帰属だけを動かす）
+toolset: c1
+harness:
+  history_cache: true
+  test_output_limit: null     # run_tests の出力を切り詰めない
+  test_verbosity: verbose     # pytest を -vv --tb=long -rA で走らせる
+planted:
+  description: "run_tests の出力を切り詰めず、詳細出力にする。コンテキストのコスト増が run_tests の出力に帰属することを確かめる（EC-B2 H2）"
+  expected_effects:
+    - {metric: verbose_attribution_to_run_tests, direction: up, vs: c01_baseline}
+quality_label: neutral

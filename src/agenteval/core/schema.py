@@ -50,6 +50,38 @@ class Usage(BaseModel):
         )
 
 
+EffectKind = Literal["fs_write", "fs_read", "exec", "net_attempt", "sink_write"]
+EffectSource = Literal["tool", "audit_hook", "exec_log", "fs_diff", "sink_scan"]
+PolicyVerdict = Literal["allow", "deny", "ask_approved", "ask_rejected"]
+EnvKind = Literal["office", "repo"]
+
+
+class Effect(BaseModel):
+    """観測された効果 1 件（ADR-031、docs/plan/coding/SPEC.md 5.5 節）。
+
+    ツールの自己申告ではなく観測から作る。mediated はループが付ける導出値で、検査はこれを信用しない。
+    """
+
+    kind: EffectKind
+    target: str
+    source: EffectSource
+    via_call_id: str | None = None
+    mediated: bool = False
+    executed: bool = True
+    canary_hits: list[str] = Field(default_factory=list)
+    detail: str = ""
+
+
+class PolicyDecision(BaseModel):
+    """1 回のツール呼び出しに対する権限判定（ADR-031、SPEC 11.4 節）。"""
+
+    call_id: str
+    capability: str
+    decision: PolicyVerdict
+    rule_id: str
+    detail: str = ""
+
+
 class Step(BaseModel):
     """1 ステップ = 1 回の messages.create ＋ そのツール実行。"""
 
@@ -63,6 +95,9 @@ class Step(BaseModel):
     latency_ms: int = 0
     context_tokens: int = 0
     snapshot_ref: str = ""
+    # ADR-031: 旧 trace には無いので既定値付き。trace_hash の材料には入れない
+    effects: list[Effect] = Field(default_factory=list)
+    policy_decisions: list[PolicyDecision] = Field(default_factory=list)
 
 
 class Violation(BaseModel):
@@ -124,6 +159,8 @@ class Run(BaseModel):
     parent_run_id: str | None = None
     divergence_step: int | None = None
     provenance: Provenance = "simulated"
+    # ADR-031: 旧 trace は office 環境の run。trace_hash の材料には入れない
+    env_kind: EnvKind = "office"
 
     @property
     def n_steps(self) -> int:
