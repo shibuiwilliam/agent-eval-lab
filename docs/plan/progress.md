@@ -137,6 +137,14 @@
 - [x] **DoD**: PASS 15 / NEGATIVE 6 / FAIL 9 / PENDING 0（30 実験）。`make check` 通過。
       live 呼び出しは追加していない（3.09 USD のまま）。記録は `docs/PTS.md`
 
+## NEW_IDEA 第 1 段 コーディングエージェント評価（2026-11-07〜08。詳細は `TASK.md` 9 章）
+- [x] W0〜W2: 設計（ADR-030〜042）、実装（`env/repo*`・`sandbox`・`coding_loop`・`econ/`・`security/`・`obs/`）、EC-S1・EC-O2・EC-B2P をオフラインで PASS
+- [x] W3: パイロット 96 run（π_S 0.905、0.0529 USD/run）、基準の確定（ADR-033・043・044・045）。c13 の操作確認は 3 回とも不発 → ADR-046（ユーザーが O1 を選択）
+- [x] W4: コーパス 418 run（G2、実費 21.27 USD、欠け 0）。履歴キャッシュの作動確認（W4-OB）
+- [x] W5: EC-B2・EC-R1・EC-R2 が PASS。EC-R1 は可視合格率で見えない W 率の差 0.160 [0.069, 0.285] を拾った（c13 は操作確認を通っていない植込み）。EC-R2 の H3 は N/A（検出力不足、合格ではない）。EC-B2 の H2 は比の区間が定まらず未検証。独立レビュー W5-R の指摘を W5-A3b で反映
+- [x] W6: summary.md に章 C の 6 実験と設計者の読み方（PASS 21 / NEGATIVE 6 / FAIL 9 / PENDING 0、36 実験）。英語版を同期。live 累積 31.87 USD（第 1 段 28.07 USD）
+- 次にやること: open-questions.md の「W6」節（オフィス 4 実験の data/results のずれ）を最初に片づけ、第 2 段（ê、H3 の再設計、max_tokens の続き）の計画は W5-A3 節から始める。main への取り込みはユーザーの依頼を待つ
+
 ## 次にやること
 - `IMPROVEMENT.md` の「11. まだ直していないこと」の R6〜R9。
   最優先は R6（E4-2 / E4-6 を live ジャッジで取り直す、見積り 0.3 USD）

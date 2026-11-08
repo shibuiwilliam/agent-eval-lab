@@ -545,7 +545,7 @@ A0 は統合ブランチにマージしてから W1-A を起動する。レビ�
 ### W4〜W6
 - [x] **G2** 基準とコーパスの承認（2026-11-08、ユーザーが承認。コーパス 418 run、実測単価で名目 約 24.2・保守 約 36.3 USD、累積上限 AGENTEVAL_BUDGET_USD=47。1 run 平均が 0.08 USD を超えたら止めて相談）
 - [x] W4-L1〜L4、W4-OB（2026-11-08、runner ×4。corpus 418/418、欠け・partial・予算停止・Traceback なし。実費 21.27 USD（1 run 平均 0.0509 USD、シャード 0.049〜0.053）。台帳の累積 31.87 USD。W4-OB: 履歴キャッシュ on の版（c01・c04・c12・c13）で作動していない run 0、c01o は 10/10 で履歴部分の cache_read が 0（off が効いている）かつ接頭辞（8,814 トークン）より後ろの cache_read・2 ステップ目以降の cache_creation のある run 0。bugfix の π_S: c01 0.910・c13 0.701・c12 0.938・c04 0.917・c01o 0.900。c13 の特殊化検出 1/144）
-- [ ] W5-E1〜E3、W5-A3、W5-R
-- [ ] W6 総括（PENDING 0、progress.md、open-questions.md、コミット）
+- [x] W5-E1〜E3、W5-A3、W5-R（2026-11-08。runner ×3 で exp ec_b2・ec_r1・ec_r2（API なし）。自動判定は 3 つとも PASS。EC-R1: w_rate_diff 0.160 [0.069, 0.285]、可視の差 −0.049、Rob 1.0、ADR-046 の注記つき。EC-R2: H1・H2 支持、H3 は N/A（c13_f_hat 0.0625 < 0.15。合格ではない）。EC-B2: 5 基準を満たしたが比 2.40 の区間 [−20.7, 23.0] が定まらず H2 の主張は未検証、分子 0.112 [0.095, 0.129] は事前見積りの大きさ。ê（第 2 段）には進めない（W 48 件、有効タスク数 約 6）。W5-R は重大 0・中 4・軽微 6・要確認 3 で、W5-A3b がすべて反映。付随: W5-TF（実ページに依存したテスト）、W5-TF2（再実行で設計者の記述を消さない、EC-B2 の分子・分母を記録）。注意: 75a152e は make check の失敗に気づかずコミットした（W5-TF で修正済み）
+- [x] W6 総括（2026-11-08。W6-I1 verify に設計者の要約、W6-EN 英語版と NEW_IDEA.md の実績。summary.md: PASS 21 / NEGATIVE 6 / FAIL 9 / PENDING 0（36 実験）。オフィス 4 実験の行は data/results のずれのため HEAD の行に戻した（open-questions.md W6 節）。live 累積 31.87 USD）
 
-次にやること: **W5-E1〜E3**（runner ×3 並列で `exp ec_b2`・`exp ec_r1`・`exp ec_r2`。API は呼ばない）→ W5-A3（designer、ADR-046 に従う）→ W5-R（reviewer）。
+次にやること: 第 1 段は完了。main への取り込みはユーザーの依頼を待つ。第 2 段の計画は open-questions.md の W5-A3 節と W6 節から。

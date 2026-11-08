@@ -218,4 +218,4 @@ PASS
 - c04 と c01 のツール定義・プロンプトの同一性を確かめた（接頭辞 P を共通に使う前提）: {'toolset_identical': True, 'prompt_identical': True, 't0_equal': 72, 't0_pairs': 72}。c12・c13 は system プロンプトが c01 と違うので c01o の P は使えず、版ごとの e_on は c04 だけを記録した（c12・c13 は「該当なし」）。c12 − c01 の run_tests 帰属の差は記録のみ（同等性の幅を決めていない）。
 
 ---
-生成: `uv run agenteval exp ec_b2` / 実行時刻 2026-11-08T00:15:07+00:00 / コスト 0.0 USD
+生成: `uv run agenteval exp ec_b2` / 実行時刻 2026-11-08T00:57:04+00:00 / コスト 0.0 USD

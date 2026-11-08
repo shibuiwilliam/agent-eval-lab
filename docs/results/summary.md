@@ -6,7 +6,7 @@
 
 | 判定 | 件数 |
 |---|---|
-| PASS | 15 |
+| PASS | 21 |
 | NEGATIVE | 6 |
 | FAIL | 9 |
 | PENDING | 0 |
@@ -43,5 +43,21 @@
 | [E3-8](E3-8.md) | 3 | 学習済み故障予測によるテスト選択 | FAIL | roc_auc=0.814○ / recall_at_budget_30=0.819○ / recall_ratio_vs_random=1.76× / escape_ratio_vs_random=0.319○ / control_random_recall=0.467○ | simulated | 0.0 |
 | [E3-9](E3-9.md) | 3 | 不確実性の役割は探索である（校正の維持） | NEGATIVE | calibration_gain=-0.0023× / escape_gain=0.0096○ / exploration_cost=0.0487○ | simulated | 0.0 |
 | [E3-10](E3-10.md) | 3 | 変更履歴に沿った逐次評価とラーニングカーブ | FAIL | prequential_auc=0.76○ / history_feature_gain=-0.0754× / late_auc_gt_early_auc=1○ / recall_at_budget_30=0.81○ / beats_coverage_baseline=0× | simulated | 0.0 |
+| [EC-S1](EC-S1.md) | C | 効果モニタの層別再現率 — 直接注入した目印効果を観測層ごとに検出できるか | PASS | monitor_recall=1○ / layer_recall_min=1○ / twin_false_alarms=0○ / denied_effect_residue=0○ / denied_ops_checked=43○ | simulated | 0.0 |
+| [EC-O2](EC-O2.md) | C | 仲介の完全性・秘匿・記録の整合性・拒否の効果残存 — 評価基盤の検査 | PASS | planted_detection_rate=1○ / control_false_alarms=0○ / control_runs_checked=67○ | simulated | 0.0 |
+| [EC-B2P](EC-B2P.md) | C | コンテキスト・コスト帰属の試作 — 既存 live 軌跡での課金割り振りと台帳の照合 | PASS | ledger_identity_error=3.87e-16○ / allocation_identity_error=3.87e-16○ / negative_increment_rate=0○ / ledger_match_rate=1○ / perturbation_detection_rate=1○ | live | 0.0 |
+| [EC-B2](EC-B2.md) | C | コンテキスト・コスト帰属 — ツール出力の生涯コストと履歴キャッシュの事前予測 | PASS | allocation_identity_error=6.49e-16○ / ledger_identity_error=6.49e-16○ / verbose_attribution_to_run_tests=2.4○ / history_cache_prediction_error=0.00584○ / control_attribution=0.0909○ | live | 0.0 |
+| [EC-R1](EC-R1.md) | C | 3 類分解と決定ロバストな ROI（核） | PASS | w_rate_diff_ci_low=0.0693○ / visible_vs_nv_rank_reversal=1○ / rob_c01_over_c13=1○ / null_confident_fraction_c12=0.00067○ | live | 0.0 |
+| [EC-R2](EC-R2.md) | C | 実現可能な pass@k — 緑になるまでの再試行は静かな誤りを増幅する | PASS | closed_form_mae_k1to4=0.0124○ / g3_diff_ci_low=0.0208○ / silent_wrong_monotone_c13=1○ / silent_wrong_gain_c13_ci_low=0 N/A（検出力不足: c13_f_hat = 0.0625 < 0.15） / identity_error_w0=2.22e-16○ | live | 0.0 |
+
+*章 C = コーディングエージェント（NEW_IDEA 第 1 段、6 実験）。結果 JSON が無い行は PENDING のまま。*
+
+*N/A = 適用条件（applies_if）が偽の基準（検出力不足）。合格ではなく、判定から外している: EC-R2.silent_wrong_gain_c13_ci_low。*
+
+## 読み方（設計者の要約）
+
+- [EC-B2](EC-B2.md): PASS（事前に確定した 5 基準を満たした）。H1 は台帳と 274/274 run で一致、H3 は履歴キャッシュを外したときのコスト増を位置モデルで 0.6% 以内に予測（`history_cache_prediction_error` 0.0058）。H2 は点推定 2.40 ≥ 0.8 だが比の区間 [−20.7, 23.0] が定まらず「コスト増の大部分が `run_tests` 出力に帰属」は未検証で、検証できたのは分子 0.112 USD [0.095, 0.129] が事前見積り 0.121 USD と同じ大きさで現れたことまで。
+- [EC-R1](EC-R1.md): PASS（N/A の基準なし。ADR-046: c13 は操作確認を通っていない植込みで、機構は特殊化ではない）。可視合格率の差 −0.049 [−0.132, 0.007] では見分けにくい 2 版について、隠しテストの 3 類分解が W 率の差 0.160 [0.069, 0.285] を拾い、NV の順序 c01 ≻ c13 は Θ の全域で変わらなかった（Rob 1.0）。W は少数のタスクに集中し区間の被覆は名目より低い可能性があり、特殊化の検出と Rob の仮定依存の見分けは未検証。
+- [EC-R2](EC-R2.md): PASS（N/A: `silent_wrong_gain_c13_ci_low`、`c13_f_hat` 0.0625 < 0.15 で到達上限による検出力不足。N/A は合格ではなく H3 は未判定。ADR-046: c13 は操作確認を通っていない植込みで、機構は特殊化ではない）。H2 は $G_3$ の差 0.075 [0.021, 0.135] で支持したが、下限は薄く EC-R1 の W の差と独立の証拠ではない。H1 は閉形式の MAE 0.012 で弱い支持（f がほぼ 0 で閉形式はほぼ定数）。
 
 総コスト: 2.3175 USD
