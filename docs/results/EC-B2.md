@@ -128,6 +128,7 @@ c12 − c01 の `run_tests` 帰属の差を 95% 区間付きで記録する。�
 | 指標 | 値（来歴） | 基準 | 判定 |
 |---|---|---|---|
 | allocation_identity_error | 6.489e-16 [live] | <= 1e-09 | ○ |
+| c04_minus_c01_mean_steps | {'estimate': -0.48611111111111116, 'low': -1.2848958333333333, 'high': 0.22239583333333204, 'n_tasks': 24} [live] | — | — |
 | c12_minus_c01_run_tests_cca_usd | {'estimate': 6.31833687743756e-06, 'low': -0.00015354641273500496, 'high': 0.0001482520869800854} [live] | — | — |
 | control_attribution | 0.09094 [simulated] | <= 0.1 | ○ |
 | control_detail | {'early_run': 'cd__CT-tillcalc-004__c01o_no_history_cache__offline__r0__sc-b2-early', 'late_run': 'cd__CT-tillcalc-004__c01o_no_history_cache__offline__r0__sc-b2-late', 'ratio': 0.09093668929734505, 'predicted': 0.09090909090909091, 'early_steps': 13, 'late_steps': 13} [simulated] | — | — |
@@ -148,6 +149,8 @@ c12 − c01 の `run_tests` 帰属の差を 95% 区間付きで記録する。�
 | runs_fully_matched | 274 [live] | — | — |
 | runs_total | 274 [live] | — | — |
 | verbose_attribution_ci | {'low': -20.652077652207055, 'high': 23.040704365267374, 'n_tasks': 24} [live] | — | — |
+| verbose_attribution_denominator_usd | {'estimate': 0.046462333333333355, 'low': -0.061488344166666604, 'high': 0.12873233791666666, 'n_tasks': 24} [live] | — | — |
+| verbose_attribution_numerator_usd | {'estimate': 0.11161582117618049, 'low': 0.09547251230123807, 'high': 0.12928274972248016, 'n_tasks': 24} [live] | — | — |
 | verbose_attribution_to_run_tests | 2.402 [live] | >= 0.8 | ○ |
 
 
@@ -212,4 +215,4 @@ PASS
 - c04 と c01 のツール定義・プロンプトの同一性を確かめた（接頭辞 P を共通に使う前提）: {'toolset_identical': True, 'prompt_identical': True, 't0_equal': 72, 't0_pairs': 72}。c12・c13 は system プロンプトが c01 と違うので c01o の P は使えず、版ごとの e_on は c04 だけを記録した（c12・c13 は「該当なし」）。c12 − c01 の run_tests 帰属の差は記録のみ（同等性の幅を決めていない）。
 
 ---
-生成: `uv run agenteval exp ec_b2` / 実行時刻 2026-11-07T23:32:49+00:00 / コスト 0.0 USD
+生成: `uv run agenteval exp ec_b2` / 実行時刻 2026-11-08T00:15:07+00:00 / コスト 0.0 USD

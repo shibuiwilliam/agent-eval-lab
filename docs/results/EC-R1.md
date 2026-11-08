@@ -248,4 +248,4 @@ PASS
 - テスト改変（test_files_modified）は記録のみで、評価は元のテストファイルで行った。vis_fail_hidden_pass は可視不合格かつ隠し合格の run の数（隠しテストが可視テストを含む設計なら 0 のはず）。
 
 ---
-生成: `uv run agenteval exp ec_r1` / 実行時刻 2026-11-07T23:32:40+00:00 / コスト 0.0 USD
+生成: `uv run agenteval exp ec_r1` / 実行時刻 2026-11-08T00:15:14+00:00 / コスト 0.0 USD
