@@ -174,8 +174,12 @@ def carry_over_designer_page(
     - 「## 方法」を既存ページのものに戻す（本文が空でなければ。見出しの付記も残る）
     - 「## 判定」は、既存ページに設計者の記述（自動生成の印が無い段落）があれば保持し、スクリプトの判定は
       「### 自動判定」の小見出しの下（自動判定の印付き）に出す。再実行で重複しない
-    - 既存ページの「## 気づき・限界」が未記入（空・「（未実施）」・自動注記だけ）なら、スクリプトの notes をそこに出す
-      （自動注記の印付き。再実行で重複しない）。記入済みなら上書きせず、notes は別の見出し「## 自動注記」に出す
+    - 既存ページの「## 気づき・限界」は、自動注記の印（`AUTO_NOTES_MARK`）より上を設計者の記述として扱う:
+      * 印より上が未記入（空・「（未実施）」）、または印が無く節が未記入なら、スクリプトの notes をそこに出す
+        （自動注記の印付き）
+      * 印があり、印より上に記述があれば、それを保持し、その下に印と新しい notes を出す
+        （既存の印以下は捨てて置き換える。再実行で重複しない）
+      * 印が無い記入済みの節は上書きせず、notes は別の見出し「## 自動注記」に出す
     既存ページが無い・形が違うときは何もしない。
     """
     if not old_text:
@@ -221,12 +225,16 @@ def carry_over_designer_page(
         body = _section_body(old_text, old_notes)
         auto = body.find("\n## 自動注記")
         filled = (body if auto < 0 else body[:auto]).strip()
-    if filled in _UNFILLED or AUTO_NOTES_MARK in filled:
+    mark_at = filled.find(AUTO_NOTES_MARK)
+    # 印があれば、印より上が設計者の記述（印以下は前回の自動注記なので捨てて置き換える）
+    designer = (filled if mark_at < 0 else filled[:mark_at]).strip()
+    if designer in _UNFILLED:
         section = f"{heading}\n{AUTO_NOTES_MARK}\n{bullets}\n"
-        new = new[: new_notes[0]] + section + new[new_notes[1] :]
+    elif mark_at >= 0:
+        section = f"{heading}\n{designer}\n\n{AUTO_NOTES_MARK}\n{bullets}\n"
     else:
-        section = f"{heading}\n{filled}\n\n## 自動注記\n{bullets}\n"
-        new = new[: new_notes[0]] + section + new[new_notes[1] :]
+        section = f"{heading}\n{designer}\n\n## 自動注記\n{bullets}\n"
+    new = new[: new_notes[0]] + section + new[new_notes[1] :]
     path.write_text(new, encoding="utf-8")
 
 
