@@ -1,6 +1,6 @@
 # TASK.md — NEW_IDEA 第 1 段（推奨 3 件）の実装・検証計画
 
-作成日: 2026-11-07　基準コミット: `b2881e8`（main）　状態: **G0 承認済み（2026-11-07、全 15 項目を推奨案どおり）・W1 着手**　改訂: 2026-11-07（W0 の突き合わせ。判断事項は `docs/plan/coding/G0.md`）、2026-11-07（ADR-042: EC-S1 を効果の直接注入に変更。EC-S1 の改訂は **G0 の追加承認済み（2026-11-07）**）
+作成日: 2026-11-07　基準コミット: `b2881e8`（main）　状態: **第 1 段完了（2026-11-08、W0〜W6。6 実験すべて PASS、うち 3 件は読み方に但し書き。main に取り込み済み 4ece095）**。経緯: G0 承認（2026-11-07、全 15 項目を推奨案どおり）→ G1（パイロット）→ G2（コーパス 418 run）　改訂: 2026-11-07（W0 の突き合わせ。判断事項は `docs/plan/coding/G0.md`）、2026-11-07（ADR-042: EC-S1 を効果の直接注入に変更。EC-S1 の改訂は **G0 の追加承認済み（2026-11-07）**）
 対象: `docs/NEW_IDEA.md` 10.4 節の推奨 3 件
 1. EC-S1 効果ベースの権限評価（EC-O2 基盤の完全性検査を含む）
 2. EC-B2 コンテキスト・コスト帰属（既存 live 軌跡での試作 EC-B2P を含む）
@@ -204,7 +204,7 @@ model: haiku
 
 1. **ファイルの所有権で並列にする**。同じ波（wave）の実装タスクは所有ファイルが重ならないように 5 章で割り当ててある。
    共有ファイル（`core/schema.py`、`experiments/registry.yaml`、`cli.py`、`pyproject.toml`、`tests/conftest.py`）は、同じ波の中ではそれぞれ 1 タスクだけが所有する（`core/schema.py` と `tests/conftest.py` は直列の W1-A0 が先に触り、`core/schema.py` はその後 W1-F2 が触る）
-2. **implementer の worktree はオーケストレーターが統合ブランチから作る**: `git worktree add /Users/shibuiyusuke/tmp/agent-eval-lab-wt/<ID> -b task/<ID> impl/coding-eval` の後に、その worktree で `uv sync --all-extras`。implementer は `isolation` を付けずに起動し、指示文で worktree のパスを渡す（すべてのコマンドを `cd <worktree> && ...` で実行させ、メインのチェックアウトには触らせない）。オーケストレーターがレビュー後に統合ブランチ `impl/coding-eval` へマージし、worktree とタスクブランチを片付ける。
+2. **implementer の worktree はオーケストレーターが統合ブランチから作る**: `git worktree add ../agent-eval-lab-wt/<ID> -b task/<ID> impl/coding-eval` の後に、その worktree で `uv sync --all-extras`。implementer は `isolation` を付けずに起動し、指示文で worktree のパスを渡す（すべてのコマンドを `cd <worktree> && ...` で実行させ、メインのチェックアウトには触らせない）。オーケストレーターがレビュー後に統合ブランチ `impl/coding-eval` へマージし、worktree とタスクブランチを片付ける。
    **`isolation: "worktree"` は使わない**（2026-11-07 に確認: 自動の worktree は統合ブランチではなく main から切られ、TASK.md・SPEC.md が見えない。変更が無いまま終わると自動で片付けられ、再開時に作業ディレクトリがメインのチェックアウトに戻る）
 3. **1 メッセージで並列起動する**。同じ波の独立タスク（例: W1-A の 7 タスク）は、オーケストレーターが 1 回の応答で同時に起動する
 4. **reviewer は実装と別の新しいコンテキストで起動する**。渡すのは仕様と差分だけで、実装者の結論は渡さない（確証バイアスを避ける）

@@ -13,7 +13,8 @@
 セッションを開始／再開するときユーザーが貼るプロンプトは `docs/plan/04-prompts.md` にまとまっている。
 
 **NEW_IDEA（コーディングエージェント評価）の作業中は、上の 1 の代わりに `TASK.md` を最初に読む**。
-`TASK.md` 9 章のチェックリストの未完了の先頭から着手する。理論・式・仮説は `docs/NEW_IDEA.md`（とくに 2 章の原理と 10 章の評価）が正。
+`TASK.md` 9 章のチェックリストの未完了の先頭から着手する。第 1 段（W0〜W6）は 2026-11-08 に完了し main に取り込んだ。
+第 2 段に着手するときは、先に `docs/plan/open-questions.md` の「W5-A3」「W6」節を読む。理論・式・仮説は `docs/NEW_IDEA.md`（とくに 2 章の原理と 10 章の評価）が正。
 インターフェース仕様は `docs/plan/coding/SPEC.md`、タスク内容（リポジトリ・変異・試みのカタログ）は `docs/plan/coding/CONTENT.md`（いずれも W0 で作成）。
 
 ## 検証の基本形（プロジェクトの背骨）
@@ -58,9 +59,10 @@
 - `uv run agenteval exp e3_1 [--live]` — 実験を1つ実行して結果ページと JSON を更新
 - `uv run agenteval verify` — 全実験の合格基準を照合し `docs/results/summary.md` に PASS/FAIL/NEGATIVE 表を出す
 - `uv run agenteval cost` — 累積コストと残予算
-- NEW_IDEA 第 1 段で追加する予定（W1-I8 で実装。実装されるまでは存在しない）:
-  `uv run agenteval coding corpus --plan coding/corpus.yaml --stage pilot|corpus --dry-run` → 承認後に `--live`、
-  `uv run agenteval exp ec_s1|ec_o2|ec_b2p|ec_b2|ec_r1|ec_r2 [--live]`、`uv run pytest -m docker`（Docker が要るテストだけ）
+- NEW_IDEA（章 C）:
+  `uv run agenteval coding corpus --plan coding/corpus.yaml --stage pilot|corpus --dry-run` → 関門（G1・G2）の承認後に `--live --approved G<n>`（`--shard i/n` で分割）、
+  `uv run agenteval coding report --stage pilot`（操作確認の段 `opcheck<N>` は `--only spec` だけ。ADR-037）、
+  `uv run agenteval exp ec_s1|ec_o2|ec_b2p|ec_b2|ec_r1|ec_r2`（章 C の実験は run を作らず既存の run を読む）、`uv run pytest -m docker`（Docker が要るテストだけ）
 
 ## 絶対に守ること
 - `pytest` から live API を呼ばない。`conftest.py` が `AGENTEVAL_LLM_MODE=replay` を強制し、さらに `socket.socket` を差し替えて外部接続そのものを失敗させる。run を作るテストは `LLMClient(mode="sim", ...)` を明示的に組み立てる（現状カセットには依存していない。`data/fixtures/cassettes/` は空）

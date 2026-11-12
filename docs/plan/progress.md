@@ -143,7 +143,9 @@
 - [x] W4: コーパス 418 run（G2、実費 21.27 USD、欠け 0）。履歴キャッシュの作動確認（W4-OB）
 - [x] W5: EC-B2・EC-R1・EC-R2 が PASS。EC-R1 は可視合格率で見えない W 率の差 0.160 [0.069, 0.285] を拾った（c13 は操作確認を通っていない植込み）。EC-R2 の H3 は N/A（検出力不足、合格ではない）。EC-B2 の H2 は比の区間が定まらず未検証。独立レビュー W5-R の指摘を W5-A3b で反映
 - [x] W6: summary.md に章 C の 6 実験と設計者の読み方（PASS 21 / NEGATIVE 6 / FAIL 9 / PENDING 0、36 実験）。英語版を同期。live 累積 31.87 USD（第 1 段 28.07 USD）
-- 次にやること: open-questions.md の「W6」節（オフィス 4 実験の data/results のずれ）を最初に片づけ、第 2 段（ê、H3 の再設計、max_tokens の続き）の計画は W5-A3 節から始める。main への取り込みはユーザーの依頼を待つ
+- [x] main への取り込み（2026-11-08、4ece095、ユーザーの依頼）。push はしていない
+- [x] 文書の状況の更新（2026-11-08）: README・docs/README・results/README・CLAUDE.md・TASK.md に章 C の状況を反映（日本語と英語）
+- 次にやること: (1) open-questions.md の「W6」節（オフィス 4 実験の data/results のずれ、push と作業ブランチの後片付け、英語版の遅れ）をユーザーと決める。(2) 第 2 段（ê のための W の増量、H3 の再設計、max_tokens の続きを促す部品）の計画を open-questions.md の「W5-A3」節から始める
 
 ## 次にやること
 - `IMPROVEMENT.md` の「11. まだ直していないこと」の R6〜R9。
