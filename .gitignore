@@ -236,10 +236,15 @@ data/*
 !data/fixtures/**
 CLAUDE.local.md
 .env
-REPORT.md
 .DS_Store
 
+# ブログ下書き（公開リポジトリの対象外）
 blog/
+
+# --- Claude Code のローカル状態（個人設定・作業用 worktree の置き場） ---
+# 共有する定義（.claude/agents/、.claude/rules/）は追跡する。
+.claude/settings.local.json
+.claude/worktrees/
 
 # --- 秘匿情報の取りこぼし対策 ---
 # `.env` だけでは `.env.local` や `.env.bak` などの派生が無視されないため明示する。
