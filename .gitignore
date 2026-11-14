@@ -262,3 +262,5 @@ secrets.yaml
 secrets.yml
 credentials.json
 service-account*.json
+
+slides/
